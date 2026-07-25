@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
+import { apiFetch } from '@/utils/apiFetch';
 import Icon from '@mdi/react';
 import { mdiBriefcase, mdiAccountBadge, mdiTrashCanOutline, mdiAlertCircleOutline } from '@mdi/js';
 
@@ -93,7 +94,7 @@ export default function EmployeesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/employees');
+      const res = await apiFetch('/api/employees');
       const data = await res.json();
       if (data.success) {
         setEmployees(data.data ?? []);
@@ -118,7 +119,7 @@ export default function EmployeesPage() {
           if (form.whatsapp) params.append('whatsapp', form.whatsapp);
           if (view === 'edit' && activeEmp?.id) params.append('excludeId', activeEmp.id);
           
-          const res = await fetch(`/api/employees/generate-id?${params.toString()}`);
+          const res = await apiFetch(`/api/employees/generate-id?${params.toString()}`);
           const data = await res.json();
           if (data.success && data.data?.employeeId) {
             setComputedEmployeeId(data.data.employeeId);
@@ -135,7 +136,7 @@ export default function EmployeesPage() {
   // Load single employee profile details
   const loadProfile = async (id: string) => {
     try {
-      const res = await fetch(`/api/employees/${id}`);
+      const res = await apiFetch(`/api/employees/${id}`);
       const data = await res.json();
       if (data.success) {
         setActiveEmp(data.data);
@@ -162,7 +163,7 @@ export default function EmployeesPage() {
       const url = isEdit ? `/api/employees/${activeEmp?.id}` : '/api/employees';
       const method = isEdit ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -186,7 +187,7 @@ export default function EmployeesPage() {
   // Toggle active status
   const toggleActiveStatus = async (emp: Employee) => {
     try {
-      const res = await fetch(`/api/employees/${emp.id}/toggle`, { method: 'PATCH' });
+      const res = await apiFetch(`/api/employees/${emp.id}/toggle`, { method: 'PATCH' });
       const data = await res.json();
       if (res.ok && data.success) {
         showToast(`✅ Employee ${data.data?.isActive ? 'activated' : 'deactivated'}`);
@@ -207,7 +208,7 @@ export default function EmployeesPage() {
     if (!empToDelete) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/employees/${empToDelete.id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/employees/${empToDelete.id}`, { method: 'DELETE' });
       const data = await res.json();
       if (res.ok && data.success) {
         showToast(`✅ Employee "${empToDelete.name}" permanently deleted`);
@@ -230,7 +231,7 @@ export default function EmployeesPage() {
   const confirmClearAllEmployees = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/employees/clear-all', { method: 'POST' });
+      const res = await apiFetch('/api/employees/clear-all', { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success) {
         showToast('✅ All employee records permanently deleted');
@@ -255,7 +256,7 @@ export default function EmployeesPage() {
 
     setSaving(true);
     try {
-      const res = await fetch(`/api/employees/${activeEmp.id}/payments`, {
+      const res = await apiFetch(`/api/employees/${activeEmp.id}/payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payForm),

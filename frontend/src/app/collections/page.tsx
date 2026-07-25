@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime, todayInputDate, todayInputDateTime } from '@/utils/formatters';
+import { apiFetch } from '@/utils/apiFetch';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
 import Icon from '@mdi/react';
 import { mdiCashRegister, mdiFormatListBulleted } from '@mdi/js';
@@ -125,9 +126,9 @@ export default function CollectionsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const [cRes, clRes, sRes] = await Promise.all([
-      fetch('/api/collections'),
-      fetch('/api/clients?minimal=true'),
-      fetch('/api/sales'),
+      apiFetch('/api/collections'),
+      apiFetch('/api/clients?minimal=true'),
+      apiFetch('/api/sales'),
     ]);
     const [cd, cld, sd] = await Promise.all([cRes.json(), clRes.json(), sRes.json()]);
     if (cd.success) setCollections(cd.data);
@@ -165,7 +166,7 @@ export default function CollectionsPage() {
     }
     setSaving(true);
     try {
-      const res  = await fetch('/api/collections', {
+      const res  = await apiFetch('/api/collections', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });

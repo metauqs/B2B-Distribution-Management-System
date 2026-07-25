@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
+import { apiFetch } from '@/utils/apiFetch';
 
 interface Delivery {
   id: string;
@@ -57,9 +58,9 @@ export default function DeliveryPage() {
       if (filterDate) dParams.set('date', filterDate);
 
       const [dRes, vRes, eRes] = await Promise.all([
-        fetch(`/api/delivery?${dParams.toString()}`),
-        fetch('/api/vehicles'),
-        fetch('/api/employees?activeOnly=true'),
+        apiFetch(`/api/delivery?${dParams.toString()}`),
+        apiFetch('/api/vehicles'),
+        apiFetch('/api/employees?activeOnly=true'),
       ]);
       
       const getJson = async (res: Response) => {
@@ -85,7 +86,7 @@ export default function DeliveryPage() {
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      const res = await fetch('/api/delivery', {
+      const res = await apiFetch('/api/delivery', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status }),
@@ -104,7 +105,7 @@ export default function DeliveryPage() {
 
   const assignVehicle = async (id: string, vehicleId: string) => {
     try {
-      const res = await fetch('/api/delivery', {
+      const res = await apiFetch('/api/delivery', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, vehicleId }),
@@ -121,7 +122,7 @@ export default function DeliveryPage() {
 
   const assignEmployee = async (id: string, employeeId: string) => {
     try {
-      const res = await fetch('/api/delivery', {
+      const res = await apiFetch('/api/delivery', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, employeeId }),
@@ -138,7 +139,7 @@ export default function DeliveryPage() {
 
   const assignDate = async (id: string, date: string) => {
     try {
-      const res = await fetch('/api/delivery', {
+      const res = await apiFetch('/api/delivery', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, date }),
@@ -155,7 +156,7 @@ export default function DeliveryPage() {
 
   const assignTime = async (id: string, scheduledTime: string) => {
     try {
-      const res = await fetch('/api/delivery', {
+      const res = await apiFetch('/api/delivery', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, scheduledTime }),
