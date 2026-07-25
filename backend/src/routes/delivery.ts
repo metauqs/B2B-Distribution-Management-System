@@ -71,11 +71,20 @@ router.get('/', async (req: Request, res: Response) => {
       });
     }
 
+    // Enforce role-scoped delivery filtering for DELIVERY_STAFF users
+    const userRole = (req.headers['x-user-role'] as string) || req.user?.role;
+    const userEmployeeId = (req.headers['x-employee-id'] as string) || req.user?.employeeId;
+
+    let targetEmployeeId = employeeId ? String(employeeId) : undefined;
+    if (userRole === 'DELIVERY_STAFF' && userEmployeeId) {
+      targetEmployeeId = userEmployeeId;
+    }
+
     const deliveries = await prisma.delivery.findMany({
       where: {
         ...(branchId ? { branchId } : {}),
         ...(status ? { status: status as any } : {}),
-        ...(employeeId ? { employeeId: String(employeeId) } : {}),
+        ...(targetEmployeeId ? { employeeId: targetEmployeeId } : {}),
         ...(dayStart && dayEnd ? {
           date: {
             gte: dayStart,
@@ -84,7 +93,16 @@ router.get('/', async (req: Request, res: Response) => {
         } : {}),
       },
       include: {
-        sale: { select: { id: true, invoiceNo: true, total: true, deliveryDate: true, deliveryTime: true } },
+        sale: {
+          select: {
+            id: true,
+            invoiceNo: true,
+            total: true,
+            deliveryDate: true,
+            deliveryTime: true,
+            items: { select: { id: true, itemName: true, qty: true, unit: true, rate: true, amount: true } },
+          },
+        },
         client: { select: { id: true, name: true, address: true, phone: true } },
         vehicle: { select: { id: true, plateNo: true, type: true } },
         driver: { select: { id: true, name: true, phone: true } },

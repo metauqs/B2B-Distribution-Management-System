@@ -158,19 +158,18 @@ router.post('/', async (req: Request, res: Response) => {
         },
       });
 
-      if (employeeId || deliveryDate) {
-        await tx.delivery.create({
-          data: {
-            saleId: s.id,
-            clientId,
-            branchId,
-            employeeId: employeeId || undefined,
-            date: deliveryDate ? new Date(deliveryDate) : s.date,
-            scheduledTime: deliveryTime || undefined,
-            status: 'PENDING',
-          }
-        });
-      }
+      // Automatically create delivery assignment for selected Delivery Staff member
+      await tx.delivery.create({
+        data: {
+          saleId: s.id,
+          clientId,
+          branchId,
+          employeeId: employeeId || undefined,
+          date: deliveryDate ? new Date(deliveryDate) : s.date,
+          scheduledTime: deliveryTime || undefined,
+          status: 'PENDING',
+        }
+      });
 
       for (const item of items) {
         if (item.productId) {

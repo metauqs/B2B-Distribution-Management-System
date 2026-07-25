@@ -5,6 +5,15 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
 
+interface DeliveryItem {
+  id: string;
+  itemName: string;
+  qty: number;
+  unit: string;
+  rate: number;
+  amount: number;
+}
+
 interface Delivery {
   id: string;
   status: string;
@@ -13,7 +22,14 @@ interface Delivery {
   deliveredAt?: string | null;
   notes?: string | null;
   saleId: string;
-  sale: { id: string; invoiceNo: string; total: number; deliveryDate?: string | null; deliveryTime?: string | null };
+  sale: {
+    id: string;
+    invoiceNo: string;
+    total: number;
+    deliveryDate?: string | null;
+    deliveryTime?: string | null;
+    items?: DeliveryItem[];
+  };
   client: { id: string; name: string; address?: string | null; phone?: string | null };
   vehicle?: { id: string; plateNo: string; type: string } | null;
   employee?: { id: string; name: string; phone?: string | null } | null;
@@ -24,13 +40,6 @@ interface Vehicle { id: string; plateNo: string; type: string; }
 interface Employee { id: string; name: string; phone?: string | null; role: string; }
 
 const STATUS_FLOW = ['PENDING', 'OUT', 'DELIVERED', 'FAILED', 'RETURNED'];
-const BADGE_MAP: Record<string, string> = {
-  PENDING: 'pending',
-  OUT: 'partial',
-  DELIVERED: 'paid',
-  FAILED: 'due',
-  RETURNED: 'due'
-};
 
 export default function DeliveryPage() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
@@ -44,18 +53,38 @@ export default function DeliveryPage() {
   const [filterEmployee, setFilterEmployee] = useState<string>('ALL');
   const [filterDate, setFilterDate] = useState<string>(() => todayInputDate());
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [adminViewMode, setAdminViewMode] = useState<'table' | 'grid'>('table');
 
   // Mode state
   const [isEmployeeMode, setIsEmployeeMode] = useState<boolean>(false);
   const [selectedEmpId, setSelectedEmpId] = useState<string>('');
+  const [loggedInUser, setLoggedInUser] = useState<any>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
+
+  // Detect logged-in user role & auto-select delivery staff
+  useEffect(() => {
+    try {
+      const rawUser = localStorage.getItem('user');
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        setLoggedInUser(u);
+        if (u.role === 'DELIVERY_STAFF' || u.employeeId) {
+          setIsEmployeeMode(true);
+          if (u.employeeId) setSelectedEmpId(u.employeeId);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const dParams = new URLSearchParams();
       if (filterDate) dParams.set('date', filterDate);
+      if (selectedEmpId) dParams.set('employeeId', selectedEmpId);
 
       const [dRes, vRes, eRes] = await Promise.all([
         apiFetch(`/api/delivery?${dParams.toString()}`),
@@ -80,7 +109,7 @@ export default function DeliveryPage() {
       console.error('Error loading delivery data:', err);
     }
     setLoading(false);
-  }, [filterDate]);
+  }, [filterDate, selectedEmpId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -93,7 +122,7 @@ export default function DeliveryPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast(`✅ Delivery marked ${status}`);
+        showToast(status === 'DELIVERED' ? '✅ Delivery marked as Delivered' : `✅ Delivery marked ${status}`);
         await load();
       } else {
         showToast('❌ Update failed');
@@ -171,9 +200,13 @@ export default function DeliveryPage() {
     }
   };
 
+  // Delivery staff list
+  const deliveryStaffList = employees.filter(e => e.role === 'DELIVERY_STAFF' || e.role === 'Delivery Staff');
+  const availableStaff = deliveryStaffList.length > 0 ? deliveryStaffList : employees;
+
   // Base list of deliveries filtered for Employee Mode vs Admin Mode
   const baseDeliveries = isEmployeeMode
-    ? deliveries.filter(d => d.employee?.id === selectedEmpId)
+    ? (selectedEmpId ? deliveries.filter(d => d.employee?.id === selectedEmpId) : deliveries)
     : deliveries;
 
   // Search & Filter Processing
@@ -183,8 +216,8 @@ export default function DeliveryPage() {
     const matchesDate = !filterDate || d.date.slice(0, 10) === filterDate;
     
     const matchesSearch = !searchQuery || 
-      d.sale?.invoiceNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.client?.name.toLowerCase().includes(searchQuery.toLowerCase());
+      d.sale?.invoiceNo?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      d.client?.name?.toLowerCase().includes(searchQuery.toLowerCase());
 
     return matchesStatus && matchesEmployee && matchesDate && matchesSearch;
   });
@@ -193,6 +226,8 @@ export default function DeliveryPage() {
     acc[s] = baseDeliveries.filter(d => d.status === s).length;
     return acc;
   }, {} as Record<string, number>);
+
+  const activeEmpName = availableStaff.find(e => e.id === selectedEmpId)?.name || loggedInUser?.name || 'Delivery Employee';
 
   return (
     <DashboardLayout>
@@ -203,19 +238,28 @@ export default function DeliveryPage() {
       )}
 
       {/* Mode Selector Panel */}
-      <div className="va-panel" style={{ padding: '12px 20px', background: '#f8f9fa' }}>
+      <div className="va-panel" style={{ padding: '14px 20px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Toggle Mode:</span>
-            <button 
-              className={`va-btn small ${!isEmployeeMode ? '' : 'secondary'}`} 
-              onClick={() => setIsEmployeeMode(false)}
-            >
-              🏢 Admin Management
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>View Mode:</span>
+            {loggedInUser?.role !== 'DELIVERY_STAFF' && (
+              <button 
+                className={`va-btn small ${!isEmployeeMode ? '' : 'secondary'}`} 
+                style={{ fontWeight: 700, borderRadius: '6px' }}
+                onClick={() => setIsEmployeeMode(false)}
+              >
+                🏢 Admin Management
+              </button>
+            )}
             <button 
               className={`va-btn small ${isEmployeeMode ? '' : 'secondary'}`} 
-              onClick={() => { setIsEmployeeMode(true); if (employees.length && !selectedEmpId) setSelectedEmpId(employees[0].id); }}
+              style={{ fontWeight: 700, borderRadius: '6px' }}
+              onClick={() => {
+                setIsEmployeeMode(true);
+                if (availableStaff.length && !selectedEmpId) {
+                  setSelectedEmpId(availableStaff[0].id);
+                }
+              }}
             >
               🚚 Employee Delivery View
             </button>
@@ -223,14 +267,14 @@ export default function DeliveryPage() {
 
           {isEmployeeMode && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, color: 'var(--muted)' }}>Select Employee:</span>
+              <span style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>Delivery Staff:</span>
               <select 
                 value={selectedEmpId} 
                 onChange={e => setSelectedEmpId(e.target.value)}
-                style={{ padding: '4px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 12, fontWeight: 700 }}
+                style={{ padding: '6px 12px', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '13px', fontWeight: 700, background: '#F8FAFC', color: '#0F172A' }}
               >
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
+                {availableStaff.map(emp => (
+                  <option key={emp.id} value={emp.id}>{emp.name} {emp.phone ? `(${emp.phone})` : ''}</option>
                 ))}
               </select>
             </div>
@@ -240,32 +284,42 @@ export default function DeliveryPage() {
 
       {/* Admin Filters Row */}
       {!isEmployeeMode && (
-        <div className="va-panel" style={{ padding: '12px 20px' }}>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input
-              value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              placeholder="🔍 Search Invoice No or Client..."
-              style={{ flex: 2, minWidth: 200, padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}
-            />
-            <select 
-              value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)}
-              style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, background: 'var(--paper)' }}
-            >
-              <option value="ALL">All Employees</option>
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>{emp.name}</option>
-              ))}
-            </select>
-            <input 
-              type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
-              style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }} 
-            />
+        <div className="va-panel" style={{ padding: '14px 20px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', marginTop: 12 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ flex: 2, minWidth: 220 }}>
+              <input
+                value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                placeholder="🔍 Search Invoice No or Client Name..."
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '13px', background: '#F8FAFC' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>Filter Staff:</span>
+              <select 
+                value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)}
+                style={{ padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '13px', background: '#F8FAFC', fontWeight: 600 }}
+              >
+                <option value="ALL">All Delivery Staff</option>
+                {availableStaff.map(emp => (
+                  <option key={emp.id} value={emp.id}>{emp.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>Delivery Date:</span>
+              <input 
+                type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
+                style={{ padding: '7px 12px', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '13px', background: '#F8FAFC', fontWeight: 600 }} 
+              />
+            </div>
           </div>
         </div>
       )}
 
       {/* Status filter tabs */}
-      <div className="va-tabs-inline">
+      <div className="va-tabs-inline" style={{ marginTop: 12 }}>
         <button className={filterStatus === 'ALL' ? 'active' : ''} onClick={() => setFilterStatus('ALL')}>
           All ({baseDeliveries.length})
         </button>
@@ -276,190 +330,336 @@ export default function DeliveryPage() {
         ))}
       </div>
 
-      {/* Deliveries Display */}
-      <div className="va-panel">
-        <div className="va-panel-head">
-          <h3>
+      {/* Deliveries Display Panel */}
+      <div className="va-panel" style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 4px 16px rgba(0,0,0,0.04)', marginTop: 12 }}>
+        <div className="va-panel-head" style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9' }}>
+          <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
             {isEmployeeMode 
-              ? `Assigned Delivery Tasks for: ${employees.find(e => e.id === selectedEmpId)?.name || 'Employee'}`
-              : 'Delivery Dispatch Register'}
+              ? `Assigned Deliveries for: ${activeEmpName}`
+              : 'Delivery Dispatch & Tracking Register'}
           </h3>
-          <button className="va-btn secondary small" onClick={load}>↻ Refresh</button>
+          <button className="va-btn secondary small" style={{ fontWeight: 600 }} onClick={load}>↻ Refresh</button>
         </div>
 
         {loading ? (
-          <div className="va-loading">Loading deliveries…</div>
+          <div className="va-loading" style={{ padding: '40px 0', textAlign: 'center', color: '#64748B', fontWeight: 600 }}>Loading deliveries…</div>
         ) : filtered.length === 0 ? (
-          <div className="va-empty">
-            <div className="big">No deliveries found</div>
-            <div>{isEmployeeMode ? 'All clear! No pending tasks assigned.' : 'Create sales with delivery dates to see items here.'}</div>
+          <div className="va-empty" style={{ padding: '40px 0', textAlign: 'center' }}>
+            <div className="big" style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>No deliveries found</div>
+            <div style={{ color: '#64748B', fontSize: '13px', marginTop: 4 }}>
+              {isEmployeeMode ? `No delivery tasks assigned for ${activeEmpName}.` : 'Create sales with assigned delivery staff to see items here.'}
+            </div>
           </div>
         ) : (
-          <>
-            {/* Desktop Table View (Admin Mode only) */}
+          <div style={{ padding: '16px 20px' }}>
+            {/* Desktop Table View (Admin Mode only) - Automatically visible on desktop screens */}
             {!isEmployeeMode && (
               <div className="hide-mobile">
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <table className="va-table" style={{ minWidth: 900 }}>
+                <table className="va-table" style={{ minWidth: 950, width: '100%', borderCollapse: 'separate', borderSpacing: '0 6px' }}>
                   <thead>
-                    <tr>
-                      <th>Invoice</th>
-                      <th>Client</th>
-                      <th>Address</th>
-                      <th>Staff Assigned</th>
-                      <th>Vehicle</th>
-                      <th>Delivery Date</th>
-                      <th>Time Slot</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    <tr style={{ background: '#F8FAFC' }}>
+                      <th style={{ padding: '10px 14px', borderRadius: '6px 0 0 6px' }}>Invoice</th>
+                      <th style={{ padding: '10px 14px' }}>Client & Contact</th>
+                      <th style={{ padding: '10px 14px' }}>Delivery Address</th>
+                      <th style={{ padding: '10px 14px' }}>Staff Assigned</th>
+                      <th style={{ padding: '10px 14px' }}>Vehicle</th>
+                      <th style={{ padding: '10px 14px' }}>Schedule</th>
+                      <th style={{ padding: '10px 14px' }}>Order Items</th>
+                      <th style={{ padding: '10px 14px' }}>Status</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'right', borderRadius: '0 6px 6px 0' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map(d => (
-                      <tr key={d.id}>
-                        <td className="mono" style={{ fontWeight: 700, color: 'var(--forest)' }}>{d.sale?.invoiceNo}</td>
-                        <td style={{ fontWeight: 600 }}>
-                          {d.client?.name}
-                          {d.client?.phone && <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>📞 {d.client.phone}</div>}
+                      <tr key={d.id} style={{ background: '#FFFFFF', borderBottom: '1px solid #F1F5F9' }}>
+                        <td className="mono" style={{ fontWeight: 700, color: '#1B4D2E', padding: '12px 14px' }}>
+                          {d.sale?.invoiceNo}
+                          <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>{fmtDate(d.date)}</div>
                         </td>
-                        <td style={{ color: 'var(--muted)', fontSize: 11 }}>{d.client?.address ?? '—'}</td>
-                        <td>
-                          <select value={d.employee?.id ?? ''} onChange={e => assignEmployee(d.id, e.target.value)}
-                            style={{ fontSize: 12, padding: '4px 6px', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--paper)', fontWeight: 600 }}>
+
+                        <td style={{ padding: '12px 14px' }}>
+                          <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '14px' }}>{d.client?.name}</div>
+                          {d.client?.phone ? (
+                            <a href={`tel:${d.client.phone}`} style={{ fontSize: '12px', color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}>
+                              📞 {d.client.phone}
+                            </a>
+                          ) : <span style={{ fontSize: '11px', color: '#94A3B8' }}>No phone</span>}
+                        </td>
+
+                        <td style={{ padding: '12px 14px', color: '#334155', fontSize: '12px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {d.client?.address ?? '—'}
+                        </td>
+
+                        <td style={{ padding: '12px 14px' }}>
+                          <select 
+                            value={d.employee?.id ?? ''} 
+                            onChange={e => assignEmployee(d.id, e.target.value)}
+                            style={{ fontSize: '12px', padding: '5px 8px', border: '1px solid #CBD5E1', borderRadius: '6px', background: '#F8FAFC', fontWeight: 600, color: '#0F172A' }}
+                          >
                             <option value="">— Assign Staff —</option>
-                            {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                            {availableStaff.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                           </select>
                         </td>
-                        <td>
-                          <select value={d.vehicle?.id ?? ''} onChange={e => assignVehicle(d.id, e.target.value)}
-                            style={{ fontSize: 12, padding: '4px 6px', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--paper)', fontWeight: 600 }}>
-                            <option value="">— Assign Vehicle —</option>
+
+                        <td style={{ padding: '12px 14px' }}>
+                          <select 
+                            value={d.vehicle?.id ?? ''} 
+                            onChange={e => assignVehicle(d.id, e.target.value)}
+                            style={{ fontSize: '12px', padding: '5px 8px', border: '1px solid #CBD5E1', borderRadius: '6px', background: '#F8FAFC', fontWeight: 600 }}
+                          >
+                            <option value="">— Vehicle —</option>
                             {vehicles.map(v => <option key={v.id} value={v.id}>{v.plateNo}</option>)}
                           </select>
                         </td>
-                        <td>
-                          <input type="date" value={d.date.slice(0, 10)} onChange={e => assignDate(d.id, e.target.value)}
-                            style={{ fontSize: 11, padding: '2px 4px', border: '1px solid var(--line)', borderRadius: 4 }} />
+
+                        <td style={{ padding: '12px 14px' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A' }}>
+                            {d.scheduledTime ? d.scheduledTime.split('(')[0] : 'PHASE 1'}
+                          </div>
+                          <input 
+                            type="date" 
+                            value={d.date.slice(0, 10)} 
+                            onChange={e => assignDate(d.id, e.target.value)}
+                            style={{ fontSize: '11px', padding: '2px 4px', border: '1px solid #CBD5E1', borderRadius: '4px', marginTop: '2px' }} 
+                          />
                         </td>
-                        <td>
-                          <select value={d.scheduledTime || 'PHASE 1 (11:00 AM - 02:00 PM)'} onChange={e => assignTime(d.id, e.target.value)}
-                            style={{ fontSize: 11, padding: '2px 4px', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--paper)' }}>
-                            <option value="PHASE 1 (11:00 AM - 02:00 PM)">PHASE 1 (11:00 AM - 02:00 PM)</option>
-                            <option value="PHASE 2 (05:00 PM - 09:00 PM)">PHASE 2 (05:00 PM - 09:00 PM)</option>
-                          </select>
+
+                        {/* Order Items Preview */}
+                        <td style={{ padding: '12px 14px' }}>
+                          {d.sale?.items && d.sale.items.length > 0 ? (
+                            <div style={{ background: '#F0FDF4', border: '1px solid #DCFCE7', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', color: '#166534', fontWeight: 600, maxWidth: 160 }}>
+                              📦 {d.sale.items.length} {d.sale.items.length === 1 ? 'item' : 'items'}
+                              <div style={{ fontSize: '10px', color: '#15803D', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {d.sale.items.map(i => i.itemName).join(', ')}
+                              </div>
+                            </div>
+                          ) : <span style={{ fontSize: '11px', color: '#94A3B8' }}>—</span>}
                         </td>
-                        <td><span className={`va-badge ${BADGE_MAP[d.status] ?? 'pending'}`}>{d.status === 'OUT' ? 'DISPATCHED' : d.status.replace(/_/g, ' ')}</span></td>
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: 4 }}>
+
+                        <td style={{ padding: '12px 14px' }}>
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            padding: '4px 10px',
+                            borderRadius: '12px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.03em',
+                            background: d.status === 'DELIVERED' ? '#DCFCE7' : d.status === 'OUT' ? '#E0F2FE' : d.status === 'FAILED' ? '#FEE2E2' : '#FEF3C7',
+                            color: d.status === 'DELIVERED' ? '#15803D' : d.status === 'OUT' ? '#0369A1' : d.status === 'FAILED' ? '#991B1B' : '#B45309',
+                            border: `1px solid ${d.status === 'DELIVERED' ? '#86EFAC' : d.status === 'OUT' ? '#BAE6FD' : d.status === 'FAILED' ? '#FCA5A5' : '#FDE68A'}`
+                          }}>
+                            {d.status === 'OUT' ? 'DISPATCHED' : d.status.replace(/_/g, ' ')}
+                          </span>
+                        </td>
+
+                        <td style={{ textAlign: 'right', padding: '12px 14px' }}>
+                          <div style={{ display: 'inline-flex', gap: 6 }}>
                             {d.status === 'PENDING' && (
                               <>
-                                <button className="va-btn small" onClick={() => updateStatus(d.id, 'OUT')}>Dispatch</button>
-                                <button className="va-btn small" onClick={() => updateStatus(d.id, 'DELIVERED')}>Delivered ✓</button>
+                                <button className="va-btn small" style={{ background: '#0284C7', color: '#FFF', fontWeight: 700, padding: '4px 10px', borderRadius: '6px' }} onClick={() => updateStatus(d.id, 'OUT')}>
+                                  Dispatch
+                                </button>
+                                <button className="va-btn small" style={{ background: '#16A34A', color: '#FFF', fontWeight: 700, padding: '4px 10px', borderRadius: '6px' }} onClick={() => updateStatus(d.id, 'DELIVERED')}>
+                                  Delivered ✓
+                                </button>
                               </>
                             )}
                             {d.status === 'OUT' && (
                               <>
-                                <button className="va-btn small" onClick={() => updateStatus(d.id, 'DELIVERED')}>Delivered ✓</button>
-                                <button className="va-btn secondary small" style={{ color: 'var(--danger)' }} onClick={() => updateStatus(d.id, 'FAILED')}>Failed</button>
+                                <button className="va-btn small" style={{ background: '#16A34A', color: '#FFF', fontWeight: 700, padding: '4px 10px', borderRadius: '6px' }} onClick={() => updateStatus(d.id, 'DELIVERED')}>
+                                  Delivered ✓
+                                </button>
+                                <button className="va-btn secondary small" style={{ color: '#DC2626', borderColor: '#FCA5A5', fontWeight: 600, padding: '4px 8px', borderRadius: '6px' }} onClick={() => updateStatus(d.id, 'FAILED')}>
+                                  Failed
+                                </button>
                               </>
                             )}
                             {d.status === 'FAILED' && (
-                              <button className="va-btn secondary small" onClick={() => updateStatus(d.id, 'RETURNED')}>Returned</button>
+                              <button className="va-btn secondary small" style={{ color: '#D97706', fontWeight: 600 }} onClick={() => updateStatus(d.id, 'RETURNED')}>
+                                Returned
+                              </button>
+                            )}
+                            {d.status === 'DELIVERED' && (
+                              <span style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>✓ Done</span>
                             )}
                           </div>
                         </td>
                       </tr>
                     ))}
-                    </tbody>
+                  </tbody>
                 </table>
                 </div>
               </div>
             )}
 
-            {/* Mobile Card List View & Employee Portal View */}
-            {/* Employee mode: always show cards. Admin mode: show-mobile only (desktop has the table above) */}
-            <div className={isEmployeeMode ? '' : 'show-mobile'} style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
-              {filtered.map(d => (
-                <div key={d.id} className="va-mobile-card">
-                  <div className="card-header">
-                    <span className="card-title" style={{ color: '#FFFFFF', fontWeight: 700 }}>
-                      {d.client?.name}
-                    </span>
-                    <span className="card-subtitle" style={{ opacity: 0.85 }}>
-                      {fmtDate(d.date)}
-                    </span>
-                  </div>
-                  
-                  <div className="card-divider" />
-                  
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div className="card-info-row">
-                      <span className="card-label">Invoice ID</span>
-                      <span className="card-value">{d.sale?.invoiceNo}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Phone</span>
-                      <span className="card-value">
-                        {d.client?.phone ? (
-                          <a href={`tel:${d.client.phone}`} style={{ color: '#fff', textDecoration: 'underline' }}>{d.client.phone}</a>
-                        ) : '—'}
+            {/* Responsive Card Grid View (Automatically visible on mobile screens, or in Employee Mode) */}
+            <div 
+              className={isEmployeeMode ? '' : 'show-mobile'}
+              style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', 
+                gap: '20px', 
+                width: '100%'
+              }}
+            >
+                {filtered.map(d => (
+                  <div 
+                    key={d.id} 
+                    style={{
+                      background: '#FFFFFF',
+                      borderRadius: '14px',
+                      border: '1px solid #E2E8F0',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    {/* Header Strip */}
+                    <div style={{
+                      background: 'linear-gradient(135deg, #1B4D2E 0%, #2E7D32 100%)',
+                      color: '#FFFFFF',
+                      padding: '14px 18px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.01em' }}>
+                        {d.client?.name ?? 'Customer'}
+                      </span>
+                      <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.18)', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>
+                        {fmtDate(d.date)}
                       </span>
                     </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Address</span>
-                      <span className="card-value" style={{ maxWidth: '65%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                        {d.client?.address ?? '—'}
-                      </span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Driver</span>
-                      <span className="card-value">{d.employee?.name || '—'}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Vehicle</span>
-                      <span className="card-value">{d.vehicle?.plateNo || '—'}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Time</span>
-                      <span className="card-value">{d.scheduledTime || 'PHASE 1 (11:00 AM - 02:00 PM)'}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Status</span>
-                      <span className={`va-badge ${BADGE_MAP[d.status] ?? 'pending'}`} style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.1)' }}>
-                        {d.status === 'OUT' ? 'DISPATCHED' : d.status.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                    {d.deliveredAt && (
-                      <div className="card-info-row">
-                        <span className="card-label">Delivered At</span>
-                        <span className="card-value" style={{ color: '#A8D5B5' }}>{fmtDateTime(d.deliveredAt)}</span>
+
+                    {/* Card Content Body */}
+                    <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                        <span style={{ color: '#64748B', fontWeight: 500 }}>Invoice ID</span>
+                        <span className="mono" style={{ color: '#0F172A', fontWeight: 700, fontSize: '14px' }}>{d.sale?.invoiceNo}</span>
                       </div>
-                    )}
-                  </div>
 
-                  <div className="card-divider" />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                        <span style={{ color: '#64748B', fontWeight: 500 }}>Phone</span>
+                        <span style={{ fontWeight: 600 }}>
+                          {d.client?.phone ? (
+                            <a href={`tel:${d.client.phone}`} style={{ color: '#2563EB', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              📞 {d.client.phone}
+                            </a>
+                          ) : '—'}
+                        </span>
+                      </div>
 
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', width: '100%' }}>
-                    {d.status === 'PENDING' && (
-                      <>
-                        <button className="card-btn" style={{ flex: 1 }} onClick={() => updateStatus(d.id, 'OUT')}>Dispatch</button>
-                        <button className="card-btn primary" style={{ flex: 1 }} onClick={() => updateStatus(d.id, 'DELIVERED')}>Deliver ✓</button>
-                      </>
-                    )}
-                    {d.status === 'OUT' && (
-                      <>
-                        <button className="card-btn primary" style={{ flex: 1 }} onClick={() => updateStatus(d.id, 'DELIVERED')}>Deliver ✓</button>
-                        <button className="card-btn danger" style={{ flex: 1 }} onClick={() => updateStatus(d.id, 'FAILED')}>Fail ✕</button>
-                      </>
-                    )}
-                    {d.status === 'FAILED' && (
-                      <button className="card-btn" style={{ flex: 1 }} onClick={() => updateStatus(d.id, 'RETURNED')}>Return</button>
-                    )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '13px' }}>
+                        <span style={{ color: '#64748B', fontWeight: 500 }}>Address</span>
+                        <span style={{ color: '#0F172A', fontWeight: 600, textAlign: 'right', maxWidth: '65%' }}>
+                          {d.client?.address ?? '—'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                        <span style={{ color: '#64748B', fontWeight: 500 }}>Staff Assigned</span>
+                        <span style={{ color: '#0F172A', fontWeight: 600 }}>{d.employee?.name || activeEmpName}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                        <span style={{ color: '#64748B', fontWeight: 500 }}>Time Slot</span>
+                        <span style={{ color: '#0F172A', fontWeight: 600, fontSize: '12px' }}>{d.scheduledTime || 'PHASE 1 (11:00 AM - 02:00 PM)'}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                        <span style={{ color: '#64748B', fontWeight: 500 }}>Status</span>
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '3px 10px',
+                          borderRadius: '12px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                          background: d.status === 'DELIVERED' ? '#DCFCE7' : d.status === 'OUT' ? '#E0F2FE' : d.status === 'FAILED' ? '#FEE2E2' : '#FEF3C7',
+                          color: d.status === 'DELIVERED' ? '#15803D' : d.status === 'OUT' ? '#0369A1' : d.status === 'FAILED' ? '#991B1B' : '#B45309',
+                          border: `1px solid ${d.status === 'DELIVERED' ? '#86EFAC' : d.status === 'OUT' ? '#BAE6FD' : d.status === 'FAILED' ? '#FCA5A5' : '#FDE68A'}`
+                        }}>
+                          {d.status === 'OUT' ? 'DISPATCHED' : d.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+
+                      {/* Order Items Box (High Contrast Light-Green Box with Dark Green Text) */}
+                      {d.sale?.items && d.sale.items.length > 0 && (
+                        <div style={{
+                          background: '#F0FDF4',
+                          border: '1px solid #DCFCE7',
+                          borderRadius: '10px',
+                          padding: '12px 14px',
+                          marginTop: '4px'
+                        }}>
+                          <div style={{ fontSize: '12px', color: '#166534', fontWeight: 700, marginBottom: '6px', borderBottom: '1px solid #DCFCE7', paddingBottom: '4px' }}>
+                            Order Items ({d.sale.items.length})
+                          </div>
+                          {d.sale.items.map(item => (
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#15803D', fontWeight: 600, margin: '4px 0' }}>
+                              <span>• {item.itemName}</span>
+                              <span style={{ color: '#166534', fontWeight: 700 }}>{item.qty} {item.unit}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {d.deliveredAt && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', background: '#F8FAFC', padding: '6px 10px', borderRadius: '6px', color: '#166534', fontWeight: 600 }}>
+                          <span>Delivered At:</span>
+                          <span>{fmtDateTime(d.deliveredAt)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card Action Footer */}
+                    <div style={{ padding: '12px 18px 16px', background: '#F8FAFC', borderTop: '1px solid #F1F5F9' }}>
+                      {d.status !== 'DELIVERED' ? (
+                        <button 
+                          style={{
+                            width: '100%',
+                            padding: '12px 18px',
+                            background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                            color: '#FFFFFF',
+                            fontWeight: 700,
+                            borderRadius: '8px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            fontSize: '15px',
+                            boxShadow: '0 4px 12px rgba(22, 163, 74, 0.35)',
+                            transition: 'all 0.2s ease'
+                          }} 
+                          onClick={() => updateStatus(d.id, 'DELIVERED')}
+                        >
+                          ✅ Mark as Delivered
+                        </button>
+                      ) : (
+                        <div style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          background: '#DCFCE7',
+                          color: '#15803D',
+                          textAlign: 'center',
+                          fontWeight: 700,
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          border: '1px solid #86EFAC'
+                        }}>
+                          ✓ Completed & Delivered ({fmtDateTime(d.deliveredAt || d.date)})
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </>
+                ))}
+              </div>
+          </div>
         )}
       </div>
     </DashboardLayout>

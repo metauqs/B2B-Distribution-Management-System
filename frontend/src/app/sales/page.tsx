@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MobileInvoiceCard } from '@/components/sales/MobileInvoiceCard';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
+import { apiFetch } from '@/utils/apiFetch';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
@@ -329,6 +330,7 @@ export default function SalesPage() {
   // ── Submit invoice ────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!selClient)           return showToast('❌ Select a client first');
+    if (!selEmpId)            return showToast('❌ Please select a Delivery Staff member');
     if (!items.some(i => i.itemName && i.qty > 0)) return showToast('❌ Add at least one item');
 
     const calcSubtotal = items.filter(i => i.itemName && i.qty > 0).reduce((s, i) => s + (Number(i.qty) * Number(i.rate)), 0);
@@ -339,7 +341,7 @@ export default function SalesPage() {
 
     setSaving(true);
     try {
-      const res  = await fetch('/api/sales', {
+      const res  = await apiFetch('/api/sales', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientId:       selClient.id,
@@ -1091,12 +1093,16 @@ export default function SalesPage() {
                   )}
 
                   <div className="va-field" style={{ marginTop: 10 }}>
-                    <label>Delivery Employee (Active Staff)</label>
-                    <select value={selEmpId} onChange={e => setSelEmpId(e.target.value)}
-                      style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)' }}>
-                      <option value="">— Select Delivery Staff —</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
+                    <label style={{ fontWeight: 600 }}>Delivery Staff (Required) *</label>
+                    <select 
+                      value={selEmpId} 
+                      onChange={e => setSelEmpId(e.target.value)}
+                      required
+                      style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', fontWeight: 500 }}
+                    >
+                      <option value="">— Select Delivery Staff Member —</option>
+                      {employees.filter(emp => emp.role === 'DELIVERY_STAFF' || emp.role === 'Delivery Staff').map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name} {emp.phone ? `(${emp.phone})` : ''}</option>
                       ))}
                     </select>
                   </div>
