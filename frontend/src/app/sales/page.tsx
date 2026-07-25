@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MobileInvoiceCard } from '@/components/sales/MobileInvoiceCard';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
-import { loadBrandConfig, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
+import { loadBrandConfig, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64 } from '@/utils/documentTemplates';
 import html2canvas from 'html2canvas';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
@@ -512,6 +512,68 @@ export default function SalesPage() {
       window.location.origin,
     );
     writeAndDownload(w, html, `Invoice_${s.invoiceNo}.pdf`);
+  };
+
+  // ── Download Invoice as JPG ───────────────────────────────────────────────────────
+  const downloadInvoiceJPG = async (s: Sale) => {
+    setSaving(true);
+    try {
+      const brand = await loadBrandConfig();
+      const html = generateInvoiceHTML(
+        {
+          invoiceNo:           s.invoiceNo,
+          date:                s.date,
+          paymentMode:         s.paymentMode,
+          status:              s.status,
+          clientName:          s.client?.name ?? '—',
+          clientId:            s.client?.clientId,
+          clientPhone:         s.client?.phone,
+          clientWhatsapp:      s.client?.whatsapp,
+          clientType:          s.client?.type,
+          clientAddress:       s.client?.address,
+          deliveryLocation:    s.client?.deliveryLocation,
+          employeeName:        s.employee?.name,
+          employeePhone:       s.employee?.phone,
+          deliveryDate:        s.deliveryDate,
+          deliveryTime:        s.deliveryTime,
+          items: s.items.map(i => ({
+            itemName: i.itemName,
+            qty:      i.qty,
+            unit:     i.unit,
+            rate:     i.rate,
+            amount:   i.amount,
+            urduName: i.product?.urduName,
+          })),
+          previousBalance:     s.previousBalance,
+          previousBalanceDate: s.previousBalanceDate,
+          total:               s.total,
+          paid:                s.paid,
+          balance:             s.balance,
+          notes:               s.notes,
+        },
+        brand,
+        window.location.origin,
+      );
+      
+      const imgBase64 = await generateTemplateImageBase64(html);
+      if (!imgBase64) {
+        showToast('❌ Failed to generate image');
+        return;
+      }
+      
+      const link = document.createElement('a');
+      link.href = imgBase64;
+      link.download = `Invoice_${s.invoiceNo}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('✅ Invoice JPG downloaded');
+    } catch (err) {
+      console.error(err);
+      showToast('❌ Error generating JPG');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── KPIs for list view ─────────────────────────────────────────────────────
@@ -1093,6 +1155,7 @@ export default function SalesPage() {
                 <div className="hidden md:flex" style={{ gap: 8 }}>
                   <button className="va-btn secondary small" onClick={() => printInvoice(detailSale)}>🖨️ Print</button>
                   <button className="va-btn secondary small" onClick={() => downloadInvoice(detailSale)}>💾 Download PDF</button>
+                  <button className="va-btn secondary small" onClick={() => downloadInvoiceJPG(detailSale)}>🖼️ Download JPG</button>
                   <button className="va-btn secondary small" onClick={() => shareWhatsApp(detailSale)} style={{ background: '#25D366', color: '#fff', border: 'none' }}>📲 WhatsApp</button>
                 </div>
               )}
@@ -1320,6 +1383,9 @@ export default function SalesPage() {
                     </button>
                     <button className="card-btn" onClick={() => downloadInvoice(detailSale)}>
                       💾 Download PDF
+                    </button>
+                    <button className="card-btn" onClick={() => downloadInvoiceJPG(detailSale)}>
+                      🖼️ Download JPG
                     </button>
                     <button
                       className="card-btn primary"
