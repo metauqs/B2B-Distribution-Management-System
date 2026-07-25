@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
-import { loadBrandConfig, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 
 interface PurchaseItem { id?: string; itemName: string; qty: number; unit: string; rate: number; amount: number; productId?: string; }
 interface Purchase {
@@ -182,7 +182,7 @@ export default function PurchasesPage() {
   const handlePrintClick = async (p: Purchase) => {
     const w = openPrintWindow();
     if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfig();
+    const brand = await loadBrandConfigWithLogo();
     const html = generatePurchaseHTML(
       {
         voucherNo: p.id.slice(-6).toUpperCase(),
@@ -212,7 +212,7 @@ export default function PurchasesPage() {
   const handleDownloadClick = async (p: Purchase) => {
     const w = openDownloadWindow();
     if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfig();
+    const brand = await loadBrandConfigWithLogo();
     const html = generatePurchaseHTML(
       {
         voucherNo: p.id.slice(-6).toUpperCase(),

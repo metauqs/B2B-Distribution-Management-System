@@ -19,7 +19,8 @@
     "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "puppeteer": "^25.3.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

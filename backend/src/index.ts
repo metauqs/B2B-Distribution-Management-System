@@ -23,6 +23,7 @@ import vehiclesRouter from './routes/vehicles';
 import broadcastsRouter from './routes/broadcasts';
 import settingsRouter from './routes/settings';
 import employeesRouter from './routes/employees';
+import renderRouter from './routes/render';
 
 // Import Middleware
 import { authMiddleware } from './middleware/auth';
@@ -56,6 +57,9 @@ app.use('/api/auth', authRouter);
 app.get('/api/health', (req, res) => {
   res.json({ success: true, status: 'OK', timestamp: new Date() });
 });
+
+// Render routes (public to allow direct PDF/PNG downloads)
+app.use('/api/render', renderRouter);
 
 // Protected routes
 app.use(authMiddleware);

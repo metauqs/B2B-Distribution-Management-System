@@ -53,12 +53,12 @@ export function BillModal({ sale, client, onClose, onDelete }: BillModalProps) {
         th{text-align:left;padding:7px 4px;border-bottom:1.5px solid #1F3D2B;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#1F3D2B;}
         th.num,td.num{text-align:right;}th.item-col{text-align:right;}
         td{padding:8px 4px;border-bottom:1px solid #EDEFE6;vertical-align:middle;}td.item-col{text-align:right;font-size:16px;}
-        .va-urdu{font-family:'Noto Nastaliq Urdu','IBM Plex Sans',sans-serif;font-weight:700;direction:rtl;unicode-bidi:isolate;line-height:1.9;}
+        .va-urdu{font-family:'Noto Sans Arabic','Segoe UI',sans-serif;font-weight:600;direction:rtl;unicode-bidi:isolate;line-height:1.3;letter-spacing:normal!important;text-transform:none!important;}
         .va-bill-total{display:flex;justify-content:space-between;align-items:center;border-top:2px dashed #DCE0D2;padding-top:12px;margin-top:4px;}
         .va-bill-total .lbl{font-size:12px;color:#7A7C6E;text-transform:uppercase;letter-spacing:.05em;}.va-bill-total .amt{font-family:'Fraunces',serif;font-size:24px;font-weight:700;color:#1F3D2B;}
         .bakaya{display:flex;justify-content:space-between;align-items:center;border-radius:6px;padding:10px 12px;margin-top:10px;}
         .bakaya.has-due{background:#FBEAEA;border:1px solid #E9C6C6;}.bakaya:not(.has-due){background:#EDEFE6;border:1px solid #DCE0D2;}
-        .bakaya .lbl{font-size:12px;color:#7A7C6E;text-transform:uppercase;letter-spacing:.05em;}.bakaya .urdu-tag{font-family:'Noto Nastaliq Urdu',sans-serif;font-weight:700;font-size:15px;text-transform:none;letter-spacing:0;color:#1F3D2B;margin-right:6px;direction:rtl;display:inline-block;}
+        .bakaya .lbl{font-size:12px;color:#7A7C6E;text-transform:uppercase;letter-spacing:.05em;}.bakaya .urdu-tag{font-family:'Noto Sans Arabic',sans-serif;font-weight:600;font-size:13px;text-transform:none!important;letter-spacing:normal!important;color:#1F3D2B;margin-right:6px;direction:rtl;display:inline-block;}
         .bakaya .amt{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;}.bakaya.has-due .amt{color:#A83E3E;}.bakaya:not(.has-due) .amt{color:#3E7A4E;}
         .foot{text-align:center;margin-top:16px;font-size:11px;color:#7A7C6E;padding-bottom:24px;}
       </style>

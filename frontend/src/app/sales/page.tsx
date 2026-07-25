@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MobileInvoiceCard } from '@/components/sales/MobileInvoiceCard';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
-import { loadBrandConfig, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64 } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64 } from '@/utils/documentTemplates';
 import html2canvas from 'html2canvas';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
@@ -407,7 +407,7 @@ export default function SalesPage() {
     // Open window synchronously first — avoids browser popup blocker
     const w = openPrintWindow();
     if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfig();
+    const brand = await loadBrandConfigWithLogo();
     const html = generateInvoiceHTML(
       {
         invoiceNo:           s.invoiceNo,
@@ -475,7 +475,7 @@ export default function SalesPage() {
   const downloadInvoice = async (s: Sale) => {
     const w = openDownloadWindow();
     if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfig();
+    const brand = await loadBrandConfigWithLogo();
     const html = generateInvoiceHTML(
       {
         invoiceNo:           s.invoiceNo,
@@ -518,7 +518,7 @@ export default function SalesPage() {
   const downloadInvoiceJPG = async (s: Sale) => {
     setSaving(true);
     try {
-      const brand = await loadBrandConfig();
+      const brand = await loadBrandConfigWithLogo();
       const html = generateInvoiceHTML(
         {
           invoiceNo:           s.invoiceNo,

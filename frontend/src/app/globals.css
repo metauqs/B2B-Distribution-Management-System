@@ -695,15 +695,16 @@ button.va-icon:hover { color: var(--danger); }
   letter-spacing: 0.05em;
 }
 .va-bill-bakaya .lbl .urdu-tag {
-  font-family: 'Noto Nastaliq Urdu', sans-serif;
-  font-weight: 700;
-  font-size: 15px;
-  text-transform: none;
-  letter-spacing: 0;
+  font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: none !important;
+  letter-spacing: normal !important;
   color: var(--forest);
   margin-right: 6px;
   direction: rtl;
   display: inline-block;
+  line-height: 1.3;
 }
 .va-bill-bakaya .amt {
   font-family: 'IBM Plex Mono', monospace;
@@ -718,11 +719,13 @@ button.va-icon:hover { color: var(--danger); }
 
 /* ─── Urdu font for bills ─────────────────────────────────────────────────── */
 .va-urdu {
-  font-family: 'Noto Nastaliq Urdu', 'IBM Plex Sans', sans-serif;
-  font-weight: 700;
+  font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
+  font-weight: 600;
   direction: rtl;
   unicode-bidi: isolate;
-  line-height: 1.9;
+  line-height: 1.3;
+  letter-spacing: normal !important;
+  text-transform: none !important;
 }
 
 /* ─── Confirm / Delete modal ──────────────────────────────────────────────── */

@@ -16,6 +16,7 @@
  */
 
 import html2canvas from 'html2canvas';
+import { DEFAULT_LOGO_BASE64 } from './logoBase64';
 
 // ─── Brand Configuration ───────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ export interface BrandConfig {
 export const DEFAULT_BRAND: BrandConfig = {
   companyName:   'HALAL VEGG SUPPLIES',
   tagline:       'Fresh Produce Supply Management',
-  logoUrl:       '/logo-transparent.png',
+  logoUrl:       DEFAULT_LOGO_BASE64,
   primaryColor:  '#1A3C28',
   accentColor:   '#2D6A4F',
   lightBg:       '#F4F8F0',
@@ -42,6 +43,27 @@ export const DEFAULT_BRAND: BrandConfig = {
   contactNumber: '03061110041',
   footerLine:    'For Payments & WhatsApp Orders',
 };
+
+/**
+ * Converts a relative logo URL to an absolute base64 data URI so the logo
+ * always renders in both print windows and server-side Puppeteer.
+ */
+async function resolveLogoDataUri(logoUrl: string, origin: string): Promise<string> {
+  try {
+    const absolute = logoUrl.startsWith('http') ? logoUrl : `${origin}${logoUrl}`;
+    const res = await fetch(absolute);
+    if (!res.ok) return logoUrl;
+    const blob = await res.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return logoUrl;
+  }
+}
 
 /**
  * Fetch brand config from /api/broadcasts/settings and merge with defaults.
@@ -63,6 +85,16 @@ export async function loadBrandConfig(): Promise<BrandConfig> {
   }
 }
 
+/**
+ * Load brand config AND embed the logo as a base64 data URI so it renders
+ * correctly in both popup print windows and server-side Puppeteer.
+ */
+export async function loadBrandConfigWithLogo(origin = typeof window !== 'undefined' ? window.location.origin : ''): Promise<BrandConfig> {
+  const brand = await loadBrandConfig();
+  const logoDataUri = await resolveLogoDataUri(brand.logoUrl, origin);
+  return { ...brand, logoUrl: logoDataUri };
+}
+
 // ─── Shared CSS Design System ─────────────────────────────────────────────────
 
 /**
@@ -72,7 +104,7 @@ export async function loadBrandConfig(): Promise<BrandConfig> {
  */
 function buildDocStyles(b: BrandConfig): string {
   return `
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap');
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -216,48 +248,60 @@ function buildDocStyles(b: BrandConfig): string {
       line-height: 1.4;
     }
     .doc-kpi-urdu {
-      font-family: 'Noto Nastaliq Urdu', 'Geeza Pro', 'Microsoft Urdu Typesetting', 'Arabic Typesetting', 'Noto Sans Arabic', sans-serif;
-      font-size: 12px;
+      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-size: 11px;
       color: #5A7A58;
       direction: rtl;
-      unicode-bidi: embed;
+      unicode-bidi: isolate;
       display: block;
-      margin-top: 4px;
+      margin-top: 2px;
       margin-bottom: 2px;
-      line-height: 2.2;
+      line-height: 1.3;
+      letter-spacing: normal !important;
+      text-transform: none !important;
+      font-weight: 500;
     }
     .urdu-inline {
-      font-family: 'Noto Nastaliq Urdu', 'Geeza Pro', 'Microsoft Urdu Typesetting', 'Arabic Typesetting', 'Noto Sans Arabic', sans-serif;
+      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.85);
-      margin-left: 6px;
+      color: rgba(255, 255, 255, 0.9);
+      margin-left: 4px;
       direction: rtl;
-      unicode-bidi: embed;
+      unicode-bidi: isolate;
       vertical-align: middle;
       display: inline-block;
-      line-height: 2.2;
+      line-height: 1.3;
+      letter-spacing: normal !important;
+      text-transform: none !important;
+      font-weight: 500;
     }
     .urdu-inline-dark {
-      font-family: 'Noto Nastaliq Urdu', 'Geeza Pro', 'Microsoft Urdu Typesetting', 'Arabic Typesetting', 'Noto Sans Arabic', sans-serif;
-      font-size: 11px;
-      color: #7A8C79;
-      margin-left: 6px;
-      direction: rtl;
-      unicode-bidi: embed;
-      vertical-align: middle;
-      display: inline-block;
-      line-height: 2.2;
-    }
-    .urdu-inline-val {
-      font-family: 'Noto Nastaliq Urdu', 'Geeza Pro', 'Microsoft Urdu Typesetting', 'Arabic Typesetting', 'Noto Sans Arabic', sans-serif;
+      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 11px;
       color: #5A7A58;
-      margin-left: 6px;
+      margin-left: 4px;
       direction: rtl;
-      unicode-bidi: embed;
+      unicode-bidi: isolate;
       vertical-align: middle;
       display: inline-block;
-      line-height: 2.2;
+      line-height: 1.3;
+      letter-spacing: normal !important;
+      text-transform: none !important;
+      font-weight: 500;
+    }
+    .urdu-inline-val {
+      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-size: 11px;
+      color: #5A7A58;
+      margin-left: 4px;
+      direction: rtl;
+      unicode-bidi: isolate;
+      vertical-align: middle;
+      display: inline-block;
+      line-height: 1.3;
+      letter-spacing: normal !important;
+      text-transform: none !important;
+      font-weight: 500;
     }
     .doc-kpi-value {
       font-family: 'IBM Plex Mono', monospace;
@@ -305,15 +349,18 @@ function buildDocStyles(b: BrandConfig): string {
     .doc-table tbody td.mono   { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
     .doc-table tbody td.muted  { color: #7A8C79; }
     .doc-table tbody td.urdu   {
-      font-family: 'Noto Nastaliq Urdu', 'Geeza Pro', 'Microsoft Urdu Typesetting', 'Arabic Typesetting', 'Noto Sans Arabic', sans-serif;
+      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       direction: rtl;
-      unicode-bidi: embed;
+      unicode-bidi: isolate;
       text-align: right;
-      font-size: 13px;
+      font-size: 12px;
       color: #3D5C3B;
-      line-height: 2.4;
-      padding-top: 6px;
-      padding-bottom: 6px;
+      line-height: 1.4;
+      padding-top: 5px;
+      padding-bottom: 5px;
+      letter-spacing: normal !important;
+      text-transform: none !important;
+      font-weight: 500;
     }
     .doc-table tbody td.debit  { color: #B5533C; font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
     .doc-table tbody td.credit { color: #2D6A4F; font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
@@ -344,13 +391,16 @@ function buildDocStyles(b: BrandConfig): string {
     .doc-summary-row .label { color: #4A5C49; }
     .doc-summary-row .label .urdu-sub {
       display: block;
-      font-family: 'Noto Nastaliq Urdu', 'Geeza Pro', 'Microsoft Urdu Typesetting', 'Arabic Typesetting', 'Noto Sans Arabic', sans-serif;
+      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 11px;
       color: #7A9C78;
       direction: rtl;
-      unicode-bidi: embed;
-      margin-top: 4px;
-      line-height: 2.2;
+      unicode-bidi: isolate;
+      margin-top: 2px;
+      line-height: 1.3;
+      letter-spacing: normal !important;
+      text-transform: none !important;
+      font-weight: 500;
     }
     .doc-summary-row .val {
       font-family: 'IBM Plex Mono', monospace;
@@ -486,11 +536,14 @@ function buildHeader(
   refLine: string,
   origin: string
 ): string {
-  const logoSrc = b.logoUrl.startsWith('http') ? b.logoUrl : `${origin}${b.logoUrl}`;
+  const logoSrc = (b.logoUrl && (b.logoUrl.startsWith('data:') || b.logoUrl.startsWith('http')))
+    ? b.logoUrl
+    : (b.logoUrl && b.logoUrl !== '/logo-transparent.png' ? `${origin}${b.logoUrl}` : DEFAULT_LOGO_BASE64);
+
   return `
     <div class="doc-header">
       <div class="doc-header-brand">
-        <img class="doc-header-logo" src="${logoSrc}" alt="${b.companyName}" onerror="this.style.display='none'">
+        <img class="doc-header-logo" src="${logoSrc}" alt="${b.companyName}">
         <div>
           <div class="doc-header-tagline">${b.tagline}</div>
         </div>
@@ -624,21 +677,53 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     </div>
   `;
 
-  const itemRows = inv.items.map((item, i) => `
+  // Split items into two halves for the 2-column layout
+  const half = Math.ceil(inv.items.length / 2);
+  const col1Items = inv.items.slice(0, half);
+  const col2Items = inv.items.slice(half);
+
+  const buildColRows = (items: InvoiceItem[], startIndex: number) => items.map((item, i) => `
     <tr>
-      <td class="center muted">${i + 1}</td>
-      <td>
+      <td class="center muted" style="font-size:10px;padding:4px 6px;">${startIndex + i + 1}</td>
+      <td style="font-size:10px;padding:4px 6px;">
         <strong>${item.itemName}</strong>
-        ${item.urduName ? `<span class="urdu-inline-val">(${item.urduName})</span>` : ''}
+        ${item.urduName ? `<span class="urdu-inline-val" style="font-size:9px;">(${item.urduName})</span>` : ''}
       </td>
-      <td class="center mono">${item.qty}</td>
-      <td class="muted">${item.unit}</td>
-      <td class="right mono">${item.rate.toLocaleString()}</td>
-      <td class="right mono">${item.amount.toLocaleString()}</td>
+      <td class="center mono" style="font-size:10px;padding:4px 6px;">${item.qty} ${item.unit}</td>
+      <td class="right mono" style="font-size:10px;padding:4px 6px;">${item.rate.toLocaleString()}</td>
+      <td class="right mono" style="font-size:10px;padding:4px 6px;font-weight:600;">${item.amount.toLocaleString()}</td>
     </tr>
   `).join('');
 
-  const itemsTable = `
+  const colHeader = `
+    <thead>
+      <tr>
+        <th class="center" style="font-size:9px;padding:5px 6px;">#</th>
+        <th style="font-size:9px;padding:5px 6px;">Item <span class="urdu-inline">(آئٹم)</span></th>
+        <th class="center" style="font-size:9px;padding:5px 6px;">Qty</th>
+        <th class="right" style="font-size:9px;padding:5px 6px;">Rate</th>
+        <th class="right" style="font-size:9px;padding:5px 6px;">Amount</th>
+      </tr>
+    </thead>
+  `;
+
+  // Use 2-column layout when there are more than 15 items, otherwise single column
+  const itemsTable = inv.items.length > 15 ? `
+    <div style="display:flex;gap:10px;align-items:flex-start;margin-top:10px;">
+      <div style="flex:1;min-width:0;">
+        <table class="doc-table" style="width:100%;font-size:10px;">
+          ${colHeader}
+          <tbody>${buildColRows(col1Items, 0)}</tbody>
+        </table>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <table class="doc-table" style="width:100%;font-size:10px;">
+          ${colHeader}
+          <tbody>${buildColRows(col2Items, half)}</tbody>
+        </table>
+      </div>
+    </div>
+  ` : `
     <table class="doc-table">
       <thead>
         <tr>
@@ -651,7 +736,19 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
         </tr>
       </thead>
       <tbody>
-        ${itemRows}
+        ${inv.items.map((item, i) => `
+          <tr>
+            <td class="center muted">${i + 1}</td>
+            <td>
+              <strong>${item.itemName}</strong>
+              ${item.urduName ? `<span class="urdu-inline-val">(${item.urduName})</span>` : ''}
+            </td>
+            <td class="center mono">${item.qty}</td>
+            <td class="muted">${item.unit}</td>
+            <td class="right mono">${item.rate.toLocaleString()}</td>
+            <td class="right mono">${item.amount.toLocaleString()}</td>
+          </tr>
+        `).join('')}
       </tbody>
     </table>
   `;
@@ -893,31 +990,54 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
     origin
   );
 
-  const itemRows = data.items.map((item, i) => `
-    <tr>
-      <td class="center muted">${i + 1}</td>
-      <td><strong>${item.itemName}</strong></td>
-      <td class="urdu">${item.urduName || '—'}</td>
-      <td class="center muted">${item.unit}</td>
-      <td class="right mono" style="color:${brand.primaryColor};font-size:14px;">Rs ${item.sellRate.toLocaleString()}</td>
-    </tr>
-  `).join('');
+  // Split items into two halves for 2-column layout
+  const half = Math.ceil(data.items.length / 2);
+  const col1 = data.items.slice(0, half);
+  const col2 = data.items.slice(half);
+
+  const buildPriceRows = (items: typeof data.items, startIdx: number) =>
+    items.map((item, i) => `
+      <tr>
+        <td class="center muted" style="font-size:10px;padding:4px 6px;">${startIdx + i + 1}</td>
+        <td style="font-size:10px;padding:4px 6px;"><strong>${item.itemName}</strong></td>
+        <td class="urdu" style="font-size:11px;padding:4px 6px;">${item.urduName || '—'}</td>
+        <td class="center muted" style="font-size:10px;padding:4px 6px;">${item.unit}</td>
+        <td class="right mono" style="font-size:11px;padding:4px 6px;color:${brand.primaryColor};font-weight:700;">Rs ${item.sellRate.toLocaleString()}</td>
+      </tr>
+    `).join('');
+
+  const priceColHeader = `
+    <thead>
+      <tr>
+        <th class="center" style="font-size:9px;padding:5px 6px;">#</th>
+        <th style="font-size:9px;padding:5px 6px;">Product <span class="urdu-inline">(پروڈکٹ)</span></th>
+        <th class="right" style="font-size:9px;padding:5px 6px;"><span class="urdu-inline" style="color:#FFF;">اردو نام</span></th>
+        <th class="center" style="font-size:9px;padding:5px 6px;">Unit</th>
+        <th class="right" style="font-size:9px;padding:5px 6px;">Rate (Rs)</th>
+      </tr>
+    </thead>
+  `;
 
   const table = `
-    <table class="doc-table">
-      <thead>
-        <tr>
-          <th class="center">#</th>
-          <th>Product <span class="urdu-inline">(پروڈکٹ)</span></th>
-          <th class="right"><span class="urdu-inline" style="color:#FFF;">اردو نام</span></th>
-          <th class="center">Unit</th>
-          <th class="right">Rate (Rs)</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${itemRows || '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:20px;">No rates available for this date</td></tr>'}
-      </tbody>
-    </table>
+    <div style="display:flex;gap:12px;align-items:flex-start;margin-top:10px;">
+      <div style="flex:1;min-width:0;">
+        <table class="doc-table" style="width:100%;">
+          ${priceColHeader}
+          <tbody>
+            ${col1.length > 0 ? buildPriceRows(col1, 0) : '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:20px;">No rates available</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      ${col2.length > 0 ? `
+      <div style="flex:1;min-width:0;">
+        <table class="doc-table" style="width:100%;">
+          ${priceColHeader}
+          <tbody>
+            ${buildPriceRows(col2, half)}
+          </tbody>
+        </table>
+      </div>` : '<div style="flex:1;"></div>'}
+    </div>
   `;
 
   const notesBlock = data.notes ? `<div class="doc-notes"><strong>Note:</strong> ${data.notes}</div>` : '';
@@ -1352,97 +1472,126 @@ export function writeAndDownload(w: Window, html: string, filename?: string): vo
 }
 
 /**
- * Renders any unified template HTML to a base64 JPEG image (data URI) using SVG foreignObject.
- * This guarantees that JPG preview, JPG download, and WhatsApp image shares display
- * cursive shaped RTL Urdu letters correctly (pixel-perfect matching browser/PDF rendering).
+ * Generates a high-quality PNG image from an invoice/document HTML string.
+ *
+ * Pipeline (in order of preference):
+ *  1. Backend Puppeteer → PDF bytes  →  pdfjs-dist renders page 1 to canvas  →  PNG
+ *  2. Backend Puppeteer → direct PNG screenshot (no RTL breakage, 3× DPI)
+ *  3. Client-side SVG foreignObject (may break complex RTL ligatures)
+ *  4. html2canvas fallback (last resort)
+ *
+ * Using Puppeteer's headless Chrome guarantees HarfBuzz-shaped Urdu glyphs
+ * that match the PDF output exactly.
  */
 export async function generateTemplateImageBase64(html: string): Promise<string> {
   if (typeof window === 'undefined') return '';
 
+  // ── Step 1: PDF → pdfjs-dist → canvas ──────────────────────────────────────
+  try {
+    const pdfRes = await fetch('/api/render/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html, width: 794 }),
+      signal: AbortSignal.timeout(45000),
+    });
+
+    if (!pdfRes.ok) throw new Error(`PDF endpoint: ${pdfRes.status}`);
+
+    const pdfBytes = new Uint8Array(await pdfRes.arrayBuffer());
+
+    // Dynamically import pdfjs-dist to avoid SSR issues
+    const pdfjs = await import('pdfjs-dist');
+    // Use the legacy build worker to avoid bundler issues in Next.js
+    pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+
+    const pdfDoc = await pdfjs.getDocument({ data: pdfBytes }).promise;
+    const page = await pdfDoc.getPage(1);
+
+    // Render at 3× scale for retina quality
+    const SCALE = 3;
+    const viewport = page.getViewport({ scale: SCALE });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+    await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+
+    return canvas.toDataURL('image/png');
+  } catch (pdfErr) {
+    console.warn('PDF→pdfjs pipeline failed, trying direct PNG screenshot:', pdfErr);
+  }
+
+  // ── Step 2: Direct PNG screenshot from backend Puppeteer ───────────────────
+  try {
+    const pngRes = await fetch('/api/render/png', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html, width: 794 }),
+      signal: AbortSignal.timeout(45000),
+    });
+
+    if (!pngRes.ok) throw new Error(`PNG endpoint: ${pngRes.status}`);
+
+    const blob = await pngRes.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (pngErr) {
+    console.warn('Direct PNG screenshot failed, falling back to client-side SVG:', pngErr);
+  }
+
+  // ── Step 3: Client-side SVG foreignObject ──────────────────────────────────
   const container = document.createElement('div');
-  // Position offscreen with a fixed typical page width
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.top = '0';
-  container.style.width = '780px';
-  container.style.background = '#FFFFFF';
-  container.style.zIndex = '-1000';
-  
-  // Strip script tags to avoid double printing or executing scripts twice
+  container.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;background:#fff;z-index:-1000;';
   const cleanHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
   container.innerHTML = cleanHtml;
   document.body.appendChild(container);
 
   try {
-    // Wait for all web fonts (including Noto Nastaliq Urdu) to be fully loaded in the browser context
-    if ((document as any).fonts) {
-      await (document as any).fonts.ready;
-    }
-    // Safety buffer for rendering tree parse and layout calculations
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    if ((document as any).fonts?.ready) await (document as any).fonts.ready;
+    await new Promise((r) => setTimeout(r, 900));
 
-    const width = 780;
-    const height = container.scrollHeight || 1000;
+    const W = 794;
+    const H = container.scrollHeight || 1123;
 
-    // Build the SVG code with foreignObject wrapper
-    const svgHtml = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-        <foreignObject width="100%" height="100%">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="background:#ffffff;margin:0;padding:0;width:${width}px;height:${height}px;">
-            ${cleanHtml}
-          </div>
-        </foreignObject>
-      </svg>
-    `;
+    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+      <foreignObject width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff;width:${W}px;height:${H}px;">${cleanHtml}</div>
+      </foreignObject>
+    </svg>`;
 
-    // Convert to Blob URL to bypass DOM String limits
-    const blob = new Blob([svgHtml], { type: 'image/svg+xml;charset=utf-8' });
+    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
 
-    // Load into Image element
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-
-    const dataUrl: string = await new Promise((resolve, reject) => {
+    return await new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        // Render at 2x scale for retina/high-quality resolution
-        canvas.width = width * 2;
-        canvas.height = height * 2;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.scale(2, 2);
-          ctx.drawImage(img, 0, 0);
-          resolve(canvas.toDataURL('image/jpeg', 0.95));
-        } else {
-          reject(new Error('Canvas context failed'));
-        }
+        const cvs = document.createElement('canvas');
+        cvs.width = W * 2; cvs.height = H * 2;
+        const c = cvs.getContext('2d');
+        if (c) { c.scale(2, 2); c.drawImage(img, 0, 0); resolve(cvs.toDataURL('image/png')); }
+        else reject(new Error('No 2d context'));
         URL.revokeObjectURL(url);
       };
-      img.onerror = (e) => {
-        URL.revokeObjectURL(url);
-        reject(e);
-      };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
       img.src = url;
     });
-
-    return dataUrl;
-  } catch (err) {
-    console.warn('SVG screenshot failed, falling back to html2canvas:', err);
-    // Fallback to html2canvas if SVG method fails
-    const canvas = await html2canvas(container, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-    });
-    return canvas.toDataURL('image/jpeg', 0.95);
+  } catch (svgErr) {
+    console.warn('SVG fallback failed, using html2canvas:', svgErr);
+    // ── Step 4: html2canvas last resort ─────────────────────────────────────
+    const cvs = await html2canvas(container, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#fff', logging: false });
+    return cvs.toDataURL('image/png');
   } finally {
-    if (container.parentNode) {
-      container.parentNode.removeChild(container);
-    }
+    container.parentNode?.removeChild(container);
   }
 }
+
 
 

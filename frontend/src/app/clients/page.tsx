@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime } from '@/utils/formatters';
-import { loadBrandConfig, generateStatementHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generateStatementHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
 import Icon from '@mdi/react';
 import {
@@ -327,7 +327,7 @@ export default function ClientsPage() {
     // Open window synchronously first — avoids browser popup blocker
     const w = openPrintWindow();
     if (!w) return;
-    const brand = await loadBrandConfig();
+    const brand = await loadBrandConfigWithLogo();
     const html = generateStatementHTML(
       {
         clientName:      client.name,
@@ -354,7 +354,7 @@ export default function ClientsPage() {
     // Open window synchronously first — avoids browser popup blocker
     const w = openDownloadWindow();
     if (!w) return;
-    const brand = await loadBrandConfig();
+    const brand = await loadBrandConfigWithLogo();
     const html = generateStatementHTML(
       {
         clientName:      client.name,

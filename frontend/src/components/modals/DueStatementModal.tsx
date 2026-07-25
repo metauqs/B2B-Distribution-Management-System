@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fmtMoney } from '@/utils/formatters';
-import { loadBrandConfig, generateOutstandingDueStatementHTML, generateTemplateImageBase64 } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generateOutstandingDueStatementHTML, generateTemplateImageBase64 } from '@/utils/documentTemplates';
 
 interface OutstandingInvoice {
   invoiceNo: string;
@@ -59,7 +59,7 @@ export function DueStatementModal({ client, invoices, mode, onClose }: DueStatem
   useEffect(() => {
     if (mode === 'share') {
       const prep = async () => {
-        const brand = await loadBrandConfig();
+        const brand = await loadBrandConfigWithLogo();
         const html = generateOutstandingDueStatementHTML({
           clientName: client.name,
           clientId: client.clientId,

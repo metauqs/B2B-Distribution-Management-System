@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
-import { loadBrandConfig, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64 } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64 } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
 
@@ -348,7 +348,7 @@ export default function PriceListPage() {
     try {
       const items = editItems.filter(i => i.sellRate > 0);
       if (items.length === 0) return null;
-      const brand = await loadBrandConfig();
+      const brand = await loadBrandConfigWithLogo();
       const dateStr = fmtDate(targetDate);
       const html = generatePriceListHTML(
         {
@@ -722,7 +722,7 @@ export default function PriceListPage() {
     // Open window synchronously first — avoids browser popup blocker
     const w = openPrintWindow();
     if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfig();
+    const brand = await loadBrandConfigWithLogo();
     const dateStr = fmtDate(targetDate);
     const html = generatePriceListHTML(
       {
@@ -748,7 +748,7 @@ export default function PriceListPage() {
     // Open window synchronously first — avoids browser popup blocker
     const w = openDownloadWindow();
     if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfig();
+    const brand = await loadBrandConfigWithLogo();
     const dateStr = fmtDate(targetDate);
     const html = generatePriceListHTML(
       {
