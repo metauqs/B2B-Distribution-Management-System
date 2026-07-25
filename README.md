@@ -6,7 +6,7 @@ An enterprise-grade **Vegetable Supply Chain & Distribution ERP** tailored for H
 
 ## 📁 System Architecture
 
-The project is structured as a monorepo containing decoupled frontend and backend services:
+The project structured Flow
 
 ```text
 HalalVeggSupplies/
