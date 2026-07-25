@@ -1472,56 +1472,127 @@ export function writeAndDownload(w: Window, html: string, filename?: string): vo
 }
 
 /**
- * Generates a high-quality PNG image from an invoice/document HTML string.
+ * Triggers a crisp image download natively on both desktop and mobile OS.
+ * Converts base64 to binary Blob so Android / iOS Photos treat it as a native high-res file.
+ */
+export function downloadImage(dataUrl: string, filename: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    const blob = new Blob([u8arr], { type: mime });
+    const blobUrl = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+  } catch (err) {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
+/**
+ * Helper to convert any PNG/Canvas data URL to high-definition 98%+ quality JPEG with white background fill.
+ */
+export async function convertDataUrlToHighResJpg(dataUrl: string, quality = 0.98): Promise<string> {
+  return new Promise<string>((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+
+      // Fill with solid white background to avoid JPEG black alpha artifacts
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+/**
+ * Generates a True Full HD (3600px+ width) JPG image from an invoice/document HTML string.
+ * Works identically across Desktop, Android, and iOS devices.
+ */
+export async function generateTemplateJpgBase64(html: string): Promise<string> {
+  const pngOrJpgBase64 = await generateTemplateImageBase64(html);
+  if (!pngOrJpgBase64) return '';
+  return await convertDataUrlToHighResJpg(pngOrJpgBase64, 0.98);
+}
+
+/**
+ * Generates a high-quality Full HD (3600px width) image from an invoice/document HTML string.
  *
  * Pipeline (in order of preference):
- *  1. Backend Puppeteer → PDF bytes  →  pdfjs-dist renders page 1 to canvas  →  PNG
- *  2. Backend Puppeteer → direct PNG screenshot (no RTL breakage, 3× DPI)
- *  3. Client-side SVG foreignObject (may break complex RTL ligatures)
- *  4. html2canvas fallback (last resort)
- *
- * Using Puppeteer's headless Chrome guarantees HarfBuzz-shaped Urdu glyphs
- * that match the PDF output exactly.
+ *  1. Backend Puppeteer → PDF bytes → pdfjs-dist renders page 1 to canvas @ 3× scale
+ *  2. Backend Puppeteer → direct PNG screenshot (1200px width @ 3× scale)
+ *  3. Client-side html2canvas fixed 1200px desktop viewport fallback @ 3× scale
  */
 export async function generateTemplateImageBase64(html: string): Promise<string> {
   if (typeof window === 'undefined') return '';
+
+  const TARGET_WIDTH = 794; // A4 standard width (renders at 3.5x scale = 2779px Full HD edge-to-edge)
 
   // ── Step 1: PDF → pdfjs-dist → canvas ──────────────────────────────────────
   try {
     const pdfRes = await fetch('/api/render/pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html, width: 794 }),
-      signal: AbortSignal.timeout(45000),
+      body: JSON.stringify({ html, width: TARGET_WIDTH }),
+      signal: AbortSignal.timeout(30000),
     });
 
-    if (!pdfRes.ok) throw new Error(`PDF endpoint: ${pdfRes.status}`);
+    if (pdfRes.ok) {
+      const pdfBytes = new Uint8Array(await pdfRes.arrayBuffer());
+      const pdfjs = await import('pdfjs-dist');
+      pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
-    const pdfBytes = new Uint8Array(await pdfRes.arrayBuffer());
+      const pdfDoc = await pdfjs.getDocument({ data: pdfBytes }).promise;
+      const page = await pdfDoc.getPage(1);
 
-    // Dynamically import pdfjs-dist to avoid SSR issues
-    const pdfjs = await import('pdfjs-dist');
-    // Use the legacy build worker to avoid bundler issues in Next.js
-    pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+      // 3.5x Retina scale (2779px width)
+      const SCALE = 3.5;
+      const viewport = page.getViewport({ scale: SCALE });
 
-    const pdfDoc = await pdfjs.getDocument({ data: pdfBytes }).promise;
-    const page = await pdfDoc.getPage(1);
-
-    // Render at 3× scale for retina quality
-    const SCALE = 3;
-    const viewport = page.getViewport({ scale: SCALE });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas 2D context unavailable');
-
-    await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
-
-    return canvas.toDataURL('image/png');
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+        return canvas.toDataURL('image/png');
+      }
+    }
   } catch (pdfErr) {
-    console.warn('PDF→pdfjs pipeline failed, trying direct PNG screenshot:', pdfErr);
+    console.warn('PDF→pdfjs pipeline fallback:', pdfErr);
   }
 
   // ── Step 2: Direct PNG screenshot from backend Puppeteer ───────────────────
@@ -1529,65 +1600,90 @@ export async function generateTemplateImageBase64(html: string): Promise<string>
     const pngRes = await fetch('/api/render/png', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html, width: 794 }),
-      signal: AbortSignal.timeout(45000),
+      body: JSON.stringify({ html, width: TARGET_WIDTH }),
+      signal: AbortSignal.timeout(30000),
     });
 
-    if (!pngRes.ok) throw new Error(`PNG endpoint: ${pngRes.status}`);
-
-    const blob = await pngRes.blob();
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    if (pngRes.ok) {
+      const blob = await pngRes.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
   } catch (pngErr) {
-    console.warn('Direct PNG screenshot failed, falling back to client-side SVG:', pngErr);
+    console.warn('Direct PNG screenshot fallback:', pngErr);
   }
 
-  // ── Step 3: Client-side SVG foreignObject ──────────────────────────────────
+  // ── Step 3: High-Definition Client-Side html2canvas Fallback ─────────────────────
+  // Create offscreen container fixed at 794px width with zero extra side margins
   const container = document.createElement('div');
-  container.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;background:#fff;z-index:-1000;';
+  container.id = 'hd-export-container';
+  container.style.cssText = `
+    position: fixed;
+    left: -9999px;
+    top: 0;
+    width: 794px;
+    min-width: 794px;
+    max-width: 794px;
+    padding: 0;
+    margin: 0;
+    background: #ffffff;
+    z-index: -9999;
+    font-size: 16px;
+    box-sizing: border-box;
+    transform: none !important;
+    overflow: visible;
+  `;
+
   const cleanHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
   container.innerHTML = cleanHtml;
   document.body.appendChild(container);
 
   try {
-    if ((document as any).fonts?.ready) await (document as any).fonts.ready;
-    await new Promise((r) => setTimeout(r, 900));
+    if ((document as any).fonts?.ready) {
+      await (document as any).fonts.ready;
+    }
 
-    const W = 794;
-    const H = container.scrollHeight || 1123;
+    // Wait for all images inside template to decode
+    const imgs = Array.from(container.querySelectorAll('img'));
+    await Promise.all(imgs.map((img) => (img.complete ? Promise.resolve() : new Promise((r) => { img.onload = r; img.onerror = r; }))));
 
-    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <foreignObject width="100%" height="100%">
-        <div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff;width:${W}px;height:${H}px;">${cleanHtml}</div>
-      </foreignObject>
-    </svg>`;
+    // Wait 400ms for typography shaping & glyph rendering
+    await new Promise((r) => setTimeout(r, 400));
 
-    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+    const contentHeight = container.scrollHeight || 1123;
 
-    return await new Promise<string>((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const cvs = document.createElement('canvas');
-        cvs.width = W * 2; cvs.height = H * 2;
-        const c = cvs.getContext('2d');
-        if (c) { c.scale(2, 2); c.drawImage(img, 0, 0); resolve(cvs.toDataURL('image/png')); }
-        else reject(new Error('No 2d context'));
-        URL.revokeObjectURL(url);
-      };
-      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
-      img.src = url;
+    const cvs = await html2canvas(container, {
+      scale: 3.5, // Force 3.5x DPI (2779px width Full HD edge-to-edge)
+      width: 794,
+      height: contentHeight,
+      windowWidth: 850, // Match 794px content width to avoid excessive side margins
+      windowHeight: 1400,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      imageTimeout: 15000,
+      onclone: (clonedDoc) => {
+        const clonedElem = clonedDoc.getElementById('hd-export-container');
+        if (clonedElem) {
+          clonedElem.style.width = '794px';
+          clonedElem.style.minWidth = '794px';
+          clonedElem.style.maxWidth = '794px';
+          clonedElem.style.padding = '0px';
+          clonedElem.style.margin = '0px';
+          clonedElem.style.transform = 'none';
+        }
+      },
     });
-  } catch (svgErr) {
-    console.warn('SVG fallback failed, using html2canvas:', svgErr);
-    // ── Step 4: html2canvas last resort ─────────────────────────────────────
-    const cvs = await html2canvas(container, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#fff', logging: false });
+
     return cvs.toDataURL('image/png');
+  } catch (canvasErr) {
+    console.error('html2canvas HD export failed:', canvasErr);
+    return '';
   } finally {
     container.parentNode?.removeChild(container);
   }

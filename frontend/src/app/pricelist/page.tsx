@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
-import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64 } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
 
@@ -365,7 +365,7 @@ export default function PriceListPage() {
         brand,
         window.location.origin,
       );
-      return await generateTemplateImageBase64(html);
+      return await generateTemplateJpgBase64(html);
     } catch (err) {
       console.error('generateBroadcastImageBase64 error:', err);
       return null;
@@ -446,12 +446,7 @@ export default function PriceListPage() {
         showToast('❌ Image generation failed');
         return;
       }
-      const link = document.createElement('a');
-      link.href = base64Img;
-      link.download = `HalalVeggRates_${targetDate}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadImage(base64Img, `HalalVeggRates_${targetDate}.jpg`);
       showToast('💾 Image downloaded successfully!');
     } catch (err: any) {
       showToast('❌ ' + err.message);
@@ -465,12 +460,7 @@ export default function PriceListPage() {
         showToast('❌ Image generation failed');
         return;
       }
-      const link = document.createElement('a');
-      link.href = base64Img;
-      link.download = `HalalVeggRatesStatus_${targetDate}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadImage(base64Img, `HalalVeggRatesStatus_${targetDate}.jpg`);
       showToast('📢 Status Image downloaded! You can now upload it as your WhatsApp Status.');
     } catch (err: any) {
       showToast('❌ ' + err.message);

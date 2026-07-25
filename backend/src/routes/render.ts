@@ -5,7 +5,7 @@ const router = Router();
 
 // ── Shared Puppeteer helper ────────────────────────────────────────────────────
 
-async function renderPage(html: string, width: number) {
+async function renderPage(html: string, requestedWidth: number) {
   const browser = await puppeteer.launch({
     headless: true,
     args: [
@@ -20,21 +20,27 @@ async function renderPage(html: string, width: number) {
 
   const page = await browser.newPage();
 
-  // A4 at 96 DPI = 794px wide; honour caller's width preference
-  await page.setViewport({ width: Number(width), height: 1123, deviceScaleFactor: 3 });
+  // A4 Standard Width = 794px. Renders at 3.5x scale (2779px Full HD) with zero extra side margins
+  const width = Number(requestedWidth) || 794;
+  await page.setViewport({ width, height: 1123, deviceScaleFactor: 3.5 });
 
   // Inject HTML and wait for all network (fonts, images) to settle
-  await page.setContent(html, { waitUntil: 'networkidle0' as any, timeout: 30000 });
+  await page.setContent(html, { waitUntil: 'networkidle0' as any, timeout: 45000 });
 
-  // Wait for web fonts (Noto Nastaliq Urdu, Inter, IBM Plex Mono) to fully load and shape
+  // Wait for web fonts (Noto Nastaliq Urdu, Inter, IBM Plex Mono) and images to fully load
   await page.evaluate(async () => {
     const d = (globalThis as any).document;
     if (d?.fonts?.ready) await d.fonts.ready;
+
+    // Wait for all images inside document to complete decoding
+    const images = Array.from(d.querySelectorAll('img')) as any[];
+    await Promise.all(images.map((img) => (img.complete ? Promise.resolve() : new Promise((r) => { img.onload = r; img.onerror = r; }))));
+
     // Extra tick for HarfBuzz text shaping to finalise RTL glyph runs
     await new Promise((r) => setTimeout(r, 600));
   });
 
-  return { browser, page };
+  return { browser, page, width };
 }
 
 // ── POST /api/render/pdf ── Returns raw PDF bytes ─────────────────────────────
@@ -80,7 +86,7 @@ router.post('/png', async (req, res) => {
       const d = (globalThis as any).document;
       return d?.body?.scrollHeight || 1123;
     });
-    await page.setViewport({ width: Number(width), height: bodyHeight + 20, deviceScaleFactor: 3 });
+    await page.setViewport({ width: result.width, height: bodyHeight + 10, deviceScaleFactor: 3.5 });
 
     const screenshot = await page.screenshot({ type: 'png', fullPage: true });
 

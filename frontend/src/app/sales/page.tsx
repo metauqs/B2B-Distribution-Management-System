@@ -4,8 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MobileInvoiceCard } from '@/components/sales/MobileInvoiceCard';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
-import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64 } from '@/utils/documentTemplates';
-import html2canvas from 'html2canvas';
+import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
 
@@ -555,18 +554,13 @@ export default function SalesPage() {
         window.location.origin,
       );
       
-      const imgBase64 = await generateTemplateImageBase64(html);
+      const imgBase64 = await generateTemplateJpgBase64(html);
       if (!imgBase64) {
         showToast('❌ Failed to generate image');
         return;
       }
       
-      const link = document.createElement('a');
-      link.href = imgBase64;
-      link.download = `Invoice_${s.invoiceNo}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadImage(imgBase64, `Invoice_${s.invoiceNo}.jpg`);
       showToast('✅ Invoice JPG downloaded');
     } catch (err) {
       console.error(err);

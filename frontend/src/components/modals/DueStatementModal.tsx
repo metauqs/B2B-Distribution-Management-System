@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fmtMoney } from '@/utils/formatters';
-import { loadBrandConfig, loadBrandConfigWithLogo, generateOutstandingDueStatementHTML, generateTemplateImageBase64 } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generateOutstandingDueStatementHTML, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 
 interface OutstandingInvoice {
   invoiceNo: string;
@@ -42,12 +42,12 @@ export function DueStatementModal({ client, invoices, mode, onClose }: DueStatem
   const statementDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const statementTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-  // Generate the high-quality JPG image using central SVG/Canvas utility
+  // Generate the high-quality JPG image using central Full HD utility
   const generateStatementImage = async () => {
     if (!htmlContent) return;
     setRendering(true);
     try {
-      const url = await generateTemplateImageBase64(htmlContent);
+      const url = await generateTemplateJpgBase64(htmlContent);
       setImageUrl(url);
     } catch (err) {
       console.error('Failed to generate statement image:', err);
@@ -91,12 +91,7 @@ export function DueStatementModal({ client, invoices, mode, onClose }: DueStatem
 
   const handleDownload = () => {
     if (!imageUrl) return;
-    const a = document.createElement('a');
-    a.href = imageUrl;
-    a.download = `Due_Statement_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    downloadImage(imageUrl, `Due_Statement_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.jpg`);
   };
 
   const handleSendWhatsApp = () => {
