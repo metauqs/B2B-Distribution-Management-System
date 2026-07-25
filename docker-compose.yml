@@ -1,0 +1,35 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sabzi_ledger_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sabzi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sabzi_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-sabzi_ledger}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-sabzi}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: sabzi_ledger_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@sabziledger.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '5050:80'
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:

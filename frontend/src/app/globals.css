@@ -1,0 +1,1118 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap');
+@import "tailwindcss";
+
+/* ─── Design Tokens ───────────────────────────────────────────────────────── */
+:root {
+  --cream:     #FAF6EC;
+  --paper:     #FFFDF8;
+  --forest:    #1F3D2B;
+  --leaf:      #4A7C59;
+  --mustard:   #C99A2E;
+  --clay:      #B5533C;
+  --ink:       #2B2B26;
+  --line:      #DCE0D2;
+  --line-soft: #EDEFE6;
+  --muted:     #7A7C6E;
+  --danger:    #A83E3E;
+  --ok:        #3E7A4E;
+}
+
+/* ─── Base Reset ──────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; padding: 0; }
+body {
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+}
+
+/* ─── App Shell ───────────────────────────────────────────────────────────── */
+.va-app {
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+  min-height: 100vh;
+  display: flex;
+}
+.va-app h1, .va-app h2, .va-app h3 {
+  font-family: 'Fraunces', serif;
+  font-weight: 700;
+  color: var(--forest);
+  margin: 0;
+}
+.va-app .mono { font-family: 'IBM Plex Mono', monospace; }
+
+/* ─── Sidebar ─────────────────────────────────────────────────────────────── */
+.va-side {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--forest);
+  color: var(--cream);
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 40;
+  overflow-y: auto;
+}
+.va-brand {
+  padding: 0 20px 18px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+  margin-bottom: 10px;
+}
+.va-brand .eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mustard);
+  font-weight: 600;
+}
+.va-brand h1 {
+  color: #fff;
+  font-size: 20px;
+  line-height: 1.15;
+  margin-top: 4px;
+}
+.va-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 10px;
+  overflow-y: auto;
+}
+.va-nav-btn {
+  all: unset;
+  cursor: pointer;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: rgba(250,246,236,0.75);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  transition: background 0.15s, color 0.15s;
+  text-decoration: none;
+  width: 100%;
+}
+.va-nav-btn .num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--mustard);
+  width: 16px;
+  flex-shrink: 0;
+}
+.va-nav-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.va-nav-btn.active { background: var(--leaf); color: #fff; }
+.va-side-foot {
+  padding: 14px 20px 0 20px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  margin-top: 10px;
+  font-size: 11px;
+  color: rgba(250,246,236,0.5);
+}
+
+/* ─── Main Area ───────────────────────────────────────────────────────────── */
+.va-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  margin-left: 200px;
+  min-height: 100vh;
+}
+.va-topbar {
+  padding: 16px 26px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  background: var(--paper);
+  z-index: 30;
+}
+.va-topbar h2 { font-size: 19px; }
+.va-topbar .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.va-date-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
+  padding: 5px 10px;
+  border-radius: 5px;
+  color: var(--forest);
+  white-space: nowrap;
+}
+.va-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 26px 40px 26px;
+}
+
+/* ─── KPI Cards ───────────────────────────────────────────────────────────── */
+.va-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.va-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  position: relative;
+}
+.va-card.accent { border-left: 3px solid var(--mustard); }
+.va-card .label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.va-card .value {
+  font-family: 'Fraunces', serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--forest);
+  margin-top: 4px;
+}
+.va-card .value.neg { color: var(--danger); }
+.va-card .foot { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+/* ─── Panels ──────────────────────────────────────────────────────────────── */
+.va-panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+.va-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.va-panel-head h3 { font-size: 15px; }
+
+/* ─── Tables ──────────────────────────────────────────────────────────────── */
+table.va-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+table.va-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--forest);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--forest);
+  font-weight: 700;
+}
+table.va-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+table.va-table tr:hover td { background: var(--line-soft); }
+table.va-table tr.clickable { cursor: pointer; }
+
+/* ─── Badges ──────────────────────────────────────────────────────────────── */
+.va-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.va-badge.paid, .va-badge.delivered { background: #E4EFE3; color: var(--ok); }
+.va-badge.pending, .va-badge.out    { background: #FBF0DA; color: var(--mustard); }
+.va-badge.due, .va-badge.overdue    { background: #F5E1DE; color: var(--danger); }
+.va-badge.partial                   { background: #EAE7F3; color: #5B4FA0; }
+.va-badge.rating-green              { background: #E4EFE3; color: var(--ok); }
+.va-badge.rating-yellow             { background: #FBF0DA; color: var(--mustard); }
+.va-badge.rating-orange             { background: #FFF0E6; color: #E67E22; }
+.va-badge.rating-red                { background: #F5E1DE; color: var(--danger); }
+.va-badge.rating-new                { background: var(--line-soft); color: var(--muted); }
+
+/* ─── Dot indicators ──────────────────────────────────────────────────────── */
+.va-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+.va-dot.rating-green  { background: var(--ok); }
+.va-dot.rating-yellow { background: var(--mustard); }
+.va-dot.rating-orange { background: #E67E22; }
+.va-dot.rating-red    { background: var(--danger); }
+.va-dot.rating-new    { background: var(--muted); }
+
+/* ─── Buttons ─────────────────────────────────────────────────────────────── */
+button.va-btn, a.va-btn {
+  all: unset;
+  cursor: pointer;
+  padding: 9px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--leaf);
+  color: #fff;
+  text-align: center;
+  display: inline-block;
+  transition: background 0.15s;
+}
+button.va-btn:hover, a.va-btn:hover { background: var(--forest); }
+button.va-btn.secondary, a.va-btn.secondary {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+button.va-btn.secondary:hover, a.va-btn.secondary:hover { background: var(--line-soft); }
+button.va-btn.danger, a.va-btn.danger {
+  background: transparent;
+  color: var(--danger);
+}
+button.va-btn.danger:hover, a.va-btn.danger:hover { background: #F5E5E3; }
+button.va-btn.small, a.va-btn.small { padding: 5px 10px; font-size: 11.5px; }
+
+button.va-icon {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px;
+  transition: color 0.12s;
+}
+button.va-icon:hover { color: var(--danger); }
+.va-row-actions { display: flex; gap: 6px; align-items: center; }
+
+/* ─── Forms ───────────────────────────────────────────────────────────────── */
+.va-form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.va-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.va-field input,
+.va-field select,
+.va-field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 13px;
+  background: var(--cream);
+  color: var(--ink);
+  outline: none;
+  transition: outline 0.1s, background 0.1s;
+}
+.va-field input:focus,
+.va-field select:focus,
+.va-field textarea:focus {
+  outline: 2px solid var(--leaf);
+  outline-offset: 1px;
+  background: #fff;
+}
+
+/* ─── Item rows in sale/purchase forms ────────────────────────────────────── */
+.va-items-list {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.va-item-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto;
+  gap: 8px;
+  padding: 8px 10px;
+  align-items: end;
+  border-bottom: 1px solid var(--line-soft);
+}
+.va-item-row:last-child { border-bottom: none; }
+
+/* ─── Inline Tabs ─────────────────────────────────────────────────────────── */
+.va-tabs-inline {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.va-tabs-inline button {
+  all: unset;
+  cursor: pointer;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  transition: color 0.12s;
+}
+.va-tabs-inline button.active {
+  color: var(--forest);
+  border-bottom-color: var(--mustard);
+}
+
+/* ─── Attention rows ──────────────────────────────────────────────────────── */
+.va-attn-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.va-attn-row:last-child { border-bottom: none; }
+.va-attn-left { display: flex; align-items: center; font-size: 13px; }
+.va-attn-name { font-weight: 600; color: var(--ink); }
+.va-attn-sub { font-size: 11.5px; color: var(--muted); margin-left: 6px; }
+.va-attn-amt {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--danger);
+}
+
+/* ─── Bar charts ──────────────────────────────────────────────────────────── */
+.va-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.va-bar-label { width: 110px; font-size: 12px; flex-shrink: 0; }
+.va-bar-track {
+  flex: 1;
+  height: 16px;
+  background: var(--line-soft);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.va-bar-fill { height: 100%; background: var(--leaf); border-radius: 3px; }
+.va-bar-val {
+  width: 70px;
+  text-align: right;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ─── Rating breakdown stats ──────────────────────────────────────────────── */
+.va-rating-breakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 10px 0 4px;
+}
+.va-rating-stat {
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 9px 11px;
+}
+.va-rating-stat .lbl {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.va-rating-stat .val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.va-rating-reasons {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.va-rating-reasons li {
+  padding: 4px 0 4px 16px;
+  position: relative;
+  line-height: 1.4;
+}
+.va-rating-reasons li::before { content: '—'; position: absolute; left: 0; color: var(--muted); }
+
+/* ─── Sale warnings ───────────────────────────────────────────────────────── */
+.va-sale-warning {
+  margin-top: -4px;
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  display: none;
+}
+.va-sale-warning.show { display: block; }
+.va-sale-warning.rating-red { background: #F5E1DE; color: var(--danger); }
+.va-sale-warning.rating-yellow { background: #FBF0DA; color: #8a6d1f; }
+
+/* ─── Veg chips (Price List) ──────────────────────────────────────────────── */
+.va-veg-scroller {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 7px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 10px;
+  margin-bottom: 8px;
+  scrollbar-width: thin;
+}
+.va-veg-scroller::-webkit-scrollbar { height: 6px; }
+.va-veg-scroller::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+.va-veg-chip {
+  all: unset;
+  cursor: pointer;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--forest);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.va-veg-chip:hover { background: var(--line-soft); border-color: var(--leaf); }
+.va-veg-chip .rate {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 11px;
+}
+.va-rate-input { width: 90px !important; padding: 5px 8px !important; font-family: 'IBM Plex Mono', monospace; }
+
+/* ─── Pricelist scroll ────────────────────────────────────────────────────── */
+.va-pricelist-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+.va-pricelist-scroll table.va-table { margin: 0; }
+.va-pricelist-scroll thead th {
+  position: sticky;
+  top: 0;
+  background: var(--paper);
+  z-index: 1;
+}
+
+/* ─── Client detail grid ──────────────────────────────────────────────────── */
+.va-client-detail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+/* ─── Empty state ─────────────────────────────────────────────────────────── */
+.va-empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+.va-empty .big {
+  font-family: 'Fraunces', serif;
+  font-size: 16px;
+  color: var(--forest);
+  margin-bottom: 4px;
+}
+
+/* ─── Toast ───────────────────────────────────────────────────────────────── */
+.va-toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  background: var(--forest);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+  z-index: 9999;
+  pointer-events: none;
+  animation: toastIn 0.2s ease;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Bill / Print Modal ──────────────────────────────────────────────────── */
+.va-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(31,61,43,0.55);
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 30px 16px;
+  overflow-y: auto;
+}
+.va-modal {
+  background: var(--paper);
+  border-radius: 8px;
+  max-width: 460px;
+  width: 100%;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+}
+.va-modal-actions {
+  display: flex;
+  gap: 8px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--cream);
+  flex-wrap: wrap;
+}
+
+/* Bill layout */
+.va-bill { padding: 0 0 24px 0; background: #fff; }
+.va-bill-head {
+  text-align: center;
+  background: var(--forest);
+  padding: 20px 22px 16px 22px;
+}
+.va-bill-head .biz {
+  font-family: 'Fraunces', serif;
+  font-size: 23px;
+  font-weight: 700;
+  color: #fff;
+}
+.va-bill-head .biz-meta {
+  font-size: 11px;
+  color: rgba(255,255,255,0.75);
+  margin-top: 4px;
+}
+.va-bill-billno {
+  background: var(--mustard);
+  color: var(--forest);
+  text-align: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 14px;
+  letter-spacing: 0.02em;
+}
+.va-bill-body { padding: 20px 24px 0 24px; }
+.va-bill-parties {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 2px dashed var(--line);
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+}
+.va-bill-parties .blk { font-size: 12px; color: var(--ink); }
+.va-bill-parties .blk .cap {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.va-bill-parties .blk strong { font-size: 14px; color: var(--forest); }
+.va-bill-parties .blk .biz-sub { color: var(--leaf); font-weight: 600; font-size: 12px; }
+.va-bill-parties .blk .mono { color: var(--muted); display: block; margin-top: 2px; }
+.va-bill-parties .to { text-align: right; }
+
+.va-bill table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; }
+.va-bill th {
+  text-align: left;
+  padding: 7px 4px;
+  border-bottom: 1.5px solid var(--forest);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--forest);
+}
+.va-bill th.item-col { text-align: right; }
+.va-bill td { padding: 8px 4px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+.va-bill td.num, .va-bill th.num { text-align: right; }
+.va-bill td.item-col { text-align: right; font-size: 16px; }
+
+.va-bill-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 2px dashed var(--line);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.va-bill-total .lbl {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.va-bill-total .amt {
+  font-family: 'Fraunces', serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--forest);
+}
+.va-bill-bakaya {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+.va-bill-bakaya.has-due { background: #FBEAEA; border-color: #E9C6C6; }
+.va-bill-bakaya.grand { background: var(--cream); border-color: var(--mustard); }
+.va-bill-bakaya.grand .amt { color: var(--forest); }
+.va-bill-bakaya .lbl {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.va-bill-bakaya .lbl .urdu-tag {
+  font-family: 'Noto Nastaliq Urdu', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--forest);
+  margin-right: 6px;
+  direction: rtl;
+  display: inline-block;
+}
+.va-bill-bakaya .amt {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--danger);
+}
+.va-bill-bakaya.has-due .amt { color: var(--danger); }
+.va-bill-bakaya:not(.has-due) .amt { color: var(--ok); }
+.va-bill-foot { text-align: center; margin-top: 16px; font-size: 11px; color: var(--muted); }
+.va-bill-status { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
+
+/* ─── Urdu font for bills ─────────────────────────────────────────────────── */
+.va-urdu {
+  font-family: 'Noto Nastaliq Urdu', 'IBM Plex Sans', sans-serif;
+  font-weight: 700;
+  direction: rtl;
+  unicode-bidi: isolate;
+  line-height: 1.9;
+}
+
+/* ─── Confirm / Delete modal ──────────────────────────────────────────────── */
+.va-confirm-modal { max-width: 340px; }
+.va-confirm-body { padding: 24px 20px 18px 20px; }
+.va-confirm-title {
+  font-family: 'Fraunces', serif;
+  font-weight: 700;
+  color: var(--forest);
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+.va-confirm-msg { font-size: 13px; color: var(--ink); line-height: 1.5; }
+
+/* ─── Loading ─────────────────────────────────────────────────────────────── */
+.va-loading {
+  padding: 60px;
+  text-align: center;
+  color: var(--muted);
+  font-family: 'Fraunces', serif;
+  font-size: 15px;
+}
+
+/* ─── Table Scroll Wrapper ───────────────────────────────────────────────── */
+.va-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+.va-table-wrap table.va-table { min-width: unset; }
+
+/* ─── Collapsible Sidebar Layout — Desktop (≥1025px) ─────────────────────── */
+@media (min-width: 1025px) {
+  .va-app {
+    --sidebar-width: 240px;
+    display: flex;
+    transition: all 0.2s ease-in-out;
+  }
+  .va-app.sidebar-collapsed {
+    --sidebar-width: 70px;
+  }
+  .va-side {
+    width: var(--sidebar-width) !important;
+    transition: width 0.2s ease-in-out;
+  }
+  .va-main {
+    margin-left: var(--sidebar-width) !important;
+    transition: margin-left 0.2s ease-in-out;
+  }
+  .sidebar-collapsed .hide-collapsed { display: none !important; }
+  .va-app:not(.sidebar-collapsed) .show-collapsed { display: none !important; }
+  .hide-mobile { display: block !important; }
+  .show-mobile { display: none !important; }
+  .col-span-2-desktop { grid-column: span 2 / span 2; }
+}
+
+/* ─── Tablet Layout (768px – 1024px) ─────────────────────────────────────── */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .va-app {
+    --sidebar-width: 200px;
+    display: flex;
+  }
+  .va-side {
+    width: var(--sidebar-width) !important;
+  }
+  .va-main {
+    margin-left: var(--sidebar-width) !important;
+  }
+  /* On tablet, always show full sidebar (no collapse) */
+  .hide-collapsed { display: block !important; }
+  .show-collapsed { display: none !important; }
+  .hide-mobile { display: block !important; }
+  .show-mobile { display: none !important; }
+  .col-span-2-desktop { grid-column: span 2 / span 2; }
+
+  .va-content { padding: 18px 20px 32px 20px; }
+  .va-topbar { padding: 14px 20px; }
+  .va-cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}
+
+/* ─── Responsive: Mobile (≤767px) ────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .va-app {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Full off-canvas drawer on mobile — 260px width, fully hidden by default */
+  .va-side {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 260px !important;
+    height: 100vh;
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-direction: column;
+    padding: 20px 0;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    display: flex !important;
+    box-shadow: 4px 0 32px rgba(0,0,0,0.3);
+  }
+  .va-side.open {
+    transform: translateX(0);
+  }
+  /* On mobile, always show full nav labels (not icon-only) */
+  .hide-collapsed { display: block !important; }
+  .show-collapsed { display: none !important; }
+  .va-nav {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  .va-main {
+    margin-left: 0 !important;
+    width: 100%;
+    flex: 1;
+    min-width: 0;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  /* Show hamburger menu button, hide close button inside sidebar */
+  .va-mobile-menu-btn { display: flex !important; }
+  .va-mobile-close-btn { display: none !important; }
+
+  /* Topbar */
+  .va-topbar { padding: 10px 14px; flex-wrap: wrap; gap: 6px; }
+  .va-topbar h2 { font-size: 15px; }
+  .va-topbar .sub { font-size: 11px; }
+  .va-date-badge { font-size: 10px; padding: 4px 8px; white-space: nowrap; }
+  .va-content { padding: 12px 12px 40px 12px; overflow-x: hidden; }
+
+  /* KPI Cards */
+  .va-cards { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+  .va-card { padding: 10px 11px; }
+  .va-card .value { font-size: 19px; }
+  .va-card .label { font-size: 10px; }
+  .va-card .foot { font-size: 10.5px; }
+
+  /* Panels */
+  .va-panel { padding: 12px 12px; margin-bottom: 12px; }
+  .va-panel-head { flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .va-panel-head h3 { font-size: 14px; }
+
+  /* Forms */
+  .va-form-row { grid-template-columns: 1fr; gap: 8px; }
+  .va-field input, .va-field select, .va-field textarea {
+    font-size: 16px; /* prevent iOS zoom */
+    padding: 9px 10px;
+    min-height: 44px;
+  }
+
+  /* Invoice item rows */
+  .va-item-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 10px;
+    align-items: start;
+    padding: 10px 8px;
+  }
+  .va-item-row > .va-field:first-child { grid-column: 1 / -1; }
+  .va-item-row > button.va-icon { grid-column: 1 / -1; justify-self: end; padding: 6px 8px; }
+
+  /* Tables: contained in .va-table-wrap divs; standalone tables scroll */
+  .va-panel > table.va-table,
+  .va-panel > div > table.va-table {
+    min-width: 480px;
+  }
+  /* When a table is not wrapped, make the parent panel itself scrollable */
+  table.va-table { min-width: 480px; }
+
+  /* Tab bars — scroll horizontally, no overflow */
+  .va-tabs-inline {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    padding-bottom: 0;
+    margin-bottom: 12px;
+  }
+  .va-tabs-inline::-webkit-scrollbar { display: none; }
+  .va-tabs-inline button {
+    flex-shrink: 0;
+    padding: 7px 12px;
+    font-size: 12px;
+    white-space: nowrap;
+    min-height: 40px;
+  }
+
+  /* Buttons — minimum touch target 44px */
+  button.va-btn, a.va-btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  button.va-btn.small, a.va-btn.small {
+    min-height: 38px;
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+
+  /* Row action groups wrap on mobile */
+  .va-row-actions { flex-wrap: wrap; gap: 6px; }
+
+  /* Bar chart */
+  .va-bar-label { width: 70px; font-size: 10.5px; }
+  .va-bar-val { width: 50px; font-size: 10px; }
+
+  /* Attention rows */
+  .va-attn-row { flex-wrap: wrap; gap: 4px; }
+  .va-attn-name { max-width: 200px; }
+
+  /* Client detail grid */
+  .va-client-detail { grid-template-columns: 1fr; }
+  .va-rating-breakdown { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+
+  /* Modals */
+  .va-modal-backdrop { padding: 10px 6px; align-items: flex-end; }
+  .va-modal {
+    max-width: 100%;
+    border-radius: 12px 12px 0 0;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .va-bill-body { padding: 14px 12px 0 12px; }
+  .va-bill-head { padding: 14px 14px 10px 14px; }
+  .va-modal-actions { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
+  .va-modal-actions > * { flex: 1 1 auto; min-width: 100px; text-align: center; }
+
+  /* Responsive Helpers */
+  .hide-mobile { display: none !important; }
+  .show-mobile { display: flex !important; }
+  .col-span-2-desktop { grid-column: span 1 / span 1; }
+
+  /* Filter bars — inline filters wrap and go full-width */
+  .va-filter-bar {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .va-filter-bar > * {
+    width: 100% !important;
+    min-width: unset !important;
+    flex: none !important;
+  }
+
+  /* Mobile-specific utility classes */
+  .va-mobile-stack { display: flex; flex-direction: column; gap: 8px; }
+  .va-mobile-full { width: 100% !important; }
+  .va-mobile-wrap { flex-wrap: wrap !important; gap: 8px !important; }
+}
+
+/* ─── Small Mobile (≤400px) ──────────────────────────────────────────────── */
+@media (max-width: 400px) {
+  .va-cards { grid-template-columns: 1fr 1fr; }
+  .va-topbar h2 { font-size: 14px; }
+  .va-topbar .sub { display: none; } /* hide subtitle on very small screens */
+  .va-content { padding: 10px 10px 40px 10px; }
+  .va-card .value { font-size: 17px; }
+  .va-panel { padding: 10px 10px; }
+}
+
+/* ─── Print ───────────────────────────────────────────────────────────────── */
+@media print {
+  .va-side, .va-topbar, .va-modal-actions { display: none !important; }
+  .va-main { margin-left: 0; }
+  .va-bill { box-shadow: none; }
+}
+
+/* ─── Global Mobile Leaf Green Card Design System ────────────────────────── */
+.va-mobile-card {
+  background-color: #4A7C59 !important;
+  border: 1px solid #5b8e6a !important;
+  border-radius: 16px !important;
+  padding: 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important;
+  width: 100% !important;
+}
+
+.va-mobile-card header,
+.va-mobile-card .card-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 16px !important;
+  width: 100% !important;
+}
+
+.va-mobile-card .card-title {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: #FFFFFF !important;
+  margin: 0 !important;
+}
+
+.va-mobile-card .card-subtitle {
+  font-size: 12px !important;
+  color: #E2EFEB !important;
+}
+
+.va-mobile-card .card-divider {
+  height: 1px !important;
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+.va-mobile-card .card-info-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  font-size: 14px !important;
+  padding: 4px 0 !important;
+}
+
+.va-mobile-card .card-label {
+  color: #E2EFEB !important;
+  font-weight: 500 !important;
+}
+
+.va-mobile-card .card-value {
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+}
+
+.va-mobile-card .card-value.amount {
+  font-weight: 700 !important;
+}
+
+.va-mobile-card .card-value.danger {
+  color: #FFD1D1 !important;
+  font-weight: 700 !important;
+}
+
+.va-mobile-card button.card-btn,
+.va-mobile-card .card-btn {
+  width: 100% !important;
+  padding: 11px 18px !important;
+  text-align: center !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  background-color: transparent !important;
+  border: 1.5px solid #FFFFFF !important;
+  color: #FFFFFF !important;
+  border-radius: 24px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease-in-out !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  letter-spacing: 0.02em !important;
+}
+.va-mobile-card button.card-btn:hover,
+.va-mobile-card .card-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+.va-mobile-card button.card-btn:active,
+.va-mobile-card .card-btn:active {
+  transform: scale(0.97) !important;
+}
+
+/* Primary actions: Solid white background with dark green text */
+.va-mobile-card button.card-btn.primary,
+.va-mobile-card .card-btn.primary {
+  background-color: #FFFFFF !important;
+  border: 1.5px solid #FFFFFF !important;
+  color: #1b4332 !important; /* forest color */
+}
+.va-mobile-card button.card-btn.primary:hover,
+.va-mobile-card .card-btn.primary:hover {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Danger actions: Outlined transparent layout matching standard card-btn */
+.va-mobile-card button.card-btn.danger,
+.va-mobile-card .card-btn.danger {
+  background-color: transparent !important;
+  border: 1.5px solid #FFFFFF !important;
+  color: #FFFFFF !important;
+}
+.va-mobile-card button.card-btn.danger:hover,
+.va-mobile-card .card-btn.danger:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+

@@ -1,0 +1,412 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
+
+type Tab = 'Overview' | 'Sales' | 'Purchases' | 'Collections' | 'Inventory' | 'Expenses' | 'Aging' | 'Cash Flow';
+
+interface PnlSummary {
+  revenue:        number;
+  cogs:           number;
+  transport:      number;
+  discounts:      number;
+  expenses:       number;
+  collected:      number;
+  grossProfit:    number;
+  netProfit:      number;
+  grossMarginPct: number;
+  netMarginPct:   number;
+  salesCount:     number;
+  purchasesCount: number;
+  wastageCount:   number;
+}
+
+interface ExpenseCategory { category: string; total: number; }
+interface TrendEntry      { date: string; sales: number; purchases: number; expenses: number; profit: number; }
+interface TopItemEntry    { name: string; total: number; qty: number; }
+
+interface PnlReport {
+  period:             { from: string; to: string };
+  summary:            PnlSummary;
+  expensesByCategory: ExpenseCategory[];
+  trend:              TrendEntry[];
+  topItems:           TopItemEntry[];
+}
+
+interface CashFlowReport {
+  period:      { from: string; to: string };
+  inflow:      { collections: number; total: number };
+  outflow:     { purchases: number; expenses: number; supplierPayments: number; total: number };
+  netCashFlow: number;
+  trend:       { date: string; inflow: number; outflow: number; net: number }[];
+}
+
+interface AgingClient { id: string; clientId?: string | null; name: string; phone?: string; rating: string; current: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; total: number; }
+interface AgingReport {
+  clients: AgingClient[];
+  totals:  { current: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; total: number };
+}
+
+export default function ReportsPage() {
+  const [tab, setTab] = useState<Tab>('Overview');
+  const [from, setFrom] = useState(() => dateOffset(-30));
+  const [to, setTo]     = useState(() => todayInputDate());
+
+  const [pnl,      setPnl]      = useState<PnlReport | null>(null);
+  const [cashFlow, setCashFlow] = useState<CashFlowReport | null>(null);
+  const [aging,    setAging]    = useState<AgingReport | null>(null);
+  const [loading,  setLoading]  = useState(true);
+
+  const loadReports = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [pnlRes, cfRes, agRes] = await Promise.all([
+        fetch(`/api/reports/pnl?from=${from}&to=${to}`),
+        fetch(`/api/reports/cashflow?from=${from}&to=${to}`),
+        fetch('/api/reports/aging'),
+      ]);
+      const [pd, cfd, agd] = await Promise.all([pnlRes.json(), cfRes.json(), agRes.json()]);
+      if (pd.success)  setPnl(pd.data);
+      if (cfd.success) setCashFlow(cfd.data);
+      if (agd.success) setAging(agd.data);
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  useEffect(() => { loadReports(); }, [loadReports]);
+
+  // Max value calculators for custom CSS bar charts
+  const maxVegTotal = pnl?.topItems?.length ? Math.max(...pnl.topItems.map(x => x.total), 1) : 1;
+  const maxCatExp   = pnl?.expensesByCategory?.length ? Math.max(...pnl.expensesByCategory.map(x => x.total), 1) : 1;
+
+  const RATING_EMOJI: Record<string, string> = { GREEN: '🟢', YELLOW: '🟡', RED: '🔴', NEW: '⚪' };
+
+  return (
+    <DashboardLayout>
+      {/* Date Range Selector */}
+      <div className="va-panel" style={{ padding: '12px 20px' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)' }}>From</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ display: 'block', padding: '6px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', fontSize: 13 }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)' }}>To</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ display: 'block', padding: '6px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', fontSize: 13 }} />
+          </div>
+          <button className="va-btn small" onClick={loadReports}>↻ Update Reports</button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="va-tabs-inline">
+        {(['Overview', 'Sales', 'Purchases', 'Cash Flow', 'Aging', 'Expenses'] as Tab[]).map(t => (
+          <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="va-loading">Compiling database financials…</div>
+      ) : (
+        <>
+          {/* ─── Overview ─── */}
+          {tab === 'Overview' && pnl && (
+            <>
+              <div className="va-cards">
+                <div className="va-card accent">
+                  <div className="label">Total Revenue</div>
+                  <div className="value">{fmtMoney(pnl.summary.revenue)}</div>
+                  <div className="foot">{pnl.summary.salesCount} invoices</div>
+                </div>
+                <div className="va-card">
+                  <div className="label">Net Profit</div>
+                  <div className={`value ${pnl.summary.netProfit < 0 ? 'neg' : ''}`}>{fmtMoney(pnl.summary.netProfit)}</div>
+                  <div className="foot">{pnl.summary.netMarginPct}% net margin</div>
+                </div>
+                <div className="va-card">
+                  <div className="label">Receivables Dues</div>
+                  <div className="value" style={{ color: (aging?.totals.total ?? 0) > 0 ? 'var(--clay)' : 'var(--ok)' }}>
+                    {fmtMoney(aging?.totals.total ?? 0)}
+                  </div>
+                  <div className="foot">overdue client balances</div>
+                </div>
+                <div className="va-card">
+                  <div className="label">Collection Rate</div>
+                  <div className="value">
+                    {pnl.summary.revenue > 0 ? ((pnl.summary.collected / pnl.summary.revenue) * 100).toFixed(0) : 0}%
+                  </div>
+                  <div className="foot">of revenue collected</div>
+                </div>
+              </div>
+
+              {/* Profit Loss Summary sheet */}
+              <div className="va-panel">
+                <div className="va-panel-head"><h3>Profit &amp; Loss Statement</h3></div>
+                <table className="va-table">
+                  <tbody>
+                    <tr>
+                      <td><strong>Gross Revenue</strong> (Subtotal - Discount)</td>
+                      <td className="mono" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(pnl.summary.revenue)}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ paddingLeft: 24, color: 'var(--muted)' }}>Discounts Given</td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(pnl.summary.discounts)}</td>
+                    </tr>
+                    <tr style={{ borderTop: '1.5px solid var(--line)' }}>
+                      <td><strong>Cost of Goods Sold (COGS)</strong></td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)' }}>-{fmtMoney(pnl.summary.cogs)}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ paddingLeft: 24, color: 'var(--muted)' }}>Transport Costs</td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{pnl.summary.transport > 0 ? fmtMoney(pnl.summary.transport) : '—'}</td>
+                    </tr>
+                    <tr style={{ background: 'var(--line-soft)', fontWeight: 700 }}>
+                      <td>Gross Profit</td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{fmtMoney(pnl.summary.grossProfit)} ({pnl.summary.grossMarginPct}%)</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Operating Expenses</strong></td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)' }}>-{fmtMoney(pnl.summary.expenses)}</td>
+                    </tr>
+                    <tr style={{ background: 'var(--forest)', color: 'var(--cream)', fontWeight: 700, fontSize: 15 }}>
+                      <td>Net Profit</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(pnl.summary.netProfit)} ({pnl.summary.netMarginPct}%)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* ─── Sales tab ─── */}
+          {tab === 'Sales' && pnl && (
+            <div className="va-panel">
+              <div className="va-panel-head"><h3>Top Vegetables &amp; Fruits Revenue</h3></div>
+              {pnl.topItems.length === 0 ? (
+                <div className="va-empty">No sales entries for this range</div>
+              ) : (
+                pnl.topItems.map(item => (
+                  <div className="va-bar-row" key={item.name}>
+                    <div className="va-bar-label"><strong>{item.name}</strong></div>
+                    <div className="va-bar-track">
+                      <div className="va-bar-fill" style={{ width: `${(item.total / maxVegTotal) * 100}%` }} />
+                    </div>
+                    <div className="va-bar-val mono" style={{ fontWeight: 600 }}>{fmtMoney(item.total)} <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>({item.qty.toFixed(0)} units)</span></div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* ─── Purchases tab ─── */}
+          {tab === 'Purchases' && pnl && (
+            <div className="va-panel">
+              <div className="va-panel-head"><h3>COGS Analytics</h3></div>
+              <div className="va-cards" style={{ marginBottom: 18 }}>
+                <div className="va-card">
+                  <div className="label">Cost of Mandi Purchases</div>
+                  <div className="value">{fmtMoney(pnl.summary.cogs)}</div>
+                  <div className="foot">{pnl.summary.purchasesCount} sheets</div>
+                </div>
+                <div className="va-card">
+                  <div className="label">Transport Cost</div>
+                  <div className="value">{pnl.summary.transport > 0 ? fmtMoney(pnl.summary.transport) : 'Rs 0'}</div>
+                  <div className="foot">mandi delivery log</div>
+                </div>
+                <div className="va-card">
+                  <div className="label">% of Revenue</div>
+                  <div className="value">{pnl.summary.revenue > 0 ? ((pnl.summary.cogs / pnl.summary.revenue) * 100).toFixed(0) : 0}%</div>
+                  <div className="foot">purchase ratio</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Cash Flow tab ─── */}
+          {tab === 'Cash Flow' && cashFlow && (
+            <>
+              <div className="va-cards">
+                <div className="va-card accent">
+                  <div className="label">Cash Inflow</div>
+                  <div className="value" style={{ color: 'var(--ok)' }}>{fmtMoney(cashFlow.inflow.total)}</div>
+                  <div className="foot">collections received</div>
+                </div>
+                <div className="va-card">
+                  <div className="label">Cash Outflow</div>
+                  <div className="value" style={{ color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow.total)}</div>
+                  <div className="foot">purchases + expenses + supplier payments</div>
+                </div>
+                <div className="va-card">
+                  <div className="label">Net Cash Flow</div>
+                  <div className={`value ${cashFlow.netCashFlow < 0 ? 'neg' : ''}`}>{fmtMoney(cashFlow.netCashFlow)}</div>
+                  <div className="foot">operational net gain</div>
+                </div>
+              </div>
+
+              {/* Cash Flow Statement */}
+              <div className="va-panel">
+                <div className="va-panel-head"><h3>Cash Inflows and Outflows</h3></div>
+                <table className="va-table">
+                  <tbody>
+                    <tr style={{ background: 'var(--line-soft)', fontWeight: 600 }}>
+                      <td>Operating Cash Inflow</td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>+{fmtMoney(cashFlow.inflow.total)}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ paddingLeft: 24 }}>Client Collections</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.inflow.collections)}</td>
+                    </tr>
+                    <tr style={{ background: 'var(--line-soft)', fontWeight: 600, borderTop: '1.5px solid var(--line)' }}>
+                      <td>Operating Cash Outflow</td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow.total)}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ paddingLeft: 24 }}>Supplier Mandi Payments (Cash/Paid)</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow.purchases)}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ paddingLeft: 24 }}>Operating &amp; Overhead Expenses</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow.expenses)}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ paddingLeft: 24 }}>Supplier Balance Payments</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow.supplierPayments)}</td>
+                    </tr>
+                    <tr style={{ background: 'var(--forest)', color: 'var(--cream)', fontWeight: 700, fontSize: 15 }}>
+                      <td>Net Cash Position Increase/Decrease</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.netCashFlow)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* ─── Aging tab ─── */}
+          {tab === 'Aging' && aging && (
+            <div className="va-panel">
+              <div className="va-panel-head"><h3>Client Receivables Aging (Days Overdue)</h3></div>
+              <div className="va-cards" style={{ marginBottom: 18 }}>
+                <div className="va-card"><div className="label">Total Dues</div><div className="value">{fmtMoney(aging.totals.total)}</div></div>
+                <div className="va-card"><div className="label">Current</div><div className="value">{fmtMoney(aging.totals.current)}</div></div>
+                <div className="va-card"><div className="label">30+ Days Overdue</div><div className="value" style={{ color: 'var(--danger)' }}>{fmtMoney(aging.totals.d31_60 + aging.totals.d61_90 + aging.totals.d90plus)}</div></div>
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hide-mobile">
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <table className="va-table" style={{ minWidth: 600 }}>
+                  <thead>
+                    <tr>
+                      <th>Client</th>
+                      <th style={{ textAlign: 'right' }}>Current</th>
+                      <th style={{ textAlign: 'right' }}>1–30 Days</th>
+                      <th style={{ textAlign: 'right' }}>31–60 Days</th>
+                      <th style={{ textAlign: 'right' }}>61–90 Days</th>
+                      <th style={{ textAlign: 'right' }}>90+ Days</th>
+                      <th style={{ textAlign: 'right' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aging.clients.length === 0 ? (
+                      <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 18 }}>No client receivables</td></tr>
+                    ) : (
+                      aging.clients.map(c => (
+                        <tr key={c.id}>
+                          <td>
+                            <strong>{RATING_EMOJI[c.rating] ?? ''} {c.name}</strong>
+                            <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--muted)', background: '#e9ecef', padding: '1px 4px', borderRadius: 4, marginLeft: 4 }}>
+                              {c.clientId || 'WH-0000'}
+                            </span>
+                          </td>
+                          <td className="mono" style={{ textAlign: 'right' }}>{c.current > 0 ? fmtMoney(c.current) : '—'}</td>
+                          <td className="mono" style={{ textAlign: 'right' }}>{c.d1_30 > 0 ? fmtMoney(c.d1_30) : '—'}</td>
+                          <td className="mono" style={{ textAlign: 'right', color: c.d31_60 > 0 ? 'var(--mustard)' : undefined }}>{c.d31_60 > 0 ? fmtMoney(c.d31_60) : '—'}</td>
+                          <td className="mono" style={{ textAlign: 'right', color: c.d61_90 > 0 ? 'var(--clay)' : undefined }}>{c.d61_90 > 0 ? fmtMoney(c.d61_90) : '—'}</td>
+                          <td className="mono" style={{ textAlign: 'right', color: c.d90plus > 0 ? 'var(--danger)' : undefined, fontWeight: c.d90plus > 0 ? 600 : undefined }}>{c.d90plus > 0 ? fmtMoney(c.d90plus) : '—'}</td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(c.total)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+
+              {/* Mobile Card List View */}
+              <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
+                {aging.clients.length === 0 ? (
+                  <div className="va-empty">No client receivables</div>
+                ) : (
+                  aging.clients.map(c => (
+                    <div key={c.id} className="va-mobile-card">
+                      <div className="card-header">
+                        <span className="card-title" style={{ color: '#FFFFFF' }}>
+                          {RATING_EMOJI[c.rating] ?? ''} {c.name}
+                          <span style={{ fontSize: 9, opacity: 0.8, background: 'rgba(255,255,255,0.15)', padding: '1px 4px', borderRadius: 4, marginLeft: 4 }}>
+                            {c.clientId || 'WH-0000'}
+                          </span>
+                        </span>
+                      </div>
+                      
+                      <div className="card-divider" />
+                      
+                      <div className="flex flex-col gap-2.5">
+                        <div className="card-info-row">
+                          <span className="card-label">Total Outstanding</span>
+                          <span className="card-value amount">{fmtMoney(c.total)}</span>
+                        </div>
+                        <div className="card-info-row">
+                          <span className="card-label">Current (Not Overdue)</span>
+                          <span className="card-value">{c.current > 0 ? fmtMoney(c.current) : '—'}</span>
+                        </div>
+                        <div className="card-info-row">
+                          <span className="card-label">1–30 Days Overdue</span>
+                          <span className="card-value">{c.d1_30 > 0 ? fmtMoney(c.d1_30) : '—'}</span>
+                        </div>
+                        <div className="card-info-row">
+                          <span className="card-label">31–60 Days Overdue</span>
+                          <span className="card-value" style={{ color: c.d31_60 > 0 ? '#FEF3D4' : undefined }}>{c.d31_60 > 0 ? fmtMoney(c.d31_60) : '—'}</span>
+                        </div>
+                        <div className="card-info-row">
+                          <span className="card-label">61–90 Days Overdue</span>
+                          <span className="card-value" style={{ color: c.d61_90 > 0 ? '#F5E1DE' : undefined }}>{c.d61_90 > 0 ? fmtMoney(c.d61_90) : '—'}</span>
+                        </div>
+                        <div className="card-info-row">
+                          <span className="card-label">90+ Days Overdue</span>
+                          <span className={`card-value ${c.d90plus > 0 ? 'danger' : ''}`}>{c.d90plus > 0 ? fmtMoney(c.d90plus) : '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ─── Expenses tab ─── */}
+          {tab === 'Expenses' && pnl && (
+            <div className="va-panel">
+              <div className="va-panel-head"><h3>Expenses by Category</h3></div>
+              {pnl.expensesByCategory.length === 0 ? (
+                <div className="va-empty">No expenses recorded for this range</div>
+              ) : (
+                pnl.expensesByCategory.map(item => (
+                  <div className="va-bar-row" key={item.category}>
+                    <div className="va-bar-label"><strong>{item.category}</strong></div>
+                    <div className="va-bar-track">
+                      <div className="va-bar-fill" style={{ width: `${(item.total / maxCatExp) * 100}%` }} />
+                    </div>
+                    <div className="va-bar-val mono" style={{ fontWeight: 600 }}>{fmtMoney(item.total)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </DashboardLayout>
+  );
+}

@@ -1,0 +1,923 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Branch {
+  id                String             @id @default(cuid())
+  name              String
+  address           String?
+  phone             String?
+  type              BranchType         @default(MAIN)
+  isActive          Boolean            @default(true)
+  createdAt         DateTime @db.Timestamptz(3)           @default(now())
+  auditLogs         AuditLog[]
+  bankAccounts      BankAccount[]
+  broadcastSettings BroadcastSettings?
+  cashAccounts      CashAccount[]
+  cheques           Cheque[]
+  clients           Client[]
+  collections       Collection[]
+  customerLedgers   CustomerLedger[]
+  deliveries        Delivery[]
+  drivers           Driver[]
+  employees         Employee[]
+  expenses          Expense[]
+  inventory         Inventory[]
+  priceBroadcasts   PriceBroadcast[]
+  priceLists        PriceList[]
+  purchases         Purchase[]
+  sales             Sale[]
+  stockMovements    StockMovement[]
+  supplierLedgers   SupplierLedger[]
+  supplierPayments  SupplierPayment[]
+  suppliers         Supplier[]
+  users             User[]
+  vehicles          Vehicle[]
+  wastage           Wastage[]
+
+  @@map("branches")
+}
+
+model User {
+  id                String           @id @default(cuid())
+  name              String
+  email             String           @unique
+  password          String
+  role              UserRole         @default(SALESMAN)
+  phone             String?
+  isActive          Boolean          @default(true)
+  branchId          String
+  lastLoginAt       DateTime? @db.Timestamptz(3)
+  createdAt         DateTime @db.Timestamptz(3)         @default(now())
+  updatedAt         DateTime @db.Timestamptz(3)         @updatedAt
+  deletedAt         DateTime? @db.Timestamptz(3)
+  auditLogs         AuditLog[]
+  priceBroadcasts   PriceBroadcast[] @relation("BroadcastCreator")
+  priceListsCreated PriceList[]      @relation("PriceListCreator")
+  sales             Sale[]
+  branch            Branch           @relation(fields: [branchId], references: [id])
+
+  @@index([branchId])
+  @@index([email])
+  @@map("users")
+}
+
+model Product {
+  id             String              @id @default(cuid())
+  name           String              @unique
+  urduName       String?
+  category       ProductCategory     @default(VEGETABLE)
+  defaultUnit    Unit                @default(KG)
+  minStock       Float               @default(0)
+  isActive       Boolean             @default(true)
+  availability   ProductAvailability @default(AVAILABLE)
+  sortOrder      Int                 @default(0)
+  createdAt      DateTime @db.Timestamptz(3)            @default(now())
+  updatedAt      DateTime @db.Timestamptz(3)            @updatedAt
+  inventory      Inventory[]
+  priceItems     PriceItem[]
+  purchaseItems  PurchaseItem[]
+  saleItems      SaleItem[]
+  stockMovements StockMovement[]
+  wastage        Wastage[]
+
+  @@index([name])
+  @@index([category])
+  @@index([availability])
+  @@map("products")
+}
+
+model Client {
+  id                  String               @id @default(cuid())
+  clientId            String?              @unique
+  name                String
+  ownerName           String?
+  phone               String?
+  whatsapp            String?
+  address             String?
+  deliveryLocation    String?
+  type                ClientType           @default(RETAIL)
+  status              ClientStatus         @default(ACTIVE)
+  rating              ClientRating         @default(NEW)
+  creditLimit         Float                @default(0)
+  paymentTerms        Int                  @default(0)
+  openingBalance      Float                @default(0)
+  currentBalance      Float                @default(0)
+  notes               String?
+  branchId            String
+  createdAt           DateTime @db.Timestamptz(3)             @default(now())
+  updatedAt           DateTime @db.Timestamptz(3)             @updatedAt
+  deletedAt           DateTime? @db.Timestamptz(3)
+  broadcastRecipients BroadcastRecipient[]
+  cheques             Cheque[]
+  branch              Branch               @relation(fields: [branchId], references: [id])
+  collections         Collection[]
+  ledgers             CustomerLedger[]
+  deliveries          Delivery[]
+  sales               Sale[]
+
+  @@index([branchId])
+  @@index([branchId, deletedAt])
+  @@index([name])
+  @@index([rating])
+  @@map("clients")
+}
+
+model Supplier {
+  id               String            @id @default(cuid())
+  name             String
+  phone            String?
+  address          String?
+  openingBalance   Float             @default(0)
+  status           SupplierStatus    @default(ACTIVE)
+  branchId         String
+  createdAt        DateTime @db.Timestamptz(3)          @default(now())
+  updatedAt        DateTime @db.Timestamptz(3)          @updatedAt
+  deletedAt        DateTime? @db.Timestamptz(3)
+  cheques          Cheque[]
+  purchases        Purchase[]
+  ledgers          SupplierLedger[]
+  supplierPayments SupplierPayment[]
+  branch           Branch            @relation(fields: [branchId], references: [id])
+
+  @@index([branchId])
+  @@index([name])
+  @@map("suppliers")
+}
+
+model Sale {
+  id                  String            @id @default(cuid())
+  invoiceNo           String
+  clientId            String
+  date                DateTime @db.Timestamptz(3)          @default(now())
+  subtotal            Float             @default(0)
+  discount            Float             @default(0)
+  deliveryCharge      Float             @default(0)
+  previousBalance     Float             @default(0)
+  previousBalanceDate DateTime? @db.Timestamptz(3)
+  total               Float             @default(0)
+  paid                Float             @default(0)
+  balance             Float             @default(0)
+  paymentMode         SalePaymentMode   @default(CREDIT)
+  status              TransactionStatus @default(PENDING)
+  deliveryStatus      DeliveryStatus    @default(PENDING)
+  notes               String?
+  branchId            String
+  userId              String?
+  createdAt           DateTime @db.Timestamptz(3)          @default(now())
+  updatedAt           DateTime @db.Timestamptz(3)          @updatedAt
+  deletedAt           DateTime? @db.Timestamptz(3)
+  employeeId          String?
+  deliveryDate        DateTime? @db.Timestamptz(3)
+  deliveryTime        String?
+  deliveries          Delivery[]
+  items               SaleItem[]
+  branch              Branch            @relation(fields: [branchId], references: [id])
+  client              Client            @relation(fields: [clientId], references: [id])
+  user                User?             @relation(fields: [userId], references: [id])
+  employee            Employee?         @relation(fields: [employeeId], references: [id])
+
+  @@unique([clientId, invoiceNo])
+  @@index([clientId])
+  @@index([branchId])
+  @@index([branchId, deletedAt])
+  @@index([date])
+  @@index([status])
+  @@index([invoiceNo])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String   @id @default(cuid())
+  saleId    String
+  productId String?
+  itemName  String
+  qty       Float
+  unit      Unit     @default(KG)
+  rate      Float
+  amount    Float
+  product   Product? @relation(fields: [productId], references: [id])
+  sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+model Purchase {
+  id               String            @id @default(cuid())
+  supplierId       String
+  date             DateTime @db.Timestamptz(3)          @default(now())
+  subtotal         Float             @default(0)
+  transportCost    Float             @default(0)
+  total            Float             @default(0)
+  paid             Float             @default(0)
+  balance          Float             @default(0)
+  status           TransactionStatus @default(PENDING)
+  notes            String?
+  branchId         String
+  createdAt        DateTime @db.Timestamptz(3)          @default(now())
+  updatedAt        DateTime @db.Timestamptz(3)          @updatedAt
+  deletedAt        DateTime? @db.Timestamptz(3)
+  items            PurchaseItem[]
+  branch           Branch            @relation(fields: [branchId], references: [id])
+  supplier         Supplier          @relation(fields: [supplierId], references: [id])
+  supplierPayments SupplierPayment[]
+
+  @@index([supplierId])
+  @@index([branchId])
+  @@index([branchId, deletedAt])
+  @@index([date])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id         String   @id @default(cuid())
+  purchaseId String
+  productId  String?
+  itemName   String
+  qty        Float
+  unit       Unit     @default(KG)
+  rate       Float
+  amount     Float
+  product    Product? @relation(fields: [productId], references: [id])
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseId])
+  @@index([productId])
+  @@map("purchase_items")
+}
+
+model SupplierPayment {
+  id            String        @id @default(cuid())
+  supplierId    String
+  purchaseId    String?
+  amount        Float
+  method        PaymentMethod @default(CASH)
+  cashAccountId String?
+  bankAccountId String?
+  reference     String?
+  notes         String?
+  date          DateTime @db.Timestamptz(3)      @default(now())
+  branchId      String
+  createdAt     DateTime @db.Timestamptz(3)      @default(now())
+  bankAccount   BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  branch        Branch        @relation(fields: [branchId], references: [id])
+  cashAccount   CashAccount?  @relation(fields: [cashAccountId], references: [id])
+  purchase      Purchase?     @relation(fields: [purchaseId], references: [id])
+  supplier      Supplier      @relation(fields: [supplierId], references: [id])
+
+  @@index([supplierId])
+  @@index([purchaseId])
+  @@index([branchId])
+  @@index([cashAccountId])
+  @@index([bankAccountId])
+  @@map("supplier_payments")
+}
+
+model Collection {
+  id            String        @id @default(cuid())
+  clientId      String
+  amount        Float
+  method        PaymentMethod @default(CASH)
+  cashAccountId String?
+  bankAccountId String?
+  date          DateTime @db.Timestamptz(3)      @default(now())
+  reference     String?
+  notes         String?
+  branchId      String
+  createdAt     DateTime @db.Timestamptz(3)      @default(now())
+  deletedAt     DateTime? @db.Timestamptz(3)
+  bankAccount   BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  branch        Branch        @relation(fields: [branchId], references: [id])
+  cashAccount   CashAccount?  @relation(fields: [cashAccountId], references: [id])
+  client        Client        @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([branchId])
+  @@index([branchId, deletedAt])
+  @@index([date])
+  @@index([cashAccountId])
+  @@index([bankAccountId])
+  @@map("collections")
+}
+
+model Expense {
+  id            String          @id @default(cuid())
+  category      ExpenseCategory
+  description   String?
+  amount        Float
+  date          DateTime @db.Timestamptz(3)        @default(now())
+  vehicleId     String?
+  paidBy        PaymentMethod?
+  cashAccountId String?
+  bankAccountId String?
+  branchId      String
+  createdAt     DateTime @db.Timestamptz(3)        @default(now())
+  deletedAt     DateTime? @db.Timestamptz(3)
+  bankAccount   BankAccount?    @relation(fields: [bankAccountId], references: [id])
+  branch        Branch          @relation(fields: [branchId], references: [id])
+  cashAccount   CashAccount?    @relation(fields: [cashAccountId], references: [id])
+  vehicle       Vehicle?        @relation(fields: [vehicleId], references: [id])
+
+  @@index([branchId])
+  @@index([date])
+  @@index([category])
+  @@index([vehicleId])
+  @@index([cashAccountId])
+  @@index([bankAccountId])
+  @@map("expenses")
+}
+
+model Wastage {
+  id        String   @id @default(cuid())
+  productId String?
+  itemName  String
+  qty       Float
+  unit      Unit     @default(KG)
+  reason    String?
+  date      DateTime @db.Timestamptz(3) @default(now())
+  branchId  String
+  createdAt DateTime @db.Timestamptz(3) @default(now())
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  product   Product? @relation(fields: [productId], references: [id])
+
+  @@index([branchId])
+  @@index([date])
+  @@index([productId])
+  @@map("wastages")
+}
+
+model Inventory {
+  id        String   @id @default(cuid())
+  productId String
+  branchId  String
+  qty       Float    @default(0)
+  avgCost   Float    @default(0)
+  updatedAt DateTime @db.Timestamptz(3) @updatedAt
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([productId, branchId])
+  @@index([branchId])
+  @@map("inventory")
+}
+
+model StockMovement {
+  id        String            @id @default(cuid())
+  productId String
+  branchId  String
+  type      StockMovementType
+  qty       Float
+  refType   String?
+  refId     String?
+  note      String?
+  date      DateTime @db.Timestamptz(3)          @default(now())
+  createdAt DateTime @db.Timestamptz(3)          @default(now())
+  branch    Branch            @relation(fields: [branchId], references: [id])
+  product   Product           @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([branchId])
+  @@index([date])
+  @@map("stock_movements")
+}
+
+model PriceList {
+  id          String      @id @default(cuid())
+  date        DateTime    @db.Timestamptz(3)
+  branchId    String
+  createdById String?
+  isActive    Boolean     @default(true)
+  notes       String?
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+  items       PriceItem[]
+  branch      Branch      @relation(fields: [branchId], references: [id])
+  createdBy   User?       @relation("PriceListCreator", fields: [createdById], references: [id])
+
+  @@unique([date, branchId])
+  @@index([branchId])
+  @@index([date])
+  @@map("price_lists")
+}
+
+model PriceItem {
+  id          String    @id @default(cuid())
+  priceListId String
+  productId   String?
+  itemName    String
+  unit        Unit      @default(KG)
+  buyRate     Float     @default(0)
+  sellRate    Float     @default(0)
+  notes       String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  product     Product?  @relation(fields: [productId], references: [id])
+
+  @@unique([priceListId, itemName])
+  @@unique([priceListId, productId])
+  @@index([priceListId])
+  @@index([productId])
+  @@map("price_items")
+}
+
+model Delivery {
+  id          String         @id @default(cuid())
+  saleId      String
+  clientId    String
+  vehicleId   String?
+  driverId    String?
+  zone        String?
+  status      DeliveryStatus @default(PENDING)
+  notes       String?
+  deliveredAt DateTime? @db.Timestamptz(3)
+  date        DateTime @db.Timestamptz(3)       @default(now())
+  branchId    String
+  createdAt   DateTime @db.Timestamptz(3)       @default(now())
+  updatedAt   DateTime @db.Timestamptz(3)       @updatedAt
+  employeeId  String?
+  scheduledTime String?
+  branch      Branch         @relation(fields: [branchId], references: [id])
+  client      Client         @relation(fields: [clientId], references: [id])
+  driver      Driver?        @relation(fields: [driverId], references: [id])
+  sale        Sale           @relation(fields: [saleId], references: [id])
+  vehicle     Vehicle?       @relation(fields: [vehicleId], references: [id])
+  employee    Employee?      @relation(fields: [employeeId], references: [id])
+
+  @@index([saleId])
+  @@index([clientId])
+  @@index([branchId])
+  @@index([branchId, status])
+  @@index([status])
+  @@index([vehicleId])
+  @@index([driverId])
+  @@map("deliveries")
+}
+
+model Vehicle {
+  id         String      @id @default(cuid())
+  plateNo    String      @unique
+  type       VehicleType @default(TRUCK)
+  driverId   String?
+  isActive   Boolean     @default(true)
+  branchId   String
+  createdAt  DateTime @db.Timestamptz(3)    @default(now())
+  deliveries Delivery[]
+  expenses   Expense[]
+  branch     Branch      @relation(fields: [branchId], references: [id])
+  driver     Driver?     @relation(fields: [driverId], references: [id])
+
+  @@index([branchId])
+  @@index([driverId])
+  @@map("vehicles")
+}
+
+model Driver {
+  id         String     @id @default(cuid())
+  name       String
+  phone      String?
+  licenceNo  String?
+  isActive   Boolean    @default(true)
+  branchId   String
+  createdAt  DateTime @db.Timestamptz(3)   @default(now())
+  deliveries Delivery[]
+  branch     Branch     @relation(fields: [branchId], references: [id])
+  vehicles   Vehicle[]
+
+  @@index([branchId])
+  @@map("drivers")
+}
+
+model Employee {
+  id             String          @id @default(cuid())
+  name           String
+  role           EmployeeRole    @default(DELIVERY_STAFF)
+  phone          String?
+  salary         Float           @default(0)
+  joiningDate    DateTime @db.Timestamptz(3)        @default(now())
+  isActive       Boolean         @default(true)
+  branchId       String
+  fatherName     String?
+  cnic           String?
+  address        String?
+  whatsapp       String?
+  email          String?
+  paymentStructure String?
+  notes          String?
+  photoUrl       String?
+  createdAt      DateTime @db.Timestamptz(3)        @default(now())
+  attendance     Attendance[]
+  branch         Branch          @relation(fields: [branchId], references: [id])
+  salaryPayments SalaryPayment[]
+  sales          Sale[]
+  deliveries     Delivery[]
+
+  @@index([branchId])
+  @@map("employees")
+}
+
+model SalaryPayment {
+  id            String        @id @default(cuid())
+  employeeId    String
+  month         String
+  amount        Float
+  method        PaymentMethod @default(CASH)
+  cashAccountId String?
+  bankAccountId String?
+  paidOn        DateTime @db.Timestamptz(3)      @default(now())
+  notes         String?
+  createdAt     DateTime @db.Timestamptz(3)      @default(now())
+  bankAccount   BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  cashAccount   CashAccount?  @relation(fields: [cashAccountId], references: [id])
+  employee      Employee      @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@index([month])
+  @@map("salary_payments")
+}
+
+model Attendance {
+  id         String           @id @default(cuid())
+  employeeId String
+  date       DateTime @db.Timestamptz(3)
+  status     AttendanceStatus @default(PRESENT)
+  notes      String?
+  createdAt  DateTime @db.Timestamptz(3)         @default(now())
+  employee   Employee         @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+  @@map("attendance")
+}
+
+model CashAccount {
+  id               String            @id @default(cuid())
+  name             String            @default("Main Cash")
+  balance          Float             @default(0)
+  branchId         String
+  createdAt        DateTime @db.Timestamptz(3)          @default(now())
+  updatedAt        DateTime @db.Timestamptz(3)          @updatedAt
+  branch           Branch            @relation(fields: [branchId], references: [id])
+  collections      Collection[]
+  expenses         Expense[]
+  salaryPayments   SalaryPayment[]
+  supplierPayments SupplierPayment[]
+
+  @@index([branchId])
+  @@map("cash_accounts")
+}
+
+model BankAccount {
+  id               String            @id @default(cuid())
+  name             String
+  accountNo        String?
+  bankName         String?
+  balance          Float             @default(0)
+  branchId         String
+  createdAt        DateTime @db.Timestamptz(3)          @default(now())
+  updatedAt        DateTime @db.Timestamptz(3)          @updatedAt
+  branch           Branch            @relation(fields: [branchId], references: [id])
+  cheques          Cheque[]
+  collections      Collection[]
+  expenses         Expense[]
+  salaryPayments   SalaryPayment[]
+  supplierPayments SupplierPayment[]
+
+  @@index([branchId])
+  @@map("bank_accounts")
+}
+
+model Cheque {
+  id            String       @id @default(cuid())
+  type          ChequeType
+  chequeNo      String?
+  amount        Float
+  dueDate       DateTime @db.Timestamptz(3)
+  status        ChequeStatus @default(PENDING)
+  clientId      String?
+  supplierId    String?
+  bankAccountId String?
+  notes         String?
+  branchId      String
+  createdAt     DateTime @db.Timestamptz(3)     @default(now())
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
+  branch        Branch       @relation(fields: [branchId], references: [id])
+  client        Client?      @relation(fields: [clientId], references: [id])
+  supplier      Supplier?    @relation(fields: [supplierId], references: [id])
+
+  @@index([dueDate])
+  @@index([status])
+  @@index([clientId])
+  @@index([supplierId])
+  @@index([bankAccountId])
+  @@index([branchId])
+  @@map("cheques")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  branchId  String?
+  action    String
+  entity    String
+  entityId  String?
+  oldData   Json?
+  newData   Json?
+  ipAddress String?
+  createdAt DateTime @db.Timestamptz(3) @default(now())
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([branchId])
+  @@index([entity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model CustomerLedger {
+  id          String                @id @default(cuid())
+  clientId    String
+  type        LedgerTransactionType
+  date        DateTime @db.Timestamptz(3)              @default(now())
+  referenceId String?
+  referenceNo String?
+  description String?
+  debit       Float                 @default(0)
+  credit      Float                 @default(0)
+  balance     Float                 @default(0)
+  branchId    String
+  createdAt   DateTime @db.Timestamptz(3)              @default(now())
+  updatedAt   DateTime @db.Timestamptz(3)              @updatedAt
+  branch      Branch                @relation(fields: [branchId], references: [id])
+  client      Client                @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([branchId])
+  @@index([date])
+  @@map("customer_ledger")
+}
+
+model SupplierLedger {
+  id          String                @id @default(cuid())
+  supplierId  String
+  type        LedgerTransactionType
+  date        DateTime @db.Timestamptz(3)              @default(now())
+  referenceId String?
+  referenceNo String?
+  description String?
+  debit       Float                 @default(0)
+  credit      Float                 @default(0)
+  balance     Float                 @default(0)
+  branchId    String
+  createdAt   DateTime @db.Timestamptz(3)              @default(now())
+  updatedAt   DateTime @db.Timestamptz(3)              @updatedAt
+  branch      Branch                @relation(fields: [branchId], references: [id])
+  supplier    Supplier              @relation(fields: [supplierId], references: [id])
+
+  @@index([supplierId])
+  @@index([branchId])
+  @@index([date])
+  @@map("supplier_ledger")
+}
+
+model PriceBroadcast {
+  id               String               @id @default(cuid())
+  createdAt        DateTime @db.Timestamptz(3)             @default(now())
+  sentByUserId     String
+  priceListDate    DateTime @db.Timestamptz(3)
+  imageUrl         String
+  imageGeneratedAt DateTime @db.Timestamptz(3)             @default(now())
+  imageVersion     Int                  @default(1)
+  totalRecipients  Int                  @default(0)
+  successCount     Int                  @default(0)
+  failureCount     Int                  @default(0)
+  status           BroadcastStatus      @default(PENDING)
+  branchId         String
+  recipients       BroadcastRecipient[]
+  branch           Branch               @relation(fields: [branchId], references: [id])
+  sentByUser       User                 @relation("BroadcastCreator", fields: [sentByUserId], references: [id])
+
+  @@index([branchId])
+  @@index([sentByUserId])
+  @@index([priceListDate])
+  @@map("price_broadcasts")
+}
+
+model BroadcastRecipient {
+  id             String                  @id @default(cuid())
+  broadcastId    String
+  clientId       String
+  whatsappNumber String
+  status         BroadcastDeliveryStatus @default(PENDING)
+  attempts       Int                     @default(0)
+  lastAttemptAt  DateTime? @db.Timestamptz(3)
+  errorMessage   String?
+  updatedAt      DateTime @db.Timestamptz(3)                @updatedAt
+  broadcast      PriceBroadcast          @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  client         Client                  @relation(fields: [clientId], references: [id])
+
+  @@unique([broadcastId, clientId])
+  @@index([clientId])
+  @@index([status])
+  @@map("broadcast_recipients")
+}
+
+model BroadcastSettings {
+  id                   String   @id @default(cuid())
+  branchId             String   @unique
+  companyLogo          String?
+  companyName          String   @default("HALAL VEGG SUPPLIES")
+  defaultGreeting      String   @default("Assalam-o-Alaikum {{ClientName}}\n\nPlease find today's fresh fruit & vegetable rates.\n\nThank you for choosing HALAL VEGG SUPPLIES.")
+  defaultFooter        String?
+  defaultBroadcastTime String   @default("09:00")
+  defaultImageTemplate String   @default("default")
+  updatedAt            DateTime @db.Timestamptz(3) @updatedAt
+  branch               Branch   @relation(fields: [branchId], references: [id])
+
+  @@map("broadcast_settings")
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  CASHIER
+  SALESMAN
+  ACCOUNTANT
+  DELIVERY
+}
+
+enum ClientType {
+  RETAIL
+  WHOLESALE
+  HOTEL
+  RESTAURANT
+  HOSTEL
+  CATERER
+  HOUSEHOLD
+  OTHER
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum ClientRating {
+  GREEN
+  YELLOW
+  ORANGE
+  RED
+  NEW
+}
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TransactionStatus {
+  PENDING
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  OUT
+  DELIVERED
+  FAILED
+  RETURNED
+}
+
+enum BroadcastDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK
+  CHEQUE
+  ONLINE
+}
+
+enum SalePaymentMode {
+  CASH
+  CREDIT
+  CHEQUE
+  ONLINE
+}
+
+enum ExpenseCategory {
+  TRANSPORT
+  LABOUR
+  FUEL
+  RENT
+  ELECTRICITY
+  PACKAGING
+  VEHICLE
+  SALARY
+  MISC
+}
+
+enum Unit {
+  KG
+  G
+  DOZEN
+  PIECE
+  BOX
+  CRATE
+  LITRE
+  BUNDLE
+  TRAY
+}
+
+enum ProductCategory {
+  VEGETABLE
+  FRUIT
+  OTHER
+}
+
+enum ProductAvailability {
+  AVAILABLE
+  SEASONAL
+  INACTIVE
+}
+
+enum StockMovementType {
+  PURCHASE
+  SALE
+  WASTAGE
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+  OPENING
+}
+
+enum ChequeStatus {
+  PENDING
+  CLEARED
+  BOUNCED
+  CANCELLED
+}
+
+enum ChequeType {
+  RECEIVED
+  ISSUED
+}
+
+enum LedgerTransactionType {
+  INVOICE
+  PAYMENT
+  CREDIT_NOTE
+  DEBIT_NOTE
+  ADJUSTMENT
+  OPENING_BALANCE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  LEAVE
+}
+
+enum BranchType {
+  MAIN
+  SHOP
+  WAREHOUSE
+}
+
+enum VehicleType {
+  TRUCK
+  PICKUP
+  VAN
+  RICKSHAW
+}
+
+enum EmployeeRole {
+  ADMIN
+  DELIVERY_STAFF
+  PURCHASE_STAFF
+  BILLING_STAFF
+}
+
+enum BroadcastStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
