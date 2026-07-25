@@ -43,6 +43,9 @@ export default function LoginPage() {
         return;
       }
 
+      if (data.accessToken) localStorage.setItem('sabzi_token', data.accessToken);
+      if (data.refreshToken) localStorage.setItem('sabzi_refresh_token', data.refreshToken);
+
       router.push('/');
       router.refresh();
     } catch {

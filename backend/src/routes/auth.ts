@@ -1,7 +1,13 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../lib/prisma';
-import { signToken, authMiddleware } from '../middleware/auth';
+import {
+  signAuthTokens,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  extractRefreshToken,
+  authMiddleware
+} from '../middleware/auth';
 import { generateUniqueEmployeeId } from '../utils/employeeId';
 
 const router = Router();
@@ -147,6 +153,7 @@ router.post('/login', async (req: Request, res: Response) => {
     // Map EmployeeRole to UserRole
     let userRole: any = 'SALESMAN';
     if (matchedEmployee.role === 'ADMIN') userRole = 'OWNER';
+    else if (matchedEmployee.role === 'SUPERVISOR') userRole = 'MANAGER';
     else if (matchedEmployee.role === 'BILLING_STAFF') userRole = 'CASHIER';
     else if (matchedEmployee.role === 'PURCHASE_STAFF') userRole = 'MANAGER';
     else if (matchedEmployee.role === 'DELIVERY_STAFF') userRole = 'DELIVERY';
@@ -187,16 +194,25 @@ router.post('/login', async (req: Request, res: Response) => {
       data: { lastLoginAt: new Date() },
     });
 
-    // Sign Token
-    const token = signToken({
+    // Issue 30m Access Token & 7d Refresh Token
+    const { accessToken, refreshToken } = signAuthTokens({
       sub: user.id,
       email: user.email,
       role: user.role,
       branchId: user.branchId,
+      employeeId: matchedEmployee.employeeId || undefined,
     });
 
-    // Set HTTP-only Cookie
-    res.cookie('sabzi_token', token, {
+    // Set HTTP-only Cookies
+    res.cookie('sabzi_token', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 60 * 1000, // 30 minutes
+      path: '/',
+    });
+
+    res.cookie('sabzi_refresh_token', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -206,6 +222,8 @@ router.post('/login', async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
+      accessToken,
+      refreshToken,
       data: {
         user: {
           id: user.id,
@@ -221,9 +239,61 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/auth/refresh (Automatic Silent Refresh Token Rotation)
+router.post('/refresh', async (req: Request, res: Response) => {
+  try {
+    const refreshToken = extractRefreshToken(req);
+
+    if (!refreshToken) {
+      return res.status(401).json({ success: false, error: 'Refresh token is required' });
+    }
+
+    const newTokens = rotateRefreshToken(refreshToken);
+
+    if (!newTokens) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid, expired, or revoked refresh token. Please log in again.'
+      });
+    }
+
+    // Set updated cookies
+    res.cookie('sabzi_token', newTokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 60 * 1000, // 30 minutes
+      path: '/',
+    });
+
+    res.cookie('sabzi_refresh_token', newTokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/',
+    });
+
+    return res.json({
+      success: true,
+      accessToken: newTokens.accessToken,
+      refreshToken: newTokens.refreshToken,
+    });
+  } catch (error: any) {
+    console.error('[refresh]', error);
+    return res.status(500).json({ success: false, error: 'Failed to refresh token' });
+  }
+});
+
 // POST /api/auth/logout
 router.post('/logout', (req: Request, res: Response) => {
+  const refreshToken = extractRefreshToken(req);
+  if (refreshToken) {
+    revokeRefreshToken(refreshToken);
+  }
+
   res.clearCookie('sabzi_token', { path: '/' });
+  res.clearCookie('sabzi_refresh_token', { path: '/' });
   return res.json({ success: true, message: 'Logged out successfully' });
 });
 
