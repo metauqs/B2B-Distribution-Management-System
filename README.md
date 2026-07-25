@@ -1,4 +1,4 @@
-# 🥬 Halal Veg Supplies ERP
+# 🥬 Halal Veg Supplies (B2B Distribution System)
 
 An enterprise-grade **Vegetable Supply Chain & Distribution ERP** tailored for Halal Veg Supplies. This system integrates procurement, daily pricing sheets, sales invoicing, collection tracking, real-time client ledgers, inventory control, and delivery coordination into a single, unified workflow.
 
@@ -113,16 +113,3 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ---
 
-## 📦 Production Deployment Guide
-
-### Backend API (Railway / Render / VPS)
-1. Set the root directory configuration to `backend`.
-2. Configure build commands:
-   - **Build**: `npm run build`
-   - **Start**: `npm start`
-3. Expose environment settings (`DATABASE_URL`, `JWT_SECRET`, `FRONTEND_URL`, etc.).
-
-### Frontend UI (Vercel)
-1. Point Vercel to the `frontend` root directory.
-2. Ensure framework preset is set to **Next.js**.
-3. Supply required build environment keys (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_APP_NAME`).
