@@ -436,6 +436,26 @@ function buildDocStyles(b: BrandConfig): string {
       color: #9CA89B;
     }
 
+    .doc-whatsapp-container {
+      text-align: center;
+      width: 100%;
+      margin-top: 18px;
+      margin-bottom: 6px;
+    }
+    .doc-whatsapp-btn {
+      display: inline-block;
+      background-color: #12D082;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 700;
+      padding: 10px 30px;
+      border-radius: 10px;
+      text-decoration: none;
+      text-align: center;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      border: none;
+    }
+
     /* ── Print Media ───────────────────────────────────── */
     @media print {
       @page { size: A4; margin: 16mm 14mm; }
@@ -485,7 +505,14 @@ function buildHeader(
 }
 
 function buildFooter(b: BrandConfig, printedLabel: string): string {
+  const cleanPhone = b.contactNumber.replace(/[^0-9]/g, '');
+  const waNumber = cleanPhone.startsWith('0') ? `92${cleanPhone.slice(1)}` : cleanPhone;
   return `
+    <div class="doc-whatsapp-container">
+      <a href="https://wa.me/${waNumber}" class="doc-whatsapp-btn" target="_blank" style="color: #ffffff; text-decoration: none;">
+        Whatsapp | ${b.contactNumber}
+      </a>
+    </div>
     <div class="doc-footer">
       <div class="doc-footer-contact">
         <div class="line1">${b.footerLine}</div>
