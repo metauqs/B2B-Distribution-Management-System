@@ -25,25 +25,29 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const trimmedId = employeeId.trim();
 
-    // Ensure at least one admin employee exists to prevent lockout
-    const employeeCount = await prisma.employee.count();
-    if (employeeCount === 0) {
-      const branch = await prisma.branch.findFirst();
-      if (branch) {
-        const adminPass = await bcrypt.hash('admin123', 10);
-        await prisma.employee.create({
-          data: {
-            employeeId: '1234',
-            password: adminPass,
-            name: 'Ahmad Raza (Owner)',
-            role: 'ADMIN',
-            phone: '03001231234',
-            whatsapp: '03001231234',
-            branchId: branch.id,
-            isActive: true,
-          }
-        });
+    // Ensure at least one admin employee exists to prevent lockout (fail-safe)
+    try {
+      const employeeCount = await prisma.employee.count();
+      if (employeeCount === 0) {
+        const branch = await prisma.branch.findFirst();
+        if (branch) {
+          const adminPass = await bcrypt.hash('admin123', 10);
+          await prisma.employee.create({
+            data: {
+              employeeId: '1234',
+              password: adminPass,
+              name: 'Ahmad Raza (Owner)',
+              role: 'ADMIN',
+              phone: '03001231234',
+              whatsapp: '03001231234',
+              branchId: branch.id,
+              isActive: true,
+            }
+          });
+        }
       }
+    } catch (seedErr) {
+      console.warn('[AUTH SEED CHECK SKIPPED]', seedErr);
     }
 
     // 1. Search by exact stored employeeId field
