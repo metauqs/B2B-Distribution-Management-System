@@ -496,6 +496,8 @@ model Driver {
 
 model Employee {
   id             String          @id @default(cuid())
+  employeeId     String?         @unique
+  password       String?
   name           String
   role           EmployeeRole    @default(DELIVERY_STAFF)
   phone          String?
@@ -519,6 +521,7 @@ model Employee {
   deliveries     Delivery[]
 
   @@index([branchId])
+  @@index([employeeId])
   @@map("employees")
 }
 
@@ -910,9 +913,10 @@ enum VehicleType {
 
 enum EmployeeRole {
   ADMIN
-  DELIVERY_STAFF
-  PURCHASE_STAFF
+  SUPERVISOR
   BILLING_STAFF
+  PURCHASE_STAFF
+  DELIVERY_STAFF
 }
 
 enum BroadcastStatus {

@@ -2,29 +2,43 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Icon from '@mdi/react';
+import { mdiAccountBadge, mdiLock, mdiShieldAccount } from '@mdi/js';
+import { DEFAULT_LOGO_BASE64 } from '@/utils/logoBase64';
 
 export default function LoginPage() {
   const router = useRouter();
   const [employeeId, setEmployeeId] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    
+    if (!employeeId.trim()) {
+      setError('Please enter your Employee ID');
+      return;
+    }
+    if (!password) {
+      setError('Please enter your password');
+      return;
+    }
+
     setLoading(true);
 
     try {
       const res = await fetch('/api/auth/login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ employeeId }),
+        body:    JSON.stringify({ employeeId: employeeId.trim(), password }),
       });
 
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        setError(data.error ?? 'Invalid Employee ID');
+        setError(data.error ?? 'Invalid Employee ID or password');
         setLoading(false);
         return;
       }
@@ -40,116 +54,193 @@ export default function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'var(--cream)',
+      background: '#F4F8F0',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '16px',
-      fontFamily: "'IBM Plex Sans', sans-serif",
+      padding: '24px 16px',
+      fontFamily: "'Inter', 'Segoe UI', sans-serif",
       position: 'relative',
     }}>
-      {/* Top Header Bar */}
+      {/* Top Header Banner with Company Logo */}
       <div style={{
         position: 'absolute',
-        top: 0,
+        top: '28px',
         left: 0,
         right: 0,
-        height: '76px',
-        background: 'var(--forest)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '0 24px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
       }}>
         <img 
-          src="/logo-light.png" 
+          src={DEFAULT_LOGO_BASE64} 
           alt="Halal Vegg Supplies" 
-          style={{ height: '48px', width: 'auto', objectFit: 'contain' }} 
+          style={{ height: '90px', width: 'auto', objectFit: 'contain' }} 
         />
       </div>
 
       {/* Login Card */}
       <div style={{
-        background: 'var(--paper)',
-        border: '1px solid var(--line)',
-        borderRadius: 10,
-        maxWidth: 380,
+        background: '#FFFFFF',
+        border: '1px solid #D4E6CC',
+        borderRadius: '14px',
+        maxWidth: 410,
         width: '100%',
         overflow: 'hidden',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
-        marginTop: '60px',
+        boxShadow: '0 16px 40px rgba(26,60,40,0.12)',
+        marginTop: '80px',
       }}>
         {/* Card Header */}
         <div style={{
-          background: 'var(--forest)',
-          padding: '24px 28px 20px',
+          background: 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)',
+          padding: '30px 28px 26px',
           textAlign: 'center',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          borderBottom: '1px solid rgba(255,255,255,0.15)',
         }}>
-          <h2 style={{ fontSize: 18, color: 'var(--paper)', margin: 0, fontWeight: 600 }}>
-            Halal Veg Supplies
+          <div style={{
+            width: '50px',
+            height: '50px',
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 12px',
+            boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.2)',
+          }}>
+            <Icon path={mdiShieldAccount} size={1.3} color="#FFFFFF" />
+          </div>
+          <h2 style={{ fontSize: 21, color: '#FFFFFF', margin: 0, fontWeight: 700, letterSpacing: '-0.01em' }}>
+            Employee Portal
           </h2>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 8, fontWeight: 500 }}>
-            Sign in to your account
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 6, fontWeight: 500 }}>
+            Sign in with your Employee ID & Password
           </div>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} style={{ padding: '26px 28px 28px' }}>
+        <form onSubmit={handleSubmit} style={{ padding: '28px 28px 32px' }}>
           {error && (
             <div style={{
-              background: '#F5E1DE', border: '1px solid #E9C6C6',
-              borderRadius: 6, padding: '10px 12px',
-              fontSize: 13, color: 'var(--danger)', marginBottom: 16,
+              background: '#FDF2F2',
+              border: '1px solid #F8B4B4',
+              borderRadius: 8,
+              padding: '12px 14px',
+              fontSize: 13,
+              color: '#9B1C1C',
+              marginBottom: 20,
               fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
             }}>
-              {error}
+              <span>⚠️</span>
+              <span>{error}</span>
             </div>
           )}
 
-          <div className="va-field" style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
+          {/* Employee ID Field */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#2D3748' }}>
               Employee ID
             </label>
-            <input
-              id="employeeId"
-              type="text"
-              pattern="[0-9]*"
-              inputMode="numeric"
-              value={employeeId}
-              onChange={e => setEmployeeId(e.target.value)}
-              placeholder="Enter your Employee ID"
-              required
-              autoFocus
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: 6,
-                border: '1px solid var(--line)',
-                fontSize: 14,
-                outline: 'none',
-                transition: 'border-color 0.2s',
-              }}
-            />
+            <div style={{ position: 'relative' }}>
+              <div style={{
+                position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
+                color: '#A0AEC0', display: 'flex', alignItems: 'center',
+              }}>
+                <Icon path={mdiAccountBadge} size={0.9} color="#718096" />
+              </div>
+              <input
+                id="employeeId"
+                type="text"
+                value={employeeId}
+                onChange={e => setEmployeeId(e.target.value)}
+                placeholder="Enter Employee ID"
+                required
+                autoFocus
+                style={{
+                  width: '100%',
+                  padding: '11px 12px 11px 40px',
+                  borderRadius: 8,
+                  border: '1px solid #CBD5E0',
+                  fontSize: 14,
+                  outline: 'none',
+                  color: '#1A202C',
+                  background: '#F8FAFC',
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
           </div>
 
+          {/* Password Field */}
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#2D3748' }}>
+              Password
+            </label>
+            <div style={{ position: 'relative' }}>
+              <div style={{
+                position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
+                color: '#A0AEC0', display: 'flex', alignItems: 'center',
+              }}>
+                <Icon path={mdiLock} size={0.9} color="#718096" />
+              </div>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                required
+                style={{
+                  width: '100%',
+                  padding: '11px 12px 11px 40px',
+                  borderRadius: 8,
+                  border: '1px solid #CBD5E0',
+                  fontSize: 14,
+                  outline: 'none',
+                  color: '#1A202C',
+                  background: '#F8FAFC',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Submit Button */}
           <button
             type="submit"
-            className="va-btn"
             disabled={loading}
-            style={{ width: '100%', opacity: loading ? 0.7 : 1 }}
+            style={{
+              width: '100%',
+              padding: '13px',
+              borderRadius: 8,
+              background: 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)',
+              color: '#FFFFFF',
+              border: 'none',
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.75 : 1,
+              transition: 'all 0.2s',
+              boxShadow: '0 4px 14px rgba(26,60,40,0.25)',
+              letterSpacing: '0.02em',
+            }}
           >
-            {loading ? 'Signing in…' : 'Sign in'}
+            {loading ? 'Authenticating…' : 'Sign In'}
           </button>
         </form>
       </div>
 
-      {/* Google Fonts */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
-      `}</style>
+      {/* Footer info */}
+      <div style={{ marginTop: 24, fontSize: 12, color: '#718096', textAlign: 'center' }}>
+        Halal Vegg Supplies Distribution Management System
+      </div>
     </div>
   );
 }
