@@ -49,6 +49,8 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`va-badge ${map[status] ?? 'pending'}`}>{status}</span>;
 }
 
+import { apiFetch } from '@/utils/apiFetch';
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const [data, setData]     = useState<DashboardData | null>(null);
@@ -58,7 +60,7 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/reports/dashboard');
+      const res = await apiFetch('/api/reports/dashboard');
       if (res.status === 401) { window.location.href = '/login'; return; }
       const json = await res.json();
       if (json.success) setData(json.data);

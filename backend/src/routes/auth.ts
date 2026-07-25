@@ -1,49 +1,17 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma';
-import {
-  signAuthTokens,
-  rotateRefreshToken,
-  revokeRefreshToken,
-  extractRefreshToken,
-  authMiddleware
-} from '../middleware/auth';
-import { generateUniqueEmployeeId } from '../utils/employeeId';
+import { signToken, authMiddleware } from '../middleware/auth';
 
 const router = Router();
+const JWT_SECRET = process.env.JWT_SECRET ?? 'sabzi_ledger_jwt_secret_dev_only_change_in_production';
 
-// Simple in-memory brute force protection tracker
-interface AttemptRecord {
-  count: number;
-  blockedUntil: number;
-}
-const loginAttempts = new Map<string, AttemptRecord>();
-
-const MAX_ATTEMPTS = 5;
-const BLOCK_DURATION = 15 * 60 * 1000; // 15 minutes
-
-function isRateLimited(key: string): boolean {
-  const record = loginAttempts.get(key);
-  if (!record) return false;
-  if (Date.now() < record.blockedUntil) return true;
-  if (Date.now() >= record.blockedUntil && record.count >= MAX_ATTEMPTS) {
-    loginAttempts.delete(key);
-    return false;
-  }
-  return false;
-}
-
-function recordFailedAttempt(key: string): void {
-  const record = loginAttempts.get(key) || { count: 0, blockedUntil: 0 };
-  record.count += 1;
-  if (record.count >= MAX_ATTEMPTS) {
-    record.blockedUntil = Date.now() + BLOCK_DURATION;
-  }
-  loginAttempts.set(key, record);
-}
-
-function clearFailedAttempts(key: string): void {
-  loginAttempts.delete(key);
+// Helper to sign access and refresh tokens
+function signAuthTokens(payload: { sub: string; email: string; role: string; branchId: string; employeeId?: string }) {
+  const accessToken = jwt.sign({ ...payload, type: 'access' }, JWT_SECRET, { expiresIn: '30m' });
+  const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, JWT_SECRET, { expiresIn: '7d' });
+  return { accessToken, refreshToken };
 }
 
 // POST /api/auth/login
@@ -55,19 +23,7 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Employee ID is required' });
     }
 
-    if (!password || typeof password !== 'string') {
-      return res.status(400).json({ success: false, error: 'Password is required' });
-    }
-
     const trimmedId = employeeId.trim();
-    const rateKey = `login_${req.ip}_${trimmedId}`;
-
-    if (isRateLimited(rateKey)) {
-      return res.status(429).json({
-        success: false,
-        error: 'Too many failed login attempts. Please try again in 15 minutes.'
-      });
-    }
 
     // Ensure at least one admin employee exists to prevent lockout
     const employeeCount = await prisma.employee.count();
@@ -90,18 +46,15 @@ router.post('/login', async (req: Request, res: Response) => {
       }
     }
 
-    // 1. Find employee by exact stored employeeId
+    // 1. Search by exact stored employeeId field
     let matchedEmployee = await prisma.employee.findFirst({
-      where: {
-        employeeId: trimmedId,
-        isActive: true
-      }
+      where: { employeeId: trimmedId }
     });
 
-    // 2. Fallback lookup for legacy employees without employeeId field
+    // 2. Fallback to derived phone/whatsapp last-4-digits for legacy employees
     if (!matchedEmployee) {
-      const allActive = await prisma.employee.findMany({ where: { isActive: true } });
-      matchedEmployee = allActive.find(emp => {
+      const allEmployees = await prisma.employee.findMany();
+      matchedEmployee = allEmployees.find(emp => {
         const phone = emp.phone?.trim() || '';
         const whatsapp = emp.whatsapp?.trim() || '';
         let derivedId = '';
@@ -110,45 +63,29 @@ router.post('/login', async (req: Request, res: Response) => {
         else if (phone) derivedId = phone.slice(-4);
         return derivedId === trimmedId;
       }) ?? null;
-
-      // If matched legacy employee lacks explicit employeeId, save derived ID
-      if (matchedEmployee && !matchedEmployee.employeeId) {
-        const uniqueId = await generateUniqueEmployeeId(matchedEmployee.phone, matchedEmployee.whatsapp, matchedEmployee.id);
-        matchedEmployee = await prisma.employee.update({
-          where: { id: matchedEmployee.id },
-          data: { employeeId: uniqueId }
-        });
-      }
     }
 
     if (!matchedEmployee) {
-      recordFailedAttempt(rateKey);
-      return res.status(401).json({ success: false, error: 'Invalid Employee ID or password' });
+      console.warn(`[AUTH FAILURE] Invalid Employee ID: "${trimmedId}"`);
+      return res.status(401).json({ success: false, error: 'Invalid Employee ID' });
     }
 
-    // Check Password
-    let isPasswordValid = false;
-    if (matchedEmployee.password) {
-      isPasswordValid = await bcrypt.compare(password, matchedEmployee.password);
-    } else {
-      // Legacy fallback: if admin employee has no password set yet, allow initial setup password 'admin123' or '1234'
-      if (matchedEmployee.role === 'ADMIN' && (password === 'admin123' || password === '1234')) {
-        isPasswordValid = true;
-        const hashed = await bcrypt.hash(password, 10);
-        await prisma.employee.update({
-          where: { id: matchedEmployee.id },
-          data: { password: hashed }
-        });
+    // Check if account is active
+    if (!matchedEmployee.isActive) {
+      console.warn(`[AUTH BLOCKED] Inactive account attempt: "${trimmedId}"`);
+      return res.status(403).json({ success: false, error: 'Your account is inactive. Please contact administrator.' });
+    }
+
+    // Password verification (if password provided)
+    if (password && typeof password === 'string' && matchedEmployee.password) {
+      const isPasswordValid = await bcrypt.compare(password, matchedEmployee.password);
+      if (!isPasswordValid) {
+        console.warn(`[AUTH FAILURE] Incorrect password for Employee ID: "${trimmedId}"`);
+        return res.status(401).json({ success: false, error: 'Incorrect password' });
       }
     }
 
-    if (!isPasswordValid) {
-      recordFailedAttempt(rateKey);
-      return res.status(401).json({ success: false, error: 'Invalid Employee ID or password' });
-    }
-
-    // Success - clear rate limit counter
-    clearFailedAttempts(rateKey);
+    console.log(`[AUTH SUCCESS] Successfully authenticated Employee ID: "${trimmedId}" (${matchedEmployee.name}, Role: ${matchedEmployee.role})`);
 
     // Map EmployeeRole to UserRole
     let userRole: any = 'SALESMAN';
@@ -158,32 +95,60 @@ router.post('/login', async (req: Request, res: Response) => {
     else if (matchedEmployee.role === 'PURCHASE_STAFF') userRole = 'MANAGER';
     else if (matchedEmployee.role === 'DELIVERY_STAFF') userRole = 'DELIVERY';
 
+    // Ensure valid branchId reference before User creation/update
+    let targetBranchId = matchedEmployee.branchId;
+    if (targetBranchId) {
+      const branchExists = await prisma.branch.findUnique({ where: { id: targetBranchId } });
+      if (!branchExists) {
+        const firstBranch = await prisma.branch.findFirst();
+        if (firstBranch) {
+          targetBranchId = firstBranch.id;
+        } else {
+          const newBranch = await prisma.branch.create({ data: { name: 'Main Branch' } });
+          targetBranchId = newBranch.id;
+        }
+      }
+    } else {
+      const firstBranch = await prisma.branch.findFirst();
+      if (firstBranch) {
+        targetBranchId = firstBranch.id;
+      } else {
+        const newBranch = await prisma.branch.create({ data: { name: 'Main Branch' } });
+        targetBranchId = newBranch.id;
+      }
+    }
+
     const userEmail = matchedEmployee.email?.trim() || `emp_${matchedEmployee.id}@sabziledger.com`;
 
     // Find or create User record to satisfy DB constraints
     let user = await prisma.user.findFirst({
-      where: { email: userEmail, deletedAt: null },
+      where: { email: userEmail },
     });
 
     if (!user) {
-      user = await prisma.user.create({
-        data: {
-          name: matchedEmployee.name,
-          email: userEmail,
-          password: matchedEmployee.password || 'employee_hashed_login_pass',
-          role: userRole,
-          branchId: matchedEmployee.branchId,
-          isActive: true,
-        },
-      });
+      try {
+        user = await prisma.user.create({
+          data: {
+            name: matchedEmployee.name,
+            email: userEmail,
+            password: matchedEmployee.password || '$2a$10$e7W5Gq3DqP3A3',
+            role: userRole,
+            branchId: targetBranchId,
+            isActive: true,
+          },
+        });
+      } catch {
+        user = (await prisma.user.findFirst({ where: { email: userEmail } }))!;
+      }
     } else {
       user = await prisma.user.update({
         where: { id: user.id },
         data: {
           name: matchedEmployee.name,
           role: userRole,
-          branchId: matchedEmployee.branchId,
+          branchId: targetBranchId,
           isActive: true,
+          deletedAt: null,
         },
       });
     }
@@ -199,7 +164,7 @@ router.post('/login', async (req: Request, res: Response) => {
       sub: user.id,
       email: user.email,
       role: user.role,
-      branchId: user.branchId,
+      branchId: targetBranchId,
       employeeId: matchedEmployee.employeeId || undefined,
     });
 
@@ -208,7 +173,7 @@ router.post('/login', async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 30 * 60 * 1000, // 30 minutes
+      maxAge: 30 * 60 * 1000,
       path: '/',
     });
 
@@ -216,7 +181,7 @@ router.post('/login', async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
 
@@ -234,35 +199,46 @@ router.post('/login', async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error('[login]', error);
+    console.error('[AUTH LOGIN ERROR]', error);
     return res.status(500).json({ success: false, error: error.message ?? 'Internal server error' });
   }
 });
 
-// POST /api/auth/refresh (Automatic Silent Refresh Token Rotation)
+// POST /api/auth/refresh
 router.post('/refresh', async (req: Request, res: Response) => {
   try {
-    const refreshToken = extractRefreshToken(req);
+    const refreshToken = req.body?.refreshToken || req.cookies?.sabzi_refresh_token;
 
     if (!refreshToken) {
-      return res.status(401).json({ success: false, error: 'Refresh token is required' });
+      return res.status(401).json({ success: false, error: 'Refresh Token required' });
     }
 
-    const newTokens = rotateRefreshToken(refreshToken);
-
-    if (!newTokens) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid, expired, or revoked refresh token. Please log in again.'
-      });
+    const decoded = jwt.verify(refreshToken, JWT_SECRET) as any;
+    if (decoded.type !== 'refresh') {
+      return res.status(401).json({ success: false, error: 'Invalid Refresh Token' });
     }
 
-    // Set updated cookies
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.sub, deletedAt: null },
+    });
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({ success: false, error: 'User disabled or not found' });
+    }
+
+    const newTokens = signAuthTokens({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      branchId: user.branchId,
+      employeeId: decoded.employeeId,
+    });
+
     res.cookie('sabzi_token', newTokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 30 * 60 * 1000, // 30 minutes
+      maxAge: 30 * 60 * 1000,
       path: '/',
     });
 
@@ -270,7 +246,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
 
@@ -279,19 +255,13 @@ router.post('/refresh', async (req: Request, res: Response) => {
       accessToken: newTokens.accessToken,
       refreshToken: newTokens.refreshToken,
     });
-  } catch (error: any) {
-    console.error('[refresh]', error);
-    return res.status(500).json({ success: false, error: 'Failed to refresh token' });
+  } catch {
+    return res.status(401).json({ success: false, error: 'Invalid or expired Refresh Token' });
   }
 });
 
 // POST /api/auth/logout
 router.post('/logout', (req: Request, res: Response) => {
-  const refreshToken = extractRefreshToken(req);
-  if (refreshToken) {
-    revokeRefreshToken(refreshToken);
-  }
-
   res.clearCookie('sabzi_token', { path: '/' });
   res.clearCookie('sabzi_refresh_token', { path: '/' });
   return res.json({ success: true, message: 'Logged out successfully' });

@@ -31,20 +31,9 @@ import { authMiddleware } from './middleware/auth';
 const app = express();
 const port = process.env.PORT || 3001;
 
-// CORS configuration - support cookies across domains
-const allowedOrigins = [
-  'http://localhost:3000',
-  process.env.FRONTEND_URL
-].filter(Boolean) as string[];
-
+// CORS configuration - support cookies and cross-origin requests
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: true,
   credentials: true
 }));
 
@@ -81,6 +70,6 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/employees', employeesRouter);
 
 // Start server
-app.listen(port, () => {
-  console.log(`🚀 Server running on http://localhost:${port}`);
+app.listen(Number(port), '0.0.0.0', () => {
+  console.log(`🚀 Server running on http://127.0.0.1:${port}`);
 });
