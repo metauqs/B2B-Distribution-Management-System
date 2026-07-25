@@ -43,6 +43,26 @@ export default function PurchasesPage() {
   const [transportCost, setTransportCost] = useState(0);
   const [notes,        setNotes]        = useState('');
 
+  // Merge Conflict States
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeData, setMergeData] = useState<{
+    itemName: string;
+    rate1: number;
+    rate2: number;
+    index1: number;
+    index2: number;
+    currentList: PurchaseItem[];
+  } | null>(null);
+
+  const [showDbMergeModal, setShowDbMergeModal] = useState(false);
+  const [dbMergeData, setDbMergeData] = useState<{
+    itemName: string;
+    dbRate: number;
+    formRate: number;
+    itemIndex: number;
+    currentList: PurchaseItem[];
+  } | null>(null);
+
   // Add Supplier Inline Modal State
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
@@ -231,6 +251,160 @@ export default function PurchasesPage() {
     setFormOpen(false);
   };
 
+  const findDuplicateItems = (currentItems: PurchaseItem[]) => {
+    const seen = new Map<string, number>();
+    for (let i = 0; i < currentItems.length; i++) {
+      const name = currentItems[i].itemName.trim().toLowerCase();
+      if (!name) continue;
+      if (seen.has(name)) {
+        return {
+          itemName: currentItems[i].itemName,
+          index1: seen.get(name)!,
+          index2: i,
+        };
+      }
+      seen.set(name, i);
+    }
+    return null;
+  };
+
+  const getDbDuplicate = (currentItems: PurchaseItem[]) => {
+    const dayStr = date.slice(0, 10);
+    const sameDayPurchases = purchases.filter(p => p.date.startsWith(dayStr) && p.id !== purchaseId);
+    
+    for (let i = 0; i < currentItems.length; i++) {
+      const item = currentItems[i];
+      const name = item.itemName.trim().toLowerCase();
+      if (!name) continue;
+      
+      for (const p of sameDayPurchases) {
+        const matched = p.items?.find(it => 
+          (item.productId && it.productId === item.productId) || 
+          (it.itemName.toLowerCase() === name)
+        );
+        if (matched && matched.rate !== item.rate) {
+          return {
+            itemName: item.itemName,
+            dbRate: matched.rate,
+            formRate: item.rate,
+            itemIndex: i,
+            currentList: currentItems
+          };
+        }
+      }
+    }
+    return null;
+  };
+
+  const savePurchaseToDb = async (itemsToSave: PurchaseItem[]) => {
+    const finalSupplierId = source === 'MANDI' ? 'mandi' : supplierId;
+    setSaving(true);
+    try {
+      const url = purchaseId ? `/api/purchases/${purchaseId}` : '/api/purchases';
+      const method = purchaseId ? 'PATCH' : 'POST';
+
+      const res  = await fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supplierId: finalSupplierId, items: itemsToSave, paid, transportCost, notes, date }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(purchaseId ? '✅ Purchase updated successfully' : '✅ Purchase saved — stock updated');
+        handleCancelForm();
+        await load();
+      } else showToast('❌ ' + (data.error ?? 'Failed'));
+    } catch {
+      showToast('❌ Network error saving purchase');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const checkAndSave = (currentItems: PurchaseItem[]) => {
+    // 1. Check for duplicates in the current form
+    const dup = findDuplicateItems(currentItems);
+    if (dup) {
+      const item1 = currentItems[dup.index1];
+      const item2 = currentItems[dup.index2];
+      
+      if (item1.rate === item2.rate) {
+        // Automatically merge if rates are the same
+        const merged = [...currentItems];
+        merged[dup.index1].qty += item2.qty;
+        merged[dup.index1].amount = merged[dup.index1].qty * item1.rate;
+        const filtered = merged.filter((_, idx) => idx !== dup.index2);
+        setItems(filtered);
+        checkAndSave(filtered);
+      } else {
+        // Show merge modal for different rates
+        setMergeData({
+          itemName: dup.itemName,
+          rate1: item1.rate,
+          rate2: item2.rate,
+          index1: dup.index1,
+          index2: dup.index2,
+          currentList: currentItems
+        });
+        setShowMergeModal(true);
+      }
+      return;
+    }
+
+    // 2. Check for rate conflicts with previously saved purchases on the same day
+    const dbDup = getDbDuplicate(currentItems);
+    if (dbDup) {
+      setDbMergeData({
+        itemName: dbDup.itemName,
+        dbRate: dbDup.dbRate,
+        formRate: dbDup.formRate,
+        itemIndex: dbDup.itemIndex,
+        currentList: dbDup.currentList
+      });
+      setShowDbMergeModal(true);
+      return;
+    }
+
+    // No duplicates, proceed to save
+    savePurchaseToDb(currentItems);
+  };
+
+  const handleResolveMerge = (useRate: number) => {
+    if (!mergeData) return;
+    const { index1, index2, currentList } = mergeData;
+    
+    const updated = [...currentList];
+    updated[index1].qty += updated[index2].qty;
+    updated[index1].rate = useRate;
+    updated[index1].amount = updated[index1].qty * useRate;
+    
+    const filtered = updated.filter((_, i) => i !== index2);
+    setItems(filtered);
+    
+    setShowMergeModal(false);
+    setMergeData(null);
+    
+    setTimeout(() => {
+      checkAndSave(filtered);
+    }, 50);
+  };
+
+  const handleResolveDbMerge = (useRate: number) => {
+    if (!dbMergeData) return;
+    const { itemIndex, currentList } = dbMergeData;
+    
+    const updated = [...currentList];
+    updated[itemIndex].rate = useRate;
+    updated[itemIndex].amount = updated[itemIndex].qty * useRate;
+    setItems(updated);
+    
+    setShowDbMergeModal(false);
+    setDbMergeData(null);
+    
+    setTimeout(() => {
+      checkAndSave(updated);
+    }, 50);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalSupplierId = source === 'MANDI' ? 'mandi' : supplierId;
@@ -244,22 +418,7 @@ export default function PurchasesPage() {
       return showToast(`❌ Amount paid (Rs ${paid.toLocaleString()}) cannot exceed total purchase amount (Rs ${totalCalc.toLocaleString()})`);
     }
     
-    setSaving(true);
-    try {
-      const url = purchaseId ? `/api/purchases/${purchaseId}` : '/api/purchases';
-      const method = purchaseId ? 'PATCH' : 'POST';
-
-      const res  = await fetch(url, {
-        method, headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supplierId: finalSupplierId, items, paid, transportCost, notes, date }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast(purchaseId ? '✅ Purchase updated successfully' : '✅ Purchase saved — stock updated');
-        handleCancelForm();
-        await load();
-      } else showToast('❌ ' + (data.error ?? 'Failed'));
-    } finally { setSaving(false); }
+    checkAndSave(items);
   };
 
   // Filter logic
@@ -452,6 +611,112 @@ export default function PurchasesPage() {
                 <button type="submit" className="va-btn">Save Supplier</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Merge Conflict Modal (Same voucher duplicates) */}
+      {showMergeModal && mergeData && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 99999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div className="va-panel" style={{ width: '100%', maxWidth: '460px', margin: 0, border: '1px solid var(--danger)' }}>
+            <div className="va-panel-head">
+              <h3 style={{ color: 'var(--clay)' }}>⚠️ Price Conflict Warning</h3>
+              <button className="va-btn secondary small" onClick={() => { setShowMergeModal(false); setMergeData(null); }}>✕</button>
+            </div>
+            <div style={{ padding: '16px', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.6 }}>
+              <p style={{ margin: 0 }}>
+                This product (<strong>{mergeData.itemName}</strong>) has already been added to the purchase list.
+              </p>
+              <p style={{ margin: '10px 0 0 0' }}>
+                The existing Buy Rate is <strong className="mono">Rs {mergeData.rate1}</strong>, but the new Buy Rate is <strong className="mono">Rs {mergeData.rate2}</strong>.
+              </p>
+              <p style={{ margin: '12px 0 0 0', fontWeight: 500 }}>
+                Please confirm which Buy Rate should be used before merging the quantities:
+              </p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 16px 16px' }}>
+              <button 
+                type="button" 
+                className="va-btn" 
+                style={{ width: '100%', display: 'block' }}
+                onClick={() => handleResolveMerge(mergeData.rate1)}
+              >
+                Keep Existing Buy Rate (Rs {mergeData.rate1})
+              </button>
+              <button 
+                type="button" 
+                className="va-btn" 
+                style={{ width: '100%', background: 'var(--clay)', display: 'block' }}
+                onClick={() => handleResolveMerge(mergeData.rate2)}
+              >
+                Replace with New Buy Rate (Rs {mergeData.rate2})
+              </button>
+              <button 
+                type="button" 
+                className="va-btn secondary" 
+                style={{ width: '100%', display: 'block' }}
+                onClick={() => { setShowMergeModal(false); setMergeData(null); }}
+              >
+                Cancel and edit the Buy Rate before saving
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DB Merge Conflict Modal (Cross-voucher same-day duplicates) */}
+      {showDbMergeModal && dbMergeData && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 99999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div className="va-panel" style={{ width: '100%', maxWidth: '460px', margin: 0, border: '1px solid var(--danger)' }}>
+            <div className="va-panel-head">
+              <h3 style={{ color: 'var(--clay)' }}>⚠️ Price Conflict Warning</h3>
+              <button className="va-btn secondary small" onClick={() => { setShowDbMergeModal(false); setDbMergeData(null); }}>✕</button>
+            </div>
+            <div style={{ padding: '16px', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.6 }}>
+              <p style={{ margin: 0 }}>
+                This product (<strong>{dbMergeData.itemName}</strong>) has already been purchased today.
+              </p>
+              <p style={{ margin: '10px 0 0 0' }}>
+                The existing Buy Rate is <strong className="mono">Rs {dbMergeData.dbRate}</strong>, but the new Buy Rate is <strong className="mono">Rs {dbMergeData.formRate}</strong>.
+              </p>
+              <p style={{ margin: '12px 0 0 0', fontWeight: 500 }}>
+                Please confirm which Buy Rate should be used before merging the quantities:
+              </p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 16px 16px' }}>
+              <button 
+                type="button" 
+                className="va-btn" 
+                style={{ width: '100%', display: 'block' }}
+                onClick={() => handleResolveDbMerge(dbMergeData.dbRate)}
+              >
+                Keep Existing Buy Rate (Rs {dbMergeData.dbRate})
+              </button>
+              <button 
+                type="button" 
+                className="va-btn" 
+                style={{ width: '100%', background: 'var(--clay)', display: 'block' }}
+                onClick={() => handleResolveDbMerge(dbMergeData.formRate)}
+              >
+                Replace with New Buy Rate (Rs {dbMergeData.formRate})
+              </button>
+              <button 
+                type="button" 
+                className="va-btn secondary" 
+                style={{ width: '100%', display: 'block' }}
+                onClick={() => { setShowDbMergeModal(false); setDbMergeData(null); }}
+              >
+                Cancel and edit the Buy Rate before saving
+              </button>
+            </div>
           </div>
         </div>
       )}
