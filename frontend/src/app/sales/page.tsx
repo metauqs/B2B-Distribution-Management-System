@@ -8,6 +8,7 @@ import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatte
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
+import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
@@ -323,6 +324,18 @@ export default function SalesPage() {
         }
       }
       next[i].amount = Number(next[i].qty) * Number(next[i].rate);
+      return next;
+    });
+  };
+
+  const selectProductForItem = (i: number, pItem: PriceItem) => {
+    setItems(prev => {
+      const next = [...prev];
+      next[i].itemName  = pItem.itemName;
+      next[i].productId = pItem.productId;
+      next[i].unit      = pItem.unit;
+      next[i].rate      = pItem.sellRate;
+      next[i].amount    = Number(next[i].qty) * Number(pItem.sellRate);
       return next;
     });
   };
@@ -947,19 +960,14 @@ export default function SalesPage() {
                   <div key={i} className="va-item-row">
                     <div className="va-field" style={{ flex: 3 }}>
                       <label className={i > 0 ? 'show-mobile' : ''}>Product</label>
-                      <div style={{ position: 'relative' }}>
-                        <input
-                          list={`pl-${i}`}
+                        <ProductAutocomplete
                           value={item.itemName}
-                          onChange={e => updateItem(i, 'itemName', e.target.value)}
+                          onChange={val => updateItem(i, 'itemName', val)}
+                          onSelect={pItem => selectProductForItem(i, pItem)}
+                          priceItems={priceItems}
                           placeholder="Product name"
                           required
-                          style={{ background: 'var(--paper)', color: 'var(--ink)' }}
                         />
-                        <datalist id={`pl-${i}`}>
-                          {priceItems.map(p => <option key={p.productId} value={p.itemName} />)}
-                        </datalist>
-                      </div>
                     </div>
                     <div className="va-field" style={{ flex: 1 }}>
                       <label className={i > 0 ? 'show-mobile' : ''}>Qty</label>
