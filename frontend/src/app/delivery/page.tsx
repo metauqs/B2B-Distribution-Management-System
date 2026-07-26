@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 
 interface DeliveryItem {
   id: string;
@@ -504,120 +505,12 @@ export default function DeliveryPage() {
               }}
             >
                 {filtered.map(d => (
-                  <div 
-                    key={d.id} 
-                    style={{
-                      background: '#FFFFFF',
-                      borderRadius: '14px',
-                      border: '1px solid #E2E8F0',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between'
-                    }}
-                  >
-                    {/* Header Strip */}
-                    <div style={{
-                      background: 'linear-gradient(135deg, #1B4D2E 0%, #2E7D32 100%)',
-                      color: '#FFFFFF',
-                      padding: '14px 18px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}>
-                      <span style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.01em' }}>
-                        {d.client?.name ?? 'Customer'}
-                      </span>
-                      <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.18)', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>
-                        {fmtDate(d.date)}
-                      </span>
-                    </div>
-
-                    {/* Card Content Body */}
-                    <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                        <span style={{ color: '#64748B', fontWeight: 500 }}>Invoice ID</span>
-                        <span className="mono" style={{ color: '#0F172A', fontWeight: 700, fontSize: '14px' }}>{d.sale?.invoiceNo}</span>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                        <span style={{ color: '#64748B', fontWeight: 500 }}>Phone</span>
-                        <span style={{ fontWeight: 600 }}>
-                          {d.client?.phone ? (
-                            <a href={`tel:${d.client.phone}`} style={{ color: '#2563EB', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                              📞 {d.client.phone}
-                            </a>
-                          ) : '—'}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '13px' }}>
-                        <span style={{ color: '#64748B', fontWeight: 500 }}>Address</span>
-                        <span style={{ color: '#0F172A', fontWeight: 600, textAlign: 'right', maxWidth: '65%' }}>
-                          {d.client?.address ?? '—'}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                        <span style={{ color: '#64748B', fontWeight: 500 }}>Staff Assigned</span>
-                        <span style={{ color: '#0F172A', fontWeight: 600 }}>{d.employee?.name || activeEmpName}</span>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                        <span style={{ color: '#64748B', fontWeight: 500 }}>Time Slot</span>
-                        <span style={{ color: '#0F172A', fontWeight: 600, fontSize: '12px' }}>{d.scheduledTime || 'PHASE 1 (11:00 AM - 02:00 PM)'}</span>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                        <span style={{ color: '#64748B', fontWeight: 500 }}>Status</span>
-                        <span style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          padding: '3px 10px',
-                          borderRadius: '12px',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.04em',
-                          background: d.status === 'DELIVERED' ? '#DCFCE7' : d.status === 'OUT' ? '#E0F2FE' : d.status === 'FAILED' ? '#FEE2E2' : '#FEF3C7',
-                          color: d.status === 'DELIVERED' ? '#15803D' : d.status === 'OUT' ? '#0369A1' : d.status === 'FAILED' ? '#991B1B' : '#B45309',
-                          border: `1px solid ${d.status === 'DELIVERED' ? '#86EFAC' : d.status === 'OUT' ? '#BAE6FD' : d.status === 'FAILED' ? '#FCA5A5' : '#FDE68A'}`
-                        }}>
-                          {d.status === 'OUT' ? 'DISPATCHED' : d.status.replace(/_/g, ' ')}
-                        </span>
-                      </div>
-
-                      {/* Order Items Box (High Contrast Light-Green Box with Dark Green Text) */}
-                      {d.sale?.items && d.sale.items.length > 0 && (
-                        <div style={{
-                          background: '#F0FDF4',
-                          border: '1px solid #DCFCE7',
-                          borderRadius: '10px',
-                          padding: '12px 14px',
-                          marginTop: '4px'
-                        }}>
-                          <div style={{ fontSize: '12px', color: '#166534', fontWeight: 700, marginBottom: '6px', borderBottom: '1px solid #DCFCE7', paddingBottom: '4px' }}>
-                            Order Items ({d.sale.items.length})
-                          </div>
-                          {d.sale.items.map(item => (
-                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#15803D', fontWeight: 600, margin: '4px 0' }}>
-                              <span>• {item.itemName}</span>
-                              <span style={{ color: '#166534', fontWeight: 700 }}>{item.qty} {item.unit}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {d.deliveredAt && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', background: '#F8FAFC', padding: '6px 10px', borderRadius: '6px', color: '#166534', fontWeight: 600 }}>
-                          <span>Delivered At:</span>
-                          <span>{fmtDateTime(d.deliveredAt)}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Card Action Footer */}
-                    <div style={{ padding: '12px 18px 16px', background: '#F8FAFC', borderTop: '1px solid #F1F5F9' }}>
-                      {d.status !== 'DELIVERED' ? (
+                  <MobileCard
+                    key={d.id}
+                    title={d.client?.name ?? 'Customer'}
+                    headerBadge={fmtDate(d.date)}
+                    footer={
+                      d.status !== 'DELIVERED' ? (
                         <button 
                           style={{
                             width: '100%',
@@ -625,16 +518,15 @@ export default function DeliveryPage() {
                             background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
                             color: '#FFFFFF',
                             fontWeight: 700,
-                            borderRadius: '8px',
+                            borderRadius: '10px',
                             border: 'none',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '6px',
-                            fontSize: '15px',
+                            fontSize: '14px',
                             boxShadow: '0 4px 12px rgba(22, 163, 74, 0.35)',
-                            transition: 'all 0.2s ease'
                           }} 
                           onClick={() => updateStatus(d.id, 'DELIVERED')}
                         >
@@ -654,9 +546,47 @@ export default function DeliveryPage() {
                         }}>
                           ✓ Completed & Delivered ({fmtDateTime(d.deliveredAt || d.date)})
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      )
+                    }
+                  >
+                    <MobileCardRow label="Invoice ID" value={d.sale?.invoiceNo} isMono />
+                    
+                    <MobileCardRow label="Phone">
+                      {d.client?.phone ? (
+                        <a href={`tel:${d.client.phone}`} style={{ color: '#2563EB', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          📞 {d.client.phone}
+                        </a>
+                      ) : '—'}
+                    </MobileCardRow>
+
+                    <MobileCardRow label="Address" value={d.client?.address ?? '—'} />
+                    <MobileCardRow label="Staff Assigned" value={d.employee?.name || activeEmpName} />
+                    <MobileCardRow label="Time Slot" value={d.scheduledTime || 'PHASE 1 (11:00 AM - 02:00 PM)'} />
+
+                    <MobileCardRow label="Status">
+                      <MobileCardBadge
+                        variant={d.status === 'DELIVERED' ? 'green' : d.status === 'OUT' ? 'blue' : d.status === 'FAILED' ? 'red' : 'yellow'}
+                      >
+                        {d.status === 'OUT' ? 'DISPATCHED' : d.status.replace(/_/g, ' ')}
+                      </MobileCardBadge>
+                    </MobileCardRow>
+
+                    {/* Order Items Sub-Box */}
+                    {d.sale?.items && d.sale.items.length > 0 && (
+                      <MobileCardBox title={`Order Items (${d.sale.items.length})`}>
+                        {d.sale.items.map(item => (
+                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#15803D', fontWeight: 600, margin: '4px 0' }}>
+                            <span>• {item.itemName}</span>
+                            <span style={{ color: '#166534', fontWeight: 700 }}>{item.qty} {item.unit}</span>
+                          </div>
+                        ))}
+                      </MobileCardBox>
+                    )}
+
+                    {d.deliveredAt && (
+                      <MobileCardRow label="Delivered At" value={fmtDateTime(d.deliveredAt)} valueColor="#166534" />
+                    )}
+                  </MobileCard>
                 ))}
               </div>
           </div>

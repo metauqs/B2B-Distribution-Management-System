@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
+import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 
 interface PurchaseItem { id?: string; itemName: string; qty: number; unit: string; rate: number; amount: number; productId?: string; }
 interface Purchase {
@@ -839,49 +840,38 @@ export default function PurchasesPage() {
             {/* Mobile Card List View */}
             <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
               {filteredPurchases.map(p => (
-                <div key={p.id} className="va-mobile-card">
-                  <div className="card-header">
-                    <span className="card-title" style={{ color: '#FFFFFF' }}>{p.supplier?.name}</span>
-                    <span className="card-subtitle">{fmtDate(p.date)}</span>
-                  </div>
-                  
-                  <div className="card-divider" />
-                  
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div className="card-info-row">
-                      <span className="card-label">Items</span>
-                      <span className="card-value" style={{ maxWidth: '65%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                        {p.items?.map(i => `${i.itemName} ${i.qty}${i.unit}`).join(', ')}
-                      </span>
+                <MobileCard
+                  key={p.id}
+                  title={p.supplier?.name ?? 'Supplier'}
+                  headerBadge={fmtDate(p.date)}
+                  footer={
+                    <div style={{ display: 'flex', gap: 8, width: '100%', flexWrap: 'wrap' }}>
+                      <button className="va-btn secondary small" style={{ flex: '1 1 30%', fontWeight: 700 }} onClick={() => handleEditClick(p)}>✏️ Edit</button>
+                      <button className="va-btn small" style={{ flex: '1 1 30%', fontWeight: 700 }} onClick={() => handlePrintClick(p)}>🖨️ Print</button>
+                      <button className="va-btn secondary small" style={{ flex: '1 1 30%', fontWeight: 700 }} onClick={() => handleDownloadClick(p)}>💾 PDF</button>
                     </div>
-                    {p.transportCost > 0 && (
-                      <div className="card-info-row">
-                        <span className="card-label">Transport</span>
-                        <span className="card-value">{fmtMoney(p.transportCost)}</span>
-                      </div>
-                    )}
-                    <div className="card-info-row">
-                      <span className="card-label">Total</span>
-                      <span className="card-value amount">{fmtMoney(p.total)}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Balance</span>
-                      <span className={`card-value ${p.balance > 0 ? 'danger' : ''}`}>{fmtMoney(p.balance)}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Status</span>
-                      <span><Badge status={p.status} small isMandi={p.supplier?.name === 'Mandi'} /></span>
-                    </div>
-                  </div>
+                  }
+                >
+                  <MobileCardRow label="Total Amount" value={fmtMoney(p.total)} isMono />
+                  {p.transportCost > 0 && (
+                    <MobileCardRow label="Transport Cost" value={fmtMoney(p.transportCost)} isMono />
+                  )}
+                  <MobileCardRow label="Balance Due" value={fmtMoney(p.balance)} valueColor={p.balance > 0 ? '#991B1B' : '#166534'} isMono />
+                  <MobileCardRow label="Status">
+                    <Badge status={p.status} small isMandi={p.supplier?.name === 'Mandi'} />
+                  </MobileCardRow>
 
-                  <div className="card-divider" />
-                  
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', width: '100%', flexWrap: 'wrap' }}>
-                     <button className="card-btn" style={{ flex: '1 1 45%' }} onClick={() => handleEditClick(p)}>Edit</button>
-                     <button className="card-btn primary" style={{ flex: '1 1 45%' }} onClick={() => handlePrintClick(p)}>Print</button>
-                     <button className="card-btn" style={{ flex: '1 1 100%', background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }} onClick={() => handleDownloadClick(p)}>💾 Download PDF</button>
-                   </div>
-                </div>
+                  {p.items && p.items.length > 0 && (
+                    <MobileCardBox title={`Purchase Items (${p.items.length})`}>
+                      {p.items.map(item => (
+                        <div key={item.id || item.itemName} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#15803D', fontWeight: 600, margin: '3px 0' }}>
+                          <span>• {item.itemName}</span>
+                          <span style={{ color: '#166534', fontWeight: 700 }}>{item.qty} {item.unit} @ Rs {item.rate}</span>
+                        </div>
+                      ))}
+                    </MobileCardBox>
+                  )}
+                </MobileCard>
               ))}
             </div>
 

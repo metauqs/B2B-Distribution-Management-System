@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import {
   mdiCashMinus,
@@ -834,44 +835,28 @@ export default function ExpensesPage() {
                 {/* Mobile View Cards */}
                 <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
                   {expenses.map(e => (
-                    <div key={e.id} className="va-mobile-card" style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                      <div style={{ background: 'linear-gradient(135deg, #1B4D2E 0%, #2E7D32 100%)', color: '#FFFFFF', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '15px', fontWeight: 700 }}>
-                          {CAT_EMOJI[e.category] ?? '💸'} {e.category}
-                        </span>
-                        <span style={{ fontSize: '12px', opacity: 0.9, fontWeight: 600 }}>{fmtDate(e.date)}</span>
-                      </div>
-
-                      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                          <span style={{ color: '#64748B', fontWeight: 500 }}>Reference</span>
-                          <span className="mono" style={{ fontWeight: 700, color: '#0F172A' }}>{e.reference || `EXP-${e.id.slice(-6).toUpperCase()}`}</span>
+                    <MobileCard
+                      key={e.id}
+                      title={`${CAT_EMOJI[e.category] ?? '💸'} ${e.category}`}
+                      headerBadge={fmtDate(e.date)}
+                      footer={
+                        <div style={{ display: 'flex', gap: 8, width: '100%', justifyContent: 'flex-end' }}>
+                          <button className="va-btn secondary small" style={{ fontSize: '12px', flex: 1 }} onClick={() => { setSelectedExpense(e); setShowDetailModal(true); }}>👁️ View</button>
+                          <button className="va-btn secondary small" style={{ fontSize: '12px', color: '#2563EB', flex: 1 }} onClick={() => handleOpenEdit(e)}>✏️ Edit</button>
+                          <button className="va-btn secondary small" style={{ fontSize: '12px', color: '#DC2626', flex: 1 }} onClick={() => { setExpenseToDelete(e); setShowDeleteModal(true); }}>🗑️ Delete</button>
                         </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                          <span style={{ color: '#64748B', fontWeight: 500 }}>Amount</span>
-                          <span className="mono" style={{ fontWeight: 700, color: '#991B1B', fontSize: '15px' }}>{fmtMoney(e.amount)}</span>
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                          <span style={{ color: '#64748B', fontWeight: 500 }}>Paid Via</span>
-                          <span style={{ fontWeight: 600, color: '#0F172A' }}>
-                            {e.paidBy === 'CASH' ? `💵 ${e.cashAccount?.name ?? 'Cash'}` : `🏦 ${e.bankAccount?.name ?? 'Bank'}`}
-                          </span>
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                          <span style={{ color: '#64748B', fontWeight: 500 }}>Description</span>
-                          <span style={{ fontWeight: 600, color: '#0F172A', textAlign: 'right', maxWidth: '60%' }}>{e.description ?? '—'}</span>
-                        </div>
-                      </div>
-
-                      <div style={{ padding: '10px 16px', background: '#F8FAFC', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                        <button className="va-btn secondary small" style={{ fontSize: '12px' }} onClick={() => { setSelectedExpense(e); setShowDetailModal(true); }}>View</button>
-                        <button className="va-btn secondary small" style={{ fontSize: '12px', color: '#2563EB' }} onClick={() => handleOpenEdit(e)}>Edit</button>
-                        <button className="va-btn secondary small" style={{ fontSize: '12px', color: '#DC2626' }} onClick={() => { setExpenseToDelete(e); setShowDeleteModal(true); }}>Delete</button>
-                      </div>
-                    </div>
+                      }
+                    >
+                      <MobileCardRow label="Reference ID" value={e.reference || `EXP-${e.id.slice(-6).toUpperCase()}`} isMono />
+                      <MobileCardRow label="Expense Amount" value={fmtMoney(e.amount)} valueColor="#991B1B" isMono />
+                      <MobileCardRow 
+                        label="Paid Via Account" 
+                        value={e.paidBy === 'CASH' ? `💵 ${e.cashAccount?.name ?? 'Main Cash'}` : `🏦 ${e.bankAccount?.name ?? 'Bank'}`} 
+                      />
+                      <MobileCardRow label="Description" value={e.description ?? '—'} />
+                      {e.vehicle && <MobileCardRow label="Linked Vehicle" value={`🚚 ${e.vehicle.plateNo}`} valueColor="#B45309" />}
+                      {e.employee && <MobileCardRow label="Linked Employee" value={`💼 ${e.employee.name}`} valueColor="#3730A3" />}
+                    </MobileCard>
                   ))}
                 </div>
 

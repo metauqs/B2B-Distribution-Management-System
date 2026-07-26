@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime } from '@/utils/formatters';
+import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiArchive } from '@mdi/js';
 
@@ -308,61 +309,89 @@ export default function InventoryPage() {
                 <div>Record purchases to build stock</div>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <table className="va-table" style={{ minWidth: 600 }}>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Product</th>
-                      <th>Urdu Name</th>
-                      <th>Unit</th>
-                      <th style={{ textAlign: 'right' }}>Current Qty</th>
-                      <th style={{ textAlign: 'right' }}>Avg Cost</th>
-                      <th style={{ textAlign: 'right' }}>Stock Value</th>
-                      <th style={{ textAlign: 'center' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((i, idx) => {
-                      const sc = i.stockStatus === 'OUT_OF_STOCK'
-                        ? { bg: '#FFF5F5', badge: 'var(--danger)', label: 'Out of Stock' }
-                        : i.stockStatus === 'LOW'
-                        ? { bg: '#FFFBF0', badge: '#B87333', label: 'Low Stock' }
-                        : { bg: undefined, badge: 'var(--ok)', label: 'Available' };
-                      return (
-                        <tr key={i.id} style={{ background: sc.bg }}>
-                          <td className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>{idx + 1}</td>
-                          <td style={{ fontWeight: 700 }}>{i.product?.name}</td>
-                          <td style={{ fontSize: 14, color: 'var(--muted)', fontFamily: 'serif' }}>{i.product?.urduName ?? '—'}</td>
-                          <td style={{ color: 'var(--muted)', fontSize: 12 }}>{i.product?.defaultUnit ?? 'KG'}</td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: i.qty <= 0 ? 'var(--danger)' : undefined }}>
-                            {i.qty.toFixed(2)}
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right' }}>Rs {i.avgCost.toFixed(2)}</td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--forest)' }}>{fmtMoney(i.totalValue)}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', fontSize: 11, fontWeight: 700,
-                              padding: '3px 9px', borderRadius: 10,
-                              background: sc.badge + '22', color: sc.badge,
-                              border: `1px solid ${sc.badge}44`,
-                            }}>{sc.label}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ background: '#1F3D2B', color: '#fff', fontWeight: 700 }}>
-                      <td colSpan={6} style={{ color: '#fff', fontWeight: 700 }}>Total Stock Value ({filtered.length} products)</td>
-                      <td className="mono" style={{ textAlign: 'right', color: '#6FD89A', fontWeight: 800, fontSize: 15 }}>
-                        {fmtMoney(filtered.reduce((s, i) => s + i.totalValue, 0))}
-                      </td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              <>
+                {/* Desktop View Table */}
+                <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table className="va-table" style={{ minWidth: 600 }}>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Product</th>
+                        <th>Urdu Name</th>
+                        <th>Unit</th>
+                        <th style={{ textAlign: 'right' }}>Current Qty</th>
+                        <th style={{ textAlign: 'right' }}>Avg Cost</th>
+                        <th style={{ textAlign: 'right' }}>Stock Value</th>
+                        <th style={{ textAlign: 'center' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((i, idx) => {
+                        const sc = i.stockStatus === 'OUT_OF_STOCK'
+                          ? { bg: '#FFF5F5', badge: 'var(--danger)', label: 'Out of Stock' }
+                          : i.stockStatus === 'LOW'
+                          ? { bg: '#FFFBF0', badge: '#B87333', label: 'Low Stock' }
+                          : { bg: undefined, badge: 'var(--ok)', label: 'Available' };
+                        return (
+                          <tr key={i.id} style={{ background: sc.bg }}>
+                            <td className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>{idx + 1}</td>
+                            <td style={{ fontWeight: 700 }}>{i.product?.name}</td>
+                            <td style={{ fontSize: 14, color: 'var(--muted)', fontFamily: 'serif' }}>{i.product?.urduName ?? '—'}</td>
+                            <td style={{ color: 'var(--muted)', fontSize: 12 }}>{i.product?.defaultUnit ?? 'KG'}</td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: i.qty <= 0 ? 'var(--danger)' : undefined }}>
+                              {i.qty.toFixed(2)}
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right' }}>Rs {i.avgCost.toFixed(2)}</td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--forest)' }}>{fmtMoney(i.totalValue)}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{
+                                display: 'inline-block', fontSize: 11, fontWeight: 700,
+                                padding: '3px 9px', borderRadius: 10,
+                                background: sc.badge + '22', color: sc.badge,
+                                border: `1px solid ${sc.badge}44`,
+                              }}>{sc.label}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: '#1F3D2B', color: '#fff', fontWeight: 700 }}>
+                        <td colSpan={6} style={{ color: '#fff', fontWeight: 700 }}>Total Stock Value ({filtered.length} products)</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#6FD89A', fontWeight: 800, fontSize: 15 }}>
+                          {fmtMoney(filtered.reduce((s, i) => s + i.totalValue, 0))}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Mobile View Cards */}
+                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%', marginTop: '14px' }}>
+                  {filtered.map(i => {
+                    const sc = i.stockStatus === 'OUT_OF_STOCK'
+                      ? { badge: 'red' as const, label: 'Out of Stock' }
+                      : i.stockStatus === 'LOW'
+                      ? { badge: 'yellow' as const, label: 'Low Stock' }
+                      : { badge: 'green' as const, label: 'Available' };
+                    return (
+                      <MobileCard
+                        key={i.id}
+                        title={i.product?.name ?? 'Product'}
+                        headerBadge={i.product?.urduName || (i.product?.defaultUnit ?? 'KG')}
+                      >
+                        <MobileCardRow label="Current Quantity" value={`${i.qty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} isMono />
+                        <MobileCardRow label="Average Cost" value={`Rs ${i.avgCost.toFixed(2)}`} isMono />
+                        <MobileCardRow label="Total Stock Value" value={fmtMoney(i.totalValue)} valueColor="#166534" isMono />
+                        <MobileCardRow label="Stock Status">
+                          <MobileCardBadge variant={sc.badge}>{sc.label}</MobileCardBadge>
+                        </MobileCardRow>
+                      </MobileCard>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         </>

@@ -5,6 +5,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime, todayInputDate, todayInputDateTime } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
+import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiCashRegister, mdiFormatListBulleted } from '@mdi/js';
 
@@ -454,72 +455,52 @@ export default function CollectionsPage() {
                 </div>
               </div>
 
-              {/* ────── MOBILE VIEW (premium green card style) ────── */}
+              {/* ────── MOBILE VIEW (standardized green card style) ────── */}
               <div className="show-mobile" style={{ flexDirection: 'column', gap: 12, width: '100%' }}>
                 {groupedList.map(g => {
                   const isExpanded = !!expandedClients[g.clientId];
                   return (
-                    <div
+                    <MobileCard
                       key={g.clientId}
-                      className="va-mobile-card"
-                      style={{ marginBottom: 12 }}
+                      title={g.clientName}
+                      headerBadge={g.clientNo}
+                      footer={
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%' }}>
+                          <button
+                            className="va-btn small"
+                            style={{ flex: 1, fontWeight: 700 }}
+                            onClick={() => toggleExpand(g.clientId)}
+                          >
+                            {isExpanded ? 'Hide Invoices' : 'View Invoices'}
+                          </button>
+                          {g.dueBalance > 0 && (
+                            <>
+                              <button
+                                className="va-btn secondary small"
+                                style={{ flex: 1, fontWeight: 700 }}
+                                onClick={() => handleSendDueStatement(g.clientId)}
+                              >
+                                📋 Statement
+                              </button>
+                              <button
+                                className="va-btn secondary small"
+                                style={{ flex: 1, fontWeight: 700 }}
+                                onClick={() => handleViewDues(g.clientId)}
+                              >
+                                💳 Dues
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      }
                     >
-                      {/* Client Header Bar */}
-                      <div className="card-header">
-                        <span className="card-title" style={{ color: '#FFFFFF', fontWeight: 700 }}>
-                          {g.clientName}
-                        </span>
-                        <span className="card-subtitle" style={{ opacity: 0.85 }}>
-                          {g.clientNo}
-                        </span>
-                      </div>
-                      
-                      <div className="card-divider" />
-
-                      {/* Info rows */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <div className="card-info-row">
-                          <span className="card-label">Total Invoices</span>
-                          <span className="card-value">{g.items.length}</span>
-                        </div>
-                        <div className="card-info-row">
-                          <span className="card-label">Due Balance</span>
-                          <span className={`card-value amount ${g.dueBalance > 0 ? 'danger' : ''}`}>
-                            {fmtMoney(g.dueBalance)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="card-divider" />
-
-                      {/* Client Actions / Toggle */}
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%' }}>
-                        <button
-                          className="card-btn primary"
-                          style={{ flex: 1 }}
-                          onClick={() => toggleExpand(g.clientId)}
-                        >
-                          {isExpanded ? 'Hide Invoices' : 'View Invoices'}
-                        </button>
-                        {g.dueBalance > 0 && (
-                          <>
-                            <button
-                              className="card-btn"
-                              style={{ flex: 1 }}
-                              onClick={() => handleSendDueStatement(g.clientId)}
-                            >
-                              Statement
-                            </button>
-                            <button
-                              className="card-btn"
-                              style={{ flex: 1 }}
-                              onClick={() => handleViewDues(g.clientId)}
-                            >
-                              Dues
-                            </button>
-                          </>
-                        )}
-                      </div>
+                      <MobileCardRow label="Total Invoices" value={`${g.items.length} invoices`} />
+                      <MobileCardRow 
+                        label="Total Due Balance" 
+                        value={fmtMoney(g.dueBalance)} 
+                        valueColor={g.dueBalance > 0 ? '#991B1B' : '#166534'} 
+                        isMono 
+                      />
 
                       {/* Expandable Invoice Cards */}
                       {isExpanded && (
@@ -583,7 +564,7 @@ export default function CollectionsPage() {
                           })}
                         </div>
                       )}
-                    </div>
+                    </MobileCard>
                   );
                 })}
 

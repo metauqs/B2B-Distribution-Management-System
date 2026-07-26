@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
+import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
 
@@ -987,62 +988,52 @@ export default function PriceListPage() {
                     const sellChanged = item.origSellRate !== undefined && item.sellRate !== item.origSellRate;
 
                     return (
-                      <div key={idx} className="va-mobile-card" style={{ background: (buyChanged || sellChanged) ? 'var(--mustard-soft, #FFFDE6)' : undefined }}>
-                        <div className="card-header">
-                          <span className="card-title" style={{ color: '#FFFFFF' }}>{item.itemName}</span>
-                          {item.product?.urduName && <span className="card-subtitle text-emerald-100">{item.product.urduName}</span>}
-                        </div>
-
-                        <div className="card-divider" />
-
-                        <div className="flex flex-col gap-2.5">
-                          <div className="card-info-row">
-                            <span className="card-label">Unit / Category</span>
-                            <span className="card-value">{item.unit} · <span style={{ textTransform: 'capitalize' }}>{item.product?.category}</span></span>
+                      <MobileCard
+                        key={idx}
+                        title={item.itemName}
+                        headerBadge={item.product?.urduName || item.unit}
+                        style={{
+                          background: (buyChanged || sellChanged) ? '#FFFDE6' : '#FFFFFF',
+                        }}
+                      >
+                        <MobileCardRow label="Unit / Category" value={`${item.unit} · ${item.product?.category || 'General'}`} />
+                        <MobileCardRow label="Buy Rate (Mandi)">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              value={item.buyRate ?? ''}
+                              onFocus={e => e.target.select()}
+                              onChange={e => updateRate(realIndex, 'buyRate', e.target.value === '' ? 0 : Number(e.target.value))}
+                              style={{ width: 100, textAlign: 'right', padding: '4px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: '13px', fontWeight: 700 }}
+                            />
+                          ) : (
+                            `Rs ${item.buyRate}`
+                          )}
+                        </MobileCardRow>
+                        <MobileCardRow label="Sell Rate (Customer)">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              value={item.sellRate || ''}
+                              onChange={e => updateRate(realIndex, 'sellRate', +e.target.value)}
+                              style={{ width: 100, textAlign: 'right', padding: '4px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: '13px', fontWeight: 700 }}
+                            />
+                          ) : (
+                            `Rs ${item.sellRate}`
+                          )}
+                        </MobileCardRow>
+                        <MobileCardRow 
+                          label="Profit Margin" 
+                          value={`Rs ${margin.toFixed(0)}`} 
+                          valueColor={margin < 0 ? '#991B1B' : '#166534'} 
+                          isMono 
+                        />
+                        <MobileCardRow label="Margin %">
+                          <div style={{ maxWidth: 120, width: '100%', display: 'flex', justifyContent: 'flex-end' }}>
+                            <MarginBar pct={marginPct} />
                           </div>
-                          <div className="card-info-row">
-                            <span className="card-label">Buy Rate (Mandi)</span>
-                            <span className="card-value">
-                              {isEditing ? (
-                                <input
-                                  type="number"
-                                  value={item.buyRate ?? ''}
-                                  onFocus={e => e.target.select()}
-                                  onChange={e => updateRate(realIndex, 'buyRate', e.target.value === '' ? 0 : Number(e.target.value))}
-                                  style={{ width: 100, textAlign: 'right', padding: '4px', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--paper)', color: 'var(--ink)' }}
-                                />
-                              ) : (
-                                `Rs ${item.buyRate}`
-                              )}
-                            </span>
-                          </div>
-                          <div className="card-info-row">
-                            <span className="card-label">Sell Rate (Customer)</span>
-                            <span className="card-value font-bold">
-                              {isEditing ? (
-                                <input
-                                  type="number"
-                                  value={item.sellRate || ''}
-                                  onChange={e => updateRate(realIndex, 'sellRate', +e.target.value)}
-                                  style={{ width: 100, textAlign: 'right', padding: '4px', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--paper)', color: 'var(--ink)', fontWeight: 'bold' }}
-                                />
-                              ) : (
-                                `Rs ${item.sellRate}`
-                              )}
-                            </span>
-                          </div>
-                          <div className="card-info-row">
-                            <span className="card-label">Profit Margin</span>
-                            <span className={`card-value amount ${margin < 0 ? 'danger' : ''}`}>Rs {margin.toFixed(0)}</span>
-                          </div>
-                          <div className="card-info-row">
-                            <span className="card-label">Margin %</span>
-                            <span className="card-value max-w-[60%] flex justify-end">
-                              <MarginBar pct={marginPct} />
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                        </MobileCardRow>
+                      </MobileCard>
                     );
                   })
                 )}

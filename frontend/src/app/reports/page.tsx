@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 
 type Tab = 'Overview' | 'Sales' | 'Purchases' | 'Collections' | 'Inventory' | 'Expenses' | 'Aging' | 'Cash Flow';
 
@@ -373,45 +374,18 @@ export default function ReportsPage() {
                   <div className="va-empty">No client receivables</div>
                 ) : (
                   aging.clients.map(c => (
-                    <div key={c.id} className="va-mobile-card">
-                      <div className="card-header">
-                        <span className="card-title" style={{ color: '#FFFFFF' }}>
-                          {RATING_EMOJI[c.rating] ?? ''} {c.name}
-                          <span style={{ fontSize: 9, opacity: 0.8, background: 'rgba(255,255,255,0.15)', padding: '1px 4px', borderRadius: 4, marginLeft: 4 }}>
-                            {c.clientId || 'WH-0000'}
-                          </span>
-                        </span>
-                      </div>
-                      
-                      <div className="card-divider" />
-                      
-                      <div className="flex flex-col gap-2.5">
-                        <div className="card-info-row">
-                          <span className="card-label">Total Outstanding</span>
-                          <span className="card-value amount">{fmtMoney(c.total)}</span>
-                        </div>
-                        <div className="card-info-row">
-                          <span className="card-label">Current (Not Overdue)</span>
-                          <span className="card-value">{c.current > 0 ? fmtMoney(c.current) : '—'}</span>
-                        </div>
-                        <div className="card-info-row">
-                          <span className="card-label">1–30 Days Overdue</span>
-                          <span className="card-value">{c.d1_30 > 0 ? fmtMoney(c.d1_30) : '—'}</span>
-                        </div>
-                        <div className="card-info-row">
-                          <span className="card-label">31–60 Days Overdue</span>
-                          <span className="card-value" style={{ color: c.d31_60 > 0 ? '#FEF3D4' : undefined }}>{c.d31_60 > 0 ? fmtMoney(c.d31_60) : '—'}</span>
-                        </div>
-                        <div className="card-info-row">
-                          <span className="card-label">61–90 Days Overdue</span>
-                          <span className="card-value" style={{ color: c.d61_90 > 0 ? '#F5E1DE' : undefined }}>{c.d61_90 > 0 ? fmtMoney(c.d61_90) : '—'}</span>
-                        </div>
-                        <div className="card-info-row">
-                          <span className="card-label">90+ Days Overdue</span>
-                          <span className={`card-value ${c.d90plus > 0 ? 'danger' : ''}`}>{c.d90plus > 0 ? fmtMoney(c.d90plus) : '—'}</span>
-                        </div>
-                      </div>
-                    </div>
+                    <MobileCard
+                      key={c.id}
+                      title={c.name}
+                      headerBadge={c.clientId || 'WH-0000'}
+                    >
+                      <MobileCardRow label="Total Outstanding" value={fmtMoney(c.total)} valueColor="#991B1B" isMono />
+                      <MobileCardRow label="Current (Not Overdue)" value={c.current > 0 ? fmtMoney(c.current) : '—'} isMono />
+                      <MobileCardRow label="1–30 Days Overdue" value={c.d1_30 > 0 ? fmtMoney(c.d1_30) : '—'} isMono />
+                      <MobileCardRow label="31–60 Days Overdue" value={c.d31_60 > 0 ? fmtMoney(c.d31_60) : '—'} valueColor={c.d31_60 > 0 ? '#B45309' : undefined} isMono />
+                      <MobileCardRow label="61–90 Days Overdue" value={c.d61_90 > 0 ? fmtMoney(c.d61_90) : '—'} valueColor={c.d61_90 > 0 ? '#C2410C' : undefined} isMono />
+                      <MobileCardRow label="90+ Days Overdue" value={c.d90plus > 0 ? fmtMoney(c.d90plus) : '—'} valueColor={c.d90plus > 0 ? '#991B1B' : undefined} isMono />
+                    </MobileCard>
                   ))
                 )}
               </div>

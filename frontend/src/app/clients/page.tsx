@@ -5,6 +5,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime } from '@/utils/formatters';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateStatementHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
+import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import {
   mdiAccountMultiple,
@@ -547,89 +548,67 @@ export default function ClientsPage() {
                 {/* Mobile Card List View */}
                 <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
                   {clients.map(c => {
-                    const balanceColor = c.currentBalance > 0 ? 'danger' : '';
                     return (
-                      <div key={c.id} className="va-mobile-card">
-                        <div className="card-header">
-                          <span className="card-title" style={{ color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <Icon path={mdiCircle} size={0.5} color={RATING_COLOR[c.rating]} />
+                      <MobileCard
+                        key={c.id}
+                        title={
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <Icon path={mdiCircle} size={0.45} color={RATING_COLOR[c.rating]} />
                             <span>{c.name}</span>
-                            <span style={{ fontSize: 10, fontWeight: 500, opacity: 0.85, background: 'rgba(255,255,255,0.15)', padding: '1px 4px', borderRadius: 4, marginLeft: 6 }}>
-                              {c.clientId || 'WH-0000'}
-                            </span>
-                          </span>
-                          <div className="flex gap-2 items-center">
-                            <select value={c.rating} onChange={e => updateRating(c.id, e.target.value)}
-                              className="bg-transparent border border-white/30 text-white rounded px-2 py-0.5 text-xs font-bold cursor-pointer">
-                              {['GREEN','YELLOW','ORANGE','RED','NEW'].map(r => <option key={r} value={r} style={{ color: '#000000' }}>{RATING_EMOJI[r]} {r}</option>)}
-                            </select>
                           </div>
-                        </div>
-                        
-                        <div className="card-divider" />
-                        
-                        <div className="flex flex-col gap-2.5">
-                          <div className="card-info-row">
-                            <span className="card-label">Balance Due</span>
-                            <span className={`card-value amount ${balanceColor}`}>
-                              {fmtMoney(Math.abs(c.currentBalance))}
-                              {c.currentBalance < 0 && <span className="text-[10px] font-medium"> CR</span>}
-                            </span>
+                        }
+                        headerBadge={c.clientId || 'WH-0000'}
+                        footer={
+                          <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                            <button 
+                              onClick={() => openProfile(c)}
+                              className="va-btn small"
+                              style={{ flex: 1, fontWeight: 700 }}
+                            >
+                              👤 Profile
+                            </button>
+                            <button 
+                              onClick={() => openEdit(c)}
+                              className="va-btn secondary small"
+                              style={{ flex: 1, fontWeight: 700 }}
+                            >
+                              ✏️ Edit
+                            </button>
                           </div>
-                          <div className="card-info-row">
-                            <span className="card-label">Client Type</span>
-                            <span className="card-value" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              <Icon path={TYPE_ICON[c.type] || mdiPackageVariant} size={0.6} />
-                              <span>{c.type}</span>
-                            </span>
-                          </div>
-                          {(c.phone || c.whatsapp) && (
-                            <div className="card-info-row">
-                              <span className="card-label">Contact Info</span>
-                              <span className="card-value text-right font-medium text-white">
-                                {c.phone && <div>{c.phone}</div>}
-                                {c.whatsapp && c.whatsapp !== c.phone && <div className="text-[10px] text-emerald-100 font-medium">WhatsApp: {c.whatsapp}</div>}
-                              </span>
-                            </div>
-                          )}
-                          <div className="card-info-row">
-                            <span className="card-label">Credit Limit</span>
-                            <span className="card-value font-mono">
-                              {c.creditLimit > 0 ? fmtMoney(c.creditLimit) : '—'}
-                              {c.paymentTerms > 0 && ` (${c.paymentTerms}d terms)`}
-                            </span>
-                          </div>
-                          <div className="card-info-row">
-                            <span className="card-label">Total Sales</span>
-                            <span className="card-value">
-                              {c.salesCount > 0 ? `${fmtMoney(c.totalSales)} (${c.salesCount} bills)` : '—'}
-                            </span>
-                          </div>
-                          <div className="card-info-row">
-                            <span className="card-label">Last Order</span>
-                            <span className="card-value">{c.lastOrderDate ? fmtDate(c.lastOrderDate) : '—'}</span>
-                          </div>
-                        </div>
-
-                        <div className="card-divider" />
-
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => openProfile(c)}
-                            className="card-btn primary"
-                            style={{ flex: 1 }}
+                        }
+                      >
+                        <MobileCardRow 
+                          label="Balance Due" 
+                          value={`${fmtMoney(Math.abs(c.currentBalance))}${c.currentBalance < 0 ? ' (CR)' : ''}`} 
+                          valueColor={c.currentBalance > 0 ? '#991B1B' : '#166534'} 
+                          isMono 
+                        />
+                        <MobileCardRow label="Client Rating">
+                          <select 
+                            value={c.rating} 
+                            onChange={e => updateRating(c.id, e.target.value)}
+                            style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '2px 6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
                           >
-                            Profile
-                          </button>
-                          <button 
-                            onClick={() => openEdit(c)}
-                            className="card-btn"
-                            style={{ flex: 1 }}
-                          >
-                            ✏️ Edit
-                          </button>
-                        </div>
-                      </div>
+                            {['GREEN','YELLOW','ORANGE','RED','NEW'].map(r => <option key={r} value={r}>{RATING_EMOJI[r]} {r}</option>)}
+                          </select>
+                        </MobileCardRow>
+                        <MobileCardRow label="Client Type" value={c.type} />
+                        {c.phone && (
+                          <MobileCardRow label="Phone">
+                            <a href={`tel:${c.phone}`} style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 700 }}>📞 {c.phone}</a>
+                          </MobileCardRow>
+                        )}
+                        <MobileCardRow 
+                          label="Credit Limit" 
+                          value={c.creditLimit > 0 ? `${fmtMoney(c.creditLimit)}${c.paymentTerms > 0 ? ` (${c.paymentTerms}d)` : ''}` : '—'} 
+                          isMono 
+                        />
+                        <MobileCardRow 
+                          label="Total Sales" 
+                          value={c.salesCount > 0 ? `${fmtMoney(c.totalSales)} (${c.salesCount} bills)` : '—'} 
+                        />
+                        <MobileCardRow label="Last Order" value={c.lastOrderDate ? fmtDate(c.lastOrderDate) : '—'} />
+                      </MobileCard>
                     );
                   })}
                 </div>

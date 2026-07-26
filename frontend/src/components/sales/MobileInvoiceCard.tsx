@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { fmtMoney, fmtDateTime } from '@/utils/formatters';
+import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 
 interface SaleItem {
   id: string;
@@ -44,53 +45,52 @@ interface MobileInvoiceCardProps {
 }
 
 export function MobileInvoiceCard({ sale, onView }: MobileInvoiceCardProps) {
+  const isPaid = sale.balance <= 0;
+  const isPartial = sale.paid > 0 && sale.balance > 0;
+
   return (
-    <div className="bg-[#4A7C59] border border-[#5b8e6a] rounded-2xl p-5 shadow-[0_4px_12px_rgba(0,0,0,0.05)] flex flex-col gap-4 w-full">
-      {/* First Row */}
-      <div className="flex justify-between items-center gap-4">
-        <div className="text-base font-bold text-white leading-tight" style={{ color: '#FFFFFF' }}>
-          {sale.client?.name ?? 'Anonymous Client'}
-        </div>
-        <span className="text-xs text-emerald-100 shrink-0 font-medium">
-          {fmtDateTime(sale.date)}
-        </span>
-      </div>
-
-      {/* Divider */}
-      <div className="h-px bg-white/20 w-full" />
-
-      {/* Information Section in clean two-column layout */}
-      <div className="flex flex-col gap-2.5 text-sm">
-        <div className="flex justify-between items-center">
-          <span className="text-emerald-100 font-medium">Invoice ID</span>
-          <span className="font-mono font-bold text-white">{sale.invoiceNo}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-emerald-100 font-medium">Items</span>
-          <span className="font-semibold text-white">{sale.items.length}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-emerald-100 font-medium">Total</span>
-          <span className="font-bold text-white text-base">Rs {sale.total.toLocaleString()}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-emerald-100 font-medium">Balance</span>
-          <span className={`font-bold ${sale.balance > 0 ? 'text-[#FFD1D1]' : 'text-emerald-50'}`}>
-            Rs {sale.balance.toLocaleString()}
-          </span>
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div className="h-px bg-white/20 w-full" />
-
-      {/* Action Button at bottom */}
-      <button
-        onClick={onView}
-        className="w-full py-2.5 text-center text-sm font-bold bg-transparent border border-white text-white rounded-xl hover:bg-white/10 active:scale-[0.98] transition-all cursor-pointer"
-      >
-        Details
-      </button>
-    </div>
+    <MobileCard
+      title={sale.client?.name ?? 'Anonymous Client'}
+      headerBadge={fmtDateTime(sale.date)}
+      footer={
+        <button
+          onClick={onView}
+          style={{
+            width: '100%',
+            padding: '10px 14px',
+            background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+            color: '#FFFFFF',
+            fontWeight: 700,
+            borderRadius: '10px',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
+          }}
+        >
+          👁️ View Invoice Details
+        </button>
+      }
+    >
+      <MobileCardRow label="Invoice ID" value={sale.invoiceNo} isMono />
+      <MobileCardRow label="Total Amount" value={fmtMoney(sale.total)} valueColor="#0F172A" isMono />
+      <MobileCardRow label="Paid Amount" value={fmtMoney(sale.paid)} valueColor="#166534" isMono />
+      <MobileCardRow 
+        label="Balance Due" 
+        value={fmtMoney(sale.balance)} 
+        valueColor={sale.balance > 0 ? '#991B1B' : '#166534'} 
+        isMono 
+      />
+      <MobileCardRow label="Payment Status">
+        <MobileCardBadge variant={isPaid ? 'green' : isPartial ? 'yellow' : 'red'}>
+          {isPaid ? 'PAID' : isPartial ? 'PARTIAL' : 'UNPAID'}
+        </MobileCardBadge>
+      </MobileCardRow>
+      <MobileCardRow label="Items Count" value={`${sale.items.length} items`} />
+    </MobileCard>
   );
 }

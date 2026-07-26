@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney } from '@/utils/formatters';
+import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface DashboardData {
@@ -276,39 +277,34 @@ export default function DashboardPage() {
 
           {/* Mobile Card List View */}
           <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
-            {recentSales.map(s => (
-              <div key={s.id} className="va-mobile-card">
-                <div className="card-header">
-                  <span className="card-title" style={{ color: '#FFFFFF' }}>{s.invoiceNo}</span>
-                  <span className={`card-subtitle text-xs uppercase px-2 py-0.5 rounded border border-white/30 text-white font-bold`}>{s.status}</span>
-                </div>
-                
-                <div className="card-divider" />
-                
-                <div className="flex flex-col gap-2.5">
-                  <div className="card-info-row">
-                    <span className="card-label">Invoice Amount</span>
-                    <span className="card-value amount">{fmtMoney(s.total)}</span>
-                  </div>
-                  <div className="card-info-row">
-                    <span className="card-label">Client</span>
-                    <span className="card-value">{s.client}</span>
-                  </div>
-                  <div className="card-info-row">
-                    <span className="card-label">Invoice Date</span>
-                    <span className="card-value">{fmtDate(s.date)}</span>
-                  </div>
-                </div>
-
-                <div className="card-divider" />
-
-                <div>
-                  <a href="/sales" className="card-btn" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-                    View Details
-                  </a>
-                </div>
-              </div>
-            ))}
+            {recentSales.map(s => {
+              const isPaid = s.status === 'PAID';
+              const isPartial = s.status === 'PARTIAL';
+              return (
+                <MobileCard
+                  key={s.id}
+                  title={s.invoiceNo}
+                  headerBadge={fmtDate(s.date)}
+                  footer={
+                    <a 
+                      href="/sales" 
+                      className="va-btn small" 
+                      style={{ width: '100%', textAlign: 'center', textDecoration: 'none', fontWeight: 700 }}
+                    >
+                      👁️ View Sales Register
+                    </a>
+                  }
+                >
+                  <MobileCardRow label="Customer" value={s.client} />
+                  <MobileCardRow label="Invoice Amount" value={fmtMoney(s.total)} isMono />
+                  <MobileCardRow label="Status">
+                    <MobileCardBadge variant={isPaid ? 'green' : isPartial ? 'yellow' : 'red'}>
+                      {s.status}
+                    </MobileCardBadge>
+                  </MobileCardRow>
+                </MobileCard>
+              );
+            })}
           </div>
         </div>
       )}

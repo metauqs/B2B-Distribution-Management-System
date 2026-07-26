@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiBriefcase, mdiAccountBadge, mdiTrashCanOutline, mdiAlertCircleOutline } from '@mdi/js';
 
@@ -494,57 +495,98 @@ export default function EmployeesPage() {
           ) : filtered.length === 0 ? (
             <div className="va-empty"><div className="big">No employees found</div></div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="va-table">
-                <thead>
-                  <tr>
-                    <th>Emp ID</th>
-                    <th>Name</th>
-                    <th>Role</th>
-                    <th>Phone</th>
-                    <th>Salary</th>
-                    <th>Joined</th>
-                    <th>Status</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(emp => (
-                    <tr key={emp.id} style={{ opacity: emp.isActive ? 1 : 0.6 }}>
-                      <td style={{ fontWeight: 700, fontFamily: 'monospace', color: '#1A3C28' }}>
-                        {emp.employeeId || '—'}
-                      </td>
-                      <td style={{ fontWeight: 700, color: 'var(--forest)' }}>
-                        <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => loadProfile(emp.id)}>
-                          {emp.name}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{ROLE_DISPLAY[emp.role] ?? emp.role}</td>
-                      <td>{emp.phone || '—'}</td>
-                      <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(emp.salary)}</td>
-                      <td>{fmtDate(emp.joiningDate)}</td>
-                      <td>
-                        <span className={`va-badge ${emp.isActive ? 'paid' : 'due'}`}>
-                          {emp.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'inline-flex', gap: 6 }}>
-                          <button className="va-btn secondary small" onClick={() => loadProfile(emp.id)}>Profile</button>
-                          <button className="va-btn secondary small" onClick={() => startEdit(emp)}>Edit</button>
-                          <button className="va-btn secondary small" style={{ color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
-                            {emp.isActive ? 'Deactivate' : 'Activate'}
-                          </button>
-                          <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(emp)}>
-                            Delete
-                          </button>
-                        </div>
-                      </td>
+            <>
+              {/* Desktop View Table */}
+              <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                <table className="va-table">
+                  <thead>
+                    <tr>
+                      <th>Emp ID</th>
+                      <th>Name</th>
+                      <th>Role</th>
+                      <th>Phone</th>
+                      <th>Salary</th>
+                      <th>Joined</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filtered.map(emp => (
+                      <tr key={emp.id} style={{ opacity: emp.isActive ? 1 : 0.6 }}>
+                        <td style={{ fontWeight: 700, fontFamily: 'monospace', color: '#1A3C28' }}>
+                          {emp.employeeId || '—'}
+                        </td>
+                        <td style={{ fontWeight: 700, color: 'var(--forest)' }}>
+                          <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => loadProfile(emp.id)}>
+                            {emp.name}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{ROLE_DISPLAY[emp.role] ?? emp.role}</td>
+                        <td>{emp.phone || '—'}</td>
+                        <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(emp.salary)}</td>
+                        <td>{fmtDate(emp.joiningDate)}</td>
+                        <td>
+                          <span className={`va-badge ${emp.isActive ? 'paid' : 'due'}`}>
+                            {emp.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', gap: 6 }}>
+                            <button className="va-btn secondary small" onClick={() => loadProfile(emp.id)}>Profile</button>
+                            <button className="va-btn secondary small" onClick={() => startEdit(emp)}>Edit</button>
+                            <button className="va-btn secondary small" style={{ color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
+                              {emp.isActive ? 'Deactivate' : 'Activate'}
+                            </button>
+                            <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(emp)}>
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile View Cards */}
+              <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%', marginTop: '14px' }}>
+                {filtered.map(emp => (
+                  <MobileCard
+                    key={emp.id}
+                    title={emp.name}
+                    headerBadge={emp.employeeId || 'Staff'}
+                    footer={
+                      <div style={{ display: 'flex', gap: 6, width: '100%', flexWrap: 'wrap' }}>
+                        <button className="va-btn small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => loadProfile(emp.id)}>👤 Profile</button>
+                        <button className="va-btn secondary small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => startEdit(emp)}>✏️ Edit</button>
+                        <button className="va-btn secondary small" style={{ flex: '1 1 45%', color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
+                          {emp.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button className="va-btn secondary small" style={{ flex: '1 1 45%', color: '#9B1C1C' }} onClick={() => setEmpToDelete(emp)}>
+                          🗑️ Delete
+                        </button>
+                      </div>
+                    }
+                  >
+                    <MobileCardRow label="Employee ID" value={emp.employeeId || '—'} isMono />
+                    <MobileCardRow label="Role / Designation" value={ROLE_DISPLAY[emp.role] ?? emp.role} />
+                    {emp.phone && (
+                      <MobileCardRow label="Phone Number">
+                        <a href={`tel:${emp.phone}`} style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 700 }}>📞 {emp.phone}</a>
+                      </MobileCardRow>
+                    )}
+                    <MobileCardRow label="Monthly Salary" value={fmtMoney(emp.salary)} isMono />
+                    <MobileCardRow label="Joining Date" value={fmtDate(emp.joiningDate)} />
+                    <MobileCardRow label="Account Status">
+                      <MobileCardBadge variant={emp.isActive ? 'green' : 'gray'}>
+                        {emp.isActive ? 'Active' : 'Inactive'}
+                      </MobileCardBadge>
+                    </MobileCardRow>
+                  </MobileCard>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
