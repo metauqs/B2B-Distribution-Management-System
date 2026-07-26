@@ -270,8 +270,13 @@ router.get('/cashflow', async (req: Request, res: Response) => {
       }),
     ]);
 
-    const totalInflow = (collectionsAgg._sum.amount ?? 0);
-    const totalOutflow = (purchasesPaidAgg._sum.paid ?? 0) + (expensesAgg._sum.amount ?? 0) + (supplierPaymentsAgg._sum.amount ?? 0);
+    const collectionsTotal = (collectionsAgg._sum.amount ?? 0);
+    const purchasesTotal = (purchasesPaidAgg._sum.paid ?? 0);
+    const expensesTotal = (expensesAgg._sum.amount ?? 0);
+    const supplierPaymentsTotal = (supplierPaymentsAgg._sum.amount ?? 0);
+
+    const totalInflow = collectionsTotal;
+    const totalOutflow = purchasesTotal + expensesTotal + supplierPaymentsTotal;
     const netCashFlow = totalInflow - totalOutflow;
 
     const [dailyCollections, dailyPurchases, dailyExpenses] = await Promise.all([
@@ -317,6 +322,10 @@ router.get('/cashflow', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       data: {
+        period: { from: fromDate.toISOString(), to: toDate.toISOString() },
+        inflow: { collections: collectionsTotal, total: totalInflow },
+        outflow: { purchases: purchasesTotal, expenses: expensesTotal, supplierPayments: supplierPaymentsTotal, total: totalOutflow },
+        netCashFlow,
         summary: { totalInflow, totalOutflow, netCashFlow },
         trend,
       }

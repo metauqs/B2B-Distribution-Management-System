@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
+import { apiFetch } from '@/utils/apiFetch';
 
 type Tab = 'Overview' | 'Sales' | 'Purchases' | 'Collections' | 'Inventory' | 'Expenses' | 'Aging' | 'Cash Flow';
 
@@ -57,46 +58,77 @@ export default function ReportsPage() {
   const [cashFlow, setCashFlow] = useState<CashFlowReport | null>(null);
   const [aging,    setAging]    = useState<AgingReport | null>(null);
   const [loading,  setLoading]  = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
 
-  const loadReports = useCallback(async () => {
-    setLoading(true);
+  const loadReports = useCallback(async (showLoadingSpinner = false) => {
+    if (showLoadingSpinner) setLoading(true);
     try {
       const [pnlRes, cfRes, agRes] = await Promise.all([
-        fetch(`/api/reports/pnl?from=${from}&to=${to}`),
-        fetch(`/api/reports/cashflow?from=${from}&to=${to}`),
-        fetch('/api/reports/aging'),
+        apiFetch(`/api/reports/pnl?from=${from}&to=${to}`),
+        apiFetch(`/api/reports/cashflow?from=${from}&to=${to}`),
+        apiFetch('/api/reports/aging'),
       ]);
       const [pd, cfd, agd] = await Promise.all([pnlRes.json(), cfRes.json(), agRes.json()]);
       if (pd.success)  setPnl(pd.data);
       if (cfd.success) setCashFlow(cfd.data);
       if (agd.success) setAging(agd.data);
+      setLastSyncTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    } catch {
+      // fallback
     } finally {
       setLoading(false);
     }
   }, [from, to]);
 
-  useEffect(() => { loadReports(); }, [loadReports]);
+  // Initial load & date filter change
+  useEffect(() => { loadReports(true); }, [loadReports]);
+
+  // Real-Time Sync: Periodic 10-second polling & Window Focus sync
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadReports(false);
+    }, 10000);
+
+    const onFocus = () => {
+      loadReports(false);
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [loadReports]);
 
   // Max value calculators for custom CSS bar charts
-  const maxVegTotal = pnl?.topItems?.length ? Math.max(...pnl.topItems.map(x => x.total), 1) : 1;
-  const maxCatExp   = pnl?.expensesByCategory?.length ? Math.max(...pnl.expensesByCategory.map(x => x.total), 1) : 1;
+  const maxVegTotal = (pnl?.topItems && pnl.topItems.length > 0) ? Math.max(...pnl.topItems.map(x => x.total), 1) : 1;
+  const maxCatExp   = (pnl?.expensesByCategory && pnl.expensesByCategory.length > 0) ? Math.max(...pnl.expensesByCategory.map(x => x.total), 1) : 1;
 
   const RATING_EMOJI: Record<string, string> = { GREEN: '🟢', YELLOW: '🟡', RED: '🔴', NEW: '⚪' };
 
   return (
     <DashboardLayout>
-      {/* Date Range Selector */}
-      <div className="va-panel" style={{ padding: '12px 20px' }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)' }}>From</label>
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ display: 'block', padding: '6px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', fontSize: 13 }} />
+      {/* Date Range Selector & Real-Time Sync Badge */}
+      <div className="va-panel" style={{ padding: '14px 20px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748B' }}>From</label>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 13, fontWeight: 600 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748B' }}>To</label>
+              <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 13, fontWeight: 600 }} />
+            </div>
+            <button className="va-btn small" style={{ fontWeight: 700, borderRadius: '6px' }} onClick={() => loadReports(true)}>↻ Refresh Financials</button>
           </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)' }}>To</label>
-            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ display: 'block', padding: '6px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', fontSize: 13 }} />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F0FDF4', border: '1px solid #DCFCE7', padding: '6px 12px', borderRadius: '20px' }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#16A34A', boxShadow: '0 0 0 3px rgba(22, 163, 74, 0.2)' }} />
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#166534' }}>
+              Real-Time Sync Active {lastSyncTime && `(Last updated: ${lastSyncTime})`}
+            </span>
           </div>
-          <button className="va-btn small" onClick={loadReports}>↻ Update Reports</button>
         </div>
       </div>
 
@@ -184,7 +216,7 @@ export default function ReportsPage() {
           {tab === 'Sales' && pnl && (
             <div className="va-panel">
               <div className="va-panel-head"><h3>Top Vegetables &amp; Fruits Revenue</h3></div>
-              {pnl.topItems.length === 0 ? (
+              {!pnl?.topItems || pnl.topItems.length === 0 ? (
                 <div className="va-empty">No sales entries for this range</div>
               ) : (
                 pnl.topItems.map(item => (
@@ -230,17 +262,17 @@ export default function ReportsPage() {
               <div className="va-cards">
                 <div className="va-card accent">
                   <div className="label">Cash Inflow</div>
-                  <div className="value" style={{ color: 'var(--ok)' }}>{fmtMoney(cashFlow.inflow.total)}</div>
+                  <div className="value" style={{ color: 'var(--ok)' }}>{fmtMoney(cashFlow.inflow?.total ?? 0)}</div>
                   <div className="foot">collections received</div>
                 </div>
                 <div className="va-card">
                   <div className="label">Cash Outflow</div>
-                  <div className="value" style={{ color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow.total)}</div>
+                  <div className="value" style={{ color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow?.total ?? 0)}</div>
                   <div className="foot">purchases + expenses + supplier payments</div>
                 </div>
                 <div className="va-card">
                   <div className="label">Net Cash Flow</div>
-                  <div className={`value ${cashFlow.netCashFlow < 0 ? 'neg' : ''}`}>{fmtMoney(cashFlow.netCashFlow)}</div>
+                  <div className={`value ${(cashFlow.netCashFlow ?? 0) < 0 ? 'neg' : ''}`}>{fmtMoney(cashFlow.netCashFlow ?? 0)}</div>
                   <div className="foot">operational net gain</div>
                 </div>
               </div>
@@ -252,31 +284,31 @@ export default function ReportsPage() {
                   <tbody>
                     <tr style={{ background: 'var(--line-soft)', fontWeight: 600 }}>
                       <td>Operating Cash Inflow</td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>+{fmtMoney(cashFlow.inflow.total)}</td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>+{fmtMoney(cashFlow.inflow?.total ?? 0)}</td>
                     </tr>
                     <tr>
                       <td style={{ paddingLeft: 24 }}>Client Collections</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.inflow.collections)}</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.inflow?.collections ?? 0)}</td>
                     </tr>
                     <tr style={{ background: 'var(--line-soft)', fontWeight: 600, borderTop: '1.5px solid var(--line)' }}>
                       <td>Operating Cash Outflow</td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow.total)}</td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow?.total ?? 0)}</td>
                     </tr>
                     <tr>
                       <td style={{ paddingLeft: 24 }}>Supplier Mandi Payments (Cash/Paid)</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow.purchases)}</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.purchases ?? 0)}</td>
                     </tr>
                     <tr>
                       <td style={{ paddingLeft: 24 }}>Operating &amp; Overhead Expenses</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow.expenses)}</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.expenses ?? 0)}</td>
                     </tr>
                     <tr>
                       <td style={{ paddingLeft: 24 }}>Supplier Balance Payments</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow.supplierPayments)}</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.supplierPayments ?? 0)}</td>
                     </tr>
                     <tr style={{ background: 'var(--forest)', color: 'var(--cream)', fontWeight: 700, fontSize: 15 }}>
                       <td>Net Cash Position Increase/Decrease</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.netCashFlow)}</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.netCashFlow ?? 0)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -390,7 +422,7 @@ export default function ReportsPage() {
           {tab === 'Expenses' && pnl && (
             <div className="va-panel">
               <div className="va-panel-head"><h3>Expenses by Category</h3></div>
-              {pnl.expensesByCategory.length === 0 ? (
+              {!pnl?.expensesByCategory || pnl.expensesByCategory.length === 0 ? (
                 <div className="va-empty">No expenses recorded for this range</div>
               ) : (
                 pnl.expensesByCategory.map(item => (

@@ -1040,7 +1040,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
     </div>
   `;
 
-  const notesBlock = data.notes ? `<div class="doc-notes"><strong>Note:</strong> ${data.notes}</div>` : '';
+  const notesBlock = '';
 
   const footer = buildFooter(brand, `Printed: ${printedOn}`);
 

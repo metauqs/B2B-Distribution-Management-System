@@ -57,8 +57,8 @@ export default function DashboardPage() {
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (showLoadingSpinner = false) => {
+    if (showLoadingSpinner) setLoading(true);
     try {
       const res = await apiFetch('/api/reports/dashboard');
       if (res.status === 401) { window.location.href = '/login'; return; }
@@ -72,7 +72,23 @@ export default function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(true); }, [load]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      load(false);
+    }, 10000);
+
+    const onFocus = () => {
+      load(false);
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [load]);
 
   if (loading) {
     return <DashboardLayout><div className="va-loading">Opening the ledger…</div></DashboardLayout>;
@@ -83,7 +99,7 @@ export default function DashboardPage() {
         <div className="va-empty">
           <div className="big">Could not load dashboard</div>
           <div style={{ marginTop: 8 }}>{error}</div>
-          <button className="va-btn" style={{ marginTop: 16 }} onClick={load}>Retry</button>
+          <button className="va-btn" style={{ marginTop: 16 }} onClick={() => load(true)}>Retry</button>
         </div>
       </DashboardLayout>
     );
@@ -189,7 +205,7 @@ export default function DashboardPage() {
       <div className="va-panel">
         <div className="va-panel-head">
           <h3>Today&apos;s Ledger</h3>
-          <button className="va-btn secondary small" onClick={load}>↻ Refresh</button>
+          <button className="va-btn secondary small" onClick={() => load(true)}>↻ Refresh</button>
         </div>
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table className="va-table">
