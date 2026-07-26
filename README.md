@@ -4,14 +4,6 @@ An enterprise-grade **B2B Vegetable Supply Chain & Distribution ERP System** tai
 
 ---
 
-## 🌐 Production Deployment
-
-- **Frontend Application (Vercel)**: [https://b2-b-distribution-management-system.vercel.app](https://b2-b-distribution-management-system.vercel.app)
-- **Backend API Service (Render)**: [https://b2b-distribution-management-system.onrender.com](https://b2b-distribution-management-system.onrender.com)
-- **Database**: Serverless PostgreSQL hosted on **Neon DB** (`ap-southeast-1`)
-
----
-
 ## 📁 System Architecture
 
 ```text
@@ -64,10 +56,10 @@ HalalVeggSupplies/
 
 ## ⚡ Performance & Optimization Architecture
 
-- **Stale-While-Revalidate (SWR) Client Cache** (`cacheStore.ts`): Provides **0ms instant page transitions** across all 11 ERP modules by rendering cached data instantly while validating freshness in the background.
+- **Stale-While-Revalidate (SWR) Client Cache** (`cacheStore.ts`): Provides **0ms instant page transitions** across all ERP modules by rendering cached data instantly while validating freshness in the background.
 - **Automatic Cache Invalidation**: Data mutation requests (create, update, delete) automatically invalidate affected module caches.
 - **Zero Layout Shift (Skeleton Loaders)**: Shimmering `SkeletonTable`, `SkeletonKPI`, `SkeletonProfile`, and `SkeletonChart` components provide consistent loading states.
-- **Parallelized Network Fetching**: Initial page loads utilize `Promise.all` for concurrent resource requests, reducing initial multi-device load times to **<1.5 seconds**.
+- **Parallelized Network Fetching**: Initial page loads utilize `Promise.all` for concurrent resource requests, reducing initial load times to **<1.5 seconds**.
 
 ---
 
