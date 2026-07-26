@@ -119,6 +119,16 @@ export default function ExpensesPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
 
+  // Daily Cash Deposit Modal state
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [depositForm, setDepositForm] = useState({
+    cashAccountId: '',
+    amount: 0,
+    date: todayInputDate(),
+    notes: 'Daily Cash Deposit',
+  });
+  const [depositing, setDepositing] = useState(false);
+
   // Form State
   const [form, setForm] = useState({ ...BLANK_FORM });
 
@@ -304,6 +314,34 @@ export default function ExpensesPage() {
     }
   };
 
+  // Daily Cash Deposit Handler
+  const handleDepositCash = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (depositForm.amount <= 0) return showToast('❌ Deposit amount must be greater than zero');
+    setDepositing(true);
+    try {
+      const res = await apiFetch('/api/cash-accounts/deposit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(depositForm),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(data.message || '✅ Daily cash added successfully');
+        setShowDepositModal(false);
+        setDepositForm({ cashAccountId: '', amount: 0, date: todayInputDate(), notes: 'Daily Cash Deposit' });
+        await loadMasterData();
+        await loadExpenses();
+      } else {
+        showToast('❌ ' + (data.error ?? 'Deposit failed'));
+      }
+    } catch {
+      showToast('❌ Network error adding cash');
+    } finally {
+      setDepositing(false);
+    }
+  };
+
   const filteredTotal = expenses.reduce((s, e) => s + e.amount, 0);
 
   return (
@@ -326,10 +364,20 @@ export default function ExpensesPage() {
               Track operational costs, fuel, salaries, vehicle maintenance, and real-time cash/bank account adjustments.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="va-btn secondary small" style={{ fontWeight: 600 }} onClick={loadExpenses}>
               <Icon path={mdiRefresh} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} />
               Refresh
+            </button>
+            <button 
+              className="va-btn secondary small" 
+              style={{ fontWeight: 700, color: '#16A34A', borderColor: '#86EFAC', background: '#F0FDF4' }} 
+              onClick={() => {
+                setDepositForm({ cashAccountId: cashAccounts[0]?.id || '', amount: 0, date: todayInputDate(), notes: 'Daily Cash Deposit' });
+                setShowDepositModal(true);
+              }}
+            >
+              💵 Add Daily Cash
             </button>
             {view === 'list' ? (
               <button className="va-btn" style={{ fontWeight: 700, borderRadius: '8px' }} onClick={handleOpenAdd}>
@@ -942,6 +990,78 @@ export default function ExpensesPage() {
                 Yes, Reverse & Delete
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deposit Daily Cash Modal */}
+      {showDepositModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+          <div style={{ background: '#FFFFFF', borderRadius: '16px', maxWidth: 480, width: '100%', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #166534 0%, #15803D 100%)', color: '#FFFFFF', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon path={mdiCash} size={1} color="#FFFFFF" />
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700 }}>Deposit Daily Cash</h3>
+              </div>
+              <button onClick={() => setShowDepositModal(false)} style={{ background: 'transparent', border: 'none', color: '#FFF', fontSize: 20, cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleDepositCash} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Target Cash Account */}
+              <div className="va-field">
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>Target Cash Account *</label>
+                <select 
+                  value={depositForm.cashAccountId} 
+                  onChange={e => setDepositForm(p => ({ ...p, cashAccountId: e.target.value }))}
+                  style={{ width: '100%', padding: '10px 14px', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: 13, fontWeight: 600, background: '#F8FAFC' }}
+                >
+                  {cashAccounts.map(c => (
+                    <option key={c.id} value={c.id}>💵 {c.name} (Current Balance: Rs {c.balance.toLocaleString()})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Amount */}
+              <div className="va-field">
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>Deposit Amount (Rs) *</label>
+                <input 
+                  type="number" required min="1" step="any"
+                  value={depositForm.amount || ''} 
+                  onChange={e => setDepositForm(p => ({ ...p, amount: +e.target.value }))} 
+                  placeholder="e.g. 10000"
+                  style={{ width: '100%', padding: '10px 14px', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: 15, fontWeight: 700, background: '#F8FAFC', color: '#166534' }}
+                />
+              </div>
+
+              {/* Date */}
+              <div className="va-field">
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>Deposit Date *</label>
+                <input 
+                  type="date" required 
+                  value={depositForm.date} 
+                  onChange={e => setDepositForm(p => ({ ...p, date: e.target.value }))} 
+                  style={{ width: '100%', padding: '10px 14px', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: 13, fontWeight: 600, background: '#F8FAFC' }}
+                />
+              </div>
+
+              {/* Notes */}
+              <div className="va-field">
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>Deposit Notes / Reason</label>
+                <input 
+                  value={depositForm.notes} 
+                  onChange={e => setDepositForm(p => ({ ...p, notes: e.target.value }))} 
+                  placeholder="e.g. Daily opening cash top-up, admin cash injection..."
+                  style={{ width: '100%', padding: '10px 14px', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: 13, background: '#F8FAFC' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+                <button type="button" className="va-btn secondary" onClick={() => setShowDepositModal(false)}>Cancel</button>
+                <button type="submit" className="va-btn" disabled={depositing} style={{ background: '#16A34A', color: '#FFF', fontWeight: 700, borderRadius: '8px' }}>
+                  {depositing ? 'Adding Cash…' : '✓ Add Cash Deposit'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
