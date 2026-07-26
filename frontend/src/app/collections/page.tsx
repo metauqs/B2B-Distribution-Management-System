@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime, todayInputDate, todayInputDateTime } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
@@ -97,54 +99,51 @@ export default function CollectionsPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   // ── Load registry ─────────────────────────────────────────────────────────────
-  const loadRegistry = useCallback(async () => {
-    setRegLoading(true);
+  const loadRegistry = useCallback(async (isBackground = false) => {
+    if (!isBackground) setRegLoading(true);
     try {
       const p = new URLSearchParams({ limit: '500' });
       if (regSrch)             p.set('search', regSrch);
       if (regStatus !== 'all') p.set('status', regStatus);
       if (regFrom)             p.set('from', regFrom);
       if (regTo)               p.set('to', regTo + 'T23:59:59');
-      const res  = await apiFetch(`/api/reports/invoice-registry?${p}`);
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const key = `/api/reports/invoice-registry?${p}`;
+      const data = await fetchWithCache<any>(key, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
+      if (data) {
         setRegRows(data.data ?? []);
         setRegTotals(data.totals ?? null);
-      } else {
-        showToast('❌ Failed to load registry');
       }
     } catch (err) {
       console.error('loadRegistry error:', err);
-      showToast('❌ Network error loading registry');
-    }
-    setRegLoading(false);
+    } finally { setRegLoading(false); }
   }, [regSrch, regStatus, regFrom, regTo]);
 
   const toggleExpand = (cid: string) => {
     setExpandedClients(prev => ({ ...prev, [cid]: !prev[cid] }));
   };
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [cRes, clRes, sRes] = await Promise.all([
-      apiFetch('/api/collections'),
-      apiFetch('/api/clients?minimal=true'),
-      apiFetch('/api/sales'),
-    ]);
-    const [cd, cld, sd] = await Promise.all([cRes.json(), clRes.json(), sRes.json()]);
-    if (cd.success) setCollections(cd.data);
-    if (cld.success) setClients(cld.data);
-    if (sd.success) {
-      setSales(sd.data);
-      // Auto-expand all clients that have invoices by default
-      const initialExpanded: { [key: string]: boolean } = {};
-      sd.data.forEach((item: Sale) => {
-        initialExpanded[item.clientId] = true;
-      });
-      setExpandedClients(initialExpanded);
-    }
-    setLoading(false);
-  }, []);
+  const load = useCallback(async (isBackground = false) => {
+    if (!isBackground && collections.length === 0) setLoading(true);
+    try {
+      const [cd, cld, sd] = await Promise.all([
+        fetchWithCache<Collection[]>('/api/collections', { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<Client[]>('/api/clients?minimal=true', { ttl: TTL_MEDIUM, forceRefresh: isBackground }),
+        fetchWithCache<Sale[]>('/api/sales', { ttl: TTL_SHORT, forceRefresh: isBackground }),
+      ]);
+      if (cd) setCollections(cd);
+      if (cld) setClients(cld);
+      if (sd) {
+        setSales(sd);
+        const initialExpanded: { [key: string]: boolean } = {};
+        sd.forEach((item: Sale) => {
+          initialExpanded[item.clientId] = true;
+        });
+        setExpandedClients(initialExpanded);
+      }
+    } catch (err) {
+      console.error('collections load error:', err);
+    } finally { setLoading(false); }
+  }, [collections.length]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -173,11 +172,14 @@ export default function CollectionsPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/collections');
+        invalidateCache('/api/sales');
+        invalidateCache('/api/clients');
+        invalidateCache('/api/reports');
         showToast('✅ Payment recorded successfully');
+        setForm({ ...BLANK_FORM });
+        await load(true);
         setView('list');
-        await load();
-      } else {
-        showToast('❌ ' + (data.error ?? 'Save failed'));
       }
     } finally { setSaving(false); }
   };
@@ -334,9 +336,9 @@ export default function CollectionsPage() {
         <div className="va-panel">
           <div className="va-panel-head">
             <h3>Invoice Collections Registry</h3>
-            <button className="va-btn secondary small" onClick={load}>↻ Refresh</button>
+            <button className="va-btn secondary small" onClick={() => load()}>↻ Refresh</button>
           </div>
-          {loading ? <div className="va-loading">Loading…</div> : sales.length === 0 ? (
+          {loading && collections.length === 0 ? <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={6} /></div> : sales.length === 0 ? (
             <div className="va-empty"><div className="big">No sales invoices yet</div></div>
           ) : (
             <>
@@ -589,7 +591,7 @@ export default function CollectionsPage() {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="va-btn secondary small" onClick={() => setView('list')}>← Back</button>
-                <button className="va-btn secondary small" onClick={loadRegistry}>↻ Refresh</button>
+                <button className="va-btn secondary small" onClick={() => loadRegistry()}>↻ Refresh</button>
                 <button className="va-btn secondary small" onClick={() => {
                   if (!regRows.length) return;
                   const headers = ['Invoice ID','Date & Time','Client ID','Client Name','Previous Dues (Rs)','Current Order (Rs)','Total Bill (Rs)','Pay Now (Rs)','Collected (Rs)','Due Balance (Rs)','Status'];
@@ -635,7 +637,7 @@ export default function CollectionsPage() {
               <span style={{ color: 'var(--muted)', fontSize: 12 }}>to</span>
               <input type="date" value={regTo} onChange={e => setRegTo(e.target.value)}
                 style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }} />
-              <button className="va-btn secondary small" onClick={loadRegistry}>Apply</button>
+              <button className="va-btn secondary small" onClick={() => loadRegistry()}>Apply</button>
             </div>
           </div>
 

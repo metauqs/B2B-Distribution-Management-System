@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { SkeletonKPI, SkeletonChart, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 
 type Tab = 'Overview' | 'Sales' | 'Purchases' | 'Collections' | 'Inventory' | 'Expenses' | 'Aging' | 'Cash Flow';
@@ -62,24 +64,23 @@ export default function ReportsPage() {
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
 
   const loadReports = useCallback(async (showLoadingSpinner = false) => {
-    if (showLoadingSpinner) setLoading(true);
+    if (showLoadingSpinner && (!pnl || !cashFlow || !aging)) setLoading(true);
     try {
-      const [pnlRes, cfRes, agRes] = await Promise.all([
-        apiFetch(`/api/reports/pnl?from=${from}&to=${to}`),
-        apiFetch(`/api/reports/cashflow?from=${from}&to=${to}`),
-        apiFetch('/api/reports/aging'),
+      const [pd, cfd, agd] = await Promise.all([
+        fetchWithCache<PnlReport>(`/api/reports/pnl?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showLoadingSpinner }),
+        fetchWithCache<CashFlowReport>(`/api/reports/cashflow?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showLoadingSpinner }),
+        fetchWithCache<AgingReport>('/api/reports/aging', { ttl: TTL_MEDIUM, forceRefresh: !showLoadingSpinner }),
       ]);
-      const [pd, cfd, agd] = await Promise.all([pnlRes.json(), cfRes.json(), agRes.json()]);
-      if (pd.success)  setPnl(pd.data);
-      if (cfd.success) setCashFlow(cfd.data);
-      if (agd.success) setAging(agd.data);
+      if (pd)  setPnl(pd);
+      if (cfd) setCashFlow(cfd);
+      if (agd) setAging(agd);
       setLastSyncTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch {
       // fallback
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, [from, to, pnl, cashFlow, aging]);
 
   // Initial load & date filter change
   useEffect(() => { loadReports(true); }, [loadReports]);

@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_MEDIUM } from '@/utils/cacheStore';
+import { SkeletonKPI, SkeletonTable, SkeletonProfile } from '@/components/ui/Skeleton';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateStatementHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
@@ -220,25 +222,35 @@ export default function ClientsPage() {
 
   // ─── Loaders ──────────────────────────────────────────────────────────────
 
-  const loadClients = useCallback(async () => {
-    setLoading(true);
+  const loadClients = useCallback(async (isBackground = false) => {
+    if (!isBackground && clients.length === 0) setLoading(true);
     const params = new URLSearchParams();
     params.set('stats', 'true');
     if (typeFilter !== 'all')   params.set('type', typeFilter);
     if (ratingFilter !== 'all') params.set('rating', ratingFilter);
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-    const res  = await apiFetch(`/api/clients?${params}`);
-    const data = await res.json();
-    if (data.success) setClients(data.data);
-    setLoading(false);
-  }, [debouncedSearch, typeFilter, ratingFilter]);
+    const key = `/api/clients?${params}`;
+    try {
+      const data = await fetchWithCache<Client[]>(key, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
+      if (data) setClients(data);
+    } catch (err) {
+      console.error('loadClients error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSearch, typeFilter, ratingFilter, clients.length]);
 
-  const loadProfile = useCallback(async (id: string) => {
-    setProfLoad(true);
-    const res  = await apiFetch(`/api/clients/${id}`);
-    const data = await res.json();
-    if (data.success) setProfile(data.data);
-    setProfLoad(false);
+  const loadProfile = useCallback(async (id: string, isBackground = false) => {
+    if (!isBackground) setProfLoad(true);
+    const key = `/api/clients/${id}`;
+    try {
+      const data = await fetchWithCache<any>(key, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
+      if (data) setProfile(data);
+    } catch (err) {
+      console.error('loadProfile error:', err);
+    } finally {
+      setProfLoad(false);
+    }
   }, []);
 
   useEffect(() => { loadClients(); }, [loadClients]);
@@ -246,7 +258,7 @@ export default function ClientsPage() {
   // ─── Client Actions ───────────────────────────────────────────────────────
 
   const openProfile = (c: Client) => {
-    setProfile(null);
+    setProfile(getCachedData(`/api/clients/${c.id}`));
     setProfTab('overview');
     setView('profile');
     loadProfile(c.id);
@@ -291,9 +303,11 @@ export default function ClientsPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/clients');
+        invalidateCache('/api/reports');
         showToast(isEdit ? '✅ Client updated' : '✅ Client created');
         setView('list');
-        await loadClients();
+        await loadClients(true);
       } else {
         showToast('❌ ' + (data.error ?? 'Save failed'));
       }
@@ -305,7 +319,8 @@ export default function ClientsPage() {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rating }),
     });
-    await loadClients();
+    invalidateCache('/api/clients');
+    await loadClients(true);
     if (profile?.client.id === clientId) {
       setProfile(p => p ? { ...p, client: { ...p.client, rating } } : p);
     }
@@ -317,7 +332,8 @@ export default function ClientsPage() {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
-    await loadClients();
+    invalidateCache('/api/clients');
+    await loadClients(true);
     showToast('✅ Status changed to ' + status);
   };
 
@@ -465,8 +481,8 @@ export default function ClientsPage() {
 
           {/* Table */}
           <div className="va-panel">
-            {loading ? (
-              <div className="va-loading">Loading clients…</div>
+            {loading && clients.length === 0 ? (
+              <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={6} /></div>
             ) : clients.length === 0 ? (
               <div className="va-empty">
                 <div className="big">No clients found</div>
@@ -664,8 +680,8 @@ export default function ClientsPage() {
             </div>
           </div>
 
-          {profLoad ? (
-            <div className="va-loading">Loading profile…</div>
+          {profLoad && !profile ? (
+            <div style={{ padding: 16 }}><SkeletonProfile /></div>
           ) : profile ? (
             <>
               {/* KPI Cards */}

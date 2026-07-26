@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
+import { SkeletonTable } from '@/components/ui/Skeleton';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 
@@ -79,19 +81,23 @@ export default function PurchasesPage() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [pRes, sRes, prRes] = await Promise.all([
-      apiFetch('/api/purchases'),
-      apiFetch('/api/suppliers'),
-      apiFetch('/api/products'),
-    ]);
-    const [pd, sd, prd] = await Promise.all([pRes.json(), sRes.json(), prRes.json()]);
-    if (pd.success)  setPurchases(pd.data);
-    if (sd.success)  setSuppliers(sd.data);
-    if (prd.success) setProducts(prd.data);
-    setLoading(false);
-  }, []);
+  const load = useCallback(async (isBackground = false) => {
+    if (!isBackground && purchases.length === 0) setLoading(true);
+    try {
+      const [pd, sd, prd] = await Promise.all([
+        fetchWithCache<Purchase[]>('/api/purchases', { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any[]>('/api/suppliers', { ttl: TTL_LONG, forceRefresh: isBackground }),
+        fetchWithCache<any[]>('/api/products', { ttl: TTL_LONG, forceRefresh: isBackground }),
+      ]);
+      if (pd)  setPurchases(pd);
+      if (sd)  setSuppliers(sd);
+      if (prd) setProducts(prd);
+    } catch (err) {
+      console.error('purchases load error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [purchases.length]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -126,6 +132,7 @@ export default function PurchasesPage() {
       });
       const data = await res.json();
       if (data.success) {
+        invalidateCache('/api/suppliers');
         showToast('✅ Supplier created successfully');
         const sRes = await apiFetch('/api/suppliers');
         const sData = await sRes.json();
@@ -171,8 +178,11 @@ export default function PurchasesPage() {
       const res = await apiFetch(`/api/purchases/${pId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
+        invalidateCache('/api/purchases');
+        invalidateCache('/api/inventory');
+        invalidateCache('/api/reports');
         showToast('✅ Purchase deleted & stock levels adjusted');
-        await load();
+        await load(true);
       } else {
         showToast('❌ ' + (data.error ?? 'Delete failed'));
       }
@@ -311,9 +321,12 @@ export default function PurchasesPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/purchases');
+        invalidateCache('/api/inventory');
+        invalidateCache('/api/reports');
         showToast(purchaseId ? '✅ Purchase updated successfully' : '✅ Purchase saved — stock updated');
         handleCancelForm();
-        await load();
+        await load(true);
       } else showToast('❌ ' + (data.error ?? 'Failed'));
     } catch {
       showToast('❌ Network error saving purchase');
@@ -776,10 +789,10 @@ export default function PurchasesPage() {
           <h3>Purchase History</h3>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button className="va-btn secondary small" onClick={exportToCSV}>📥 Export CSV</button>
-            <button className="va-btn secondary small" onClick={load}>↻ Refresh</button>
+            <button className="va-btn secondary small" onClick={() => load()}>↻ Refresh</button>
           </div>
         </div>
-        {loading ? <div className="va-loading">Loading…</div> : filteredPurchases.length === 0 ? (
+        {loading && purchases.length === 0 ? <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={6} /></div> : filteredPurchases.length === 0 ? (
           <div className="va-empty"><div className="big">No purchases found</div></div>
         ) : (
           <>

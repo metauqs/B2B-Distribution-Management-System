@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, invalidateCache, TTL_LONG, TTL_MEDIUM } from '@/utils/cacheStore';
+import { SkeletonKPI, SkeletonTable, SkeletonProfile } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiBriefcase, mdiAccountBadge, mdiTrashCanOutline, mdiAlertCircleOutline } from '@mdi/js';
@@ -92,21 +94,17 @@ export default function EmployeesPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   // Load employees
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (isBackground = false) => {
+    if (!isBackground && employees.length === 0) setLoading(true);
     try {
-      const res = await apiFetch('/api/employees');
-      const data = await res.json();
-      if (data.success) {
-        setEmployees(data.data ?? []);
-      } else {
-        showToast('❌ Failed to load employees');
-      }
-    } catch {
-      showToast('❌ Network error loading employees');
+      const data = await fetchWithCache<Employee[]>('/api/employees', { ttl: TTL_LONG, forceRefresh: isBackground });
+      if (data) setEmployees(data);
+    } catch (err) {
+      console.error('employees load error:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, []);
+  }, [employees.length]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -134,17 +132,17 @@ export default function EmployeesPage() {
   }, [form.phone, form.whatsapp, view]);
 
   // Load single employee profile details
-  const loadProfile = async (id: string) => {
+  const loadProfile = async (id: string, isBackground = false) => {
     try {
-      const res = await apiFetch(`/api/employees/${id}`);
-      const data = await res.json();
-      if (data.success) {
-        setActiveEmp(data.data);
+      const data = await fetchWithCache<any>(`/api/employees/${id}`, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
+      if (data) {
+        setActiveEmp(data);
         setView('profile');
       } else {
         showToast('❌ Failed to load profile details');
       }
-    } catch {
+    } catch (err) {
+      console.error('loadProfile error:', err);
       showToast('❌ Network error loading profile');
     }
   };
@@ -171,9 +169,10 @@ export default function EmployeesPage() {
 
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/employees');
         showToast(isEdit ? '✅ Employee updated successfully' : `✅ Employee created! ID: ${data.data?.employeeId ?? 'Assigned'}`);
         setView('list');
-        await load();
+        await load(true);
       } else {
         showToast('❌ ' + (data.error ?? 'Save failed'));
       }
@@ -190,10 +189,11 @@ export default function EmployeesPage() {
       const res = await apiFetch(`/api/employees/${emp.id}/toggle`, { method: 'PATCH' });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/employees');
         showToast(`✅ Employee ${data.data?.isActive ? 'activated' : 'deactivated'}`);
-        await load();
+        await load(true);
         if (activeEmp?.id === emp.id) {
-          loadProfile(emp.id);
+          loadProfile(emp.id, true);
         }
       } else {
         showToast('❌ Failed to update status');
@@ -211,12 +211,13 @@ export default function EmployeesPage() {
       const res = await apiFetch(`/api/employees/${empToDelete.id}`, { method: 'DELETE' });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/employees');
         showToast(`✅ Employee "${empToDelete.name}" permanently deleted`);
         setEmpToDelete(null);
         if (view === 'profile' && activeEmp?.id === empToDelete.id) {
           setView('list');
         }
-        await load();
+        await load(true);
       } else {
         showToast('❌ ' + (data.error ?? 'Failed to delete employee'));
       }
@@ -491,8 +492,8 @@ export default function EmployeesPage() {
             />
           </div>
 
-          {loading ? (
-            <div className="va-loading">Opening ledger roster...</div>
+          {loading && employees.length === 0 ? (
+            <div style={{ padding: 16 }}><SkeletonTable rows={5} cols={5} /></div>
           ) : filtered.length === 0 ? (
             <div className="va-empty"><div className="big">No employees found</div></div>
           ) : (

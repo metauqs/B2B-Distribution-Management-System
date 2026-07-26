@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiArchive } from '@mdi/js';
@@ -93,22 +95,23 @@ export default function InventoryPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   // ── Load inventory ──────────────────────────────────────────────────────────
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (isBackground = false) => {
+    if (!isBackground && inventory.length === 0) setLoading(true);
     try {
-      const res  = await apiFetch('/api/inventory');
-      const data = await res.json();
-      if (data.success) {
-        setInventory(data.data ?? []);
+      const data = await fetchWithCache<any>('/api/inventory', { ttl: TTL_SHORT, forceRefresh: isBackground });
+      if (data) {
+        setInventory(data.data ?? data ?? []);
         setSummary(data.summary ?? null);
       }
+    } catch (err) {
+      console.error('inventory load error:', err);
     } finally { setLoading(false); }
-  }, []);
+  }, [inventory.length]);
 
   useEffect(() => { load(); }, [load]);
 
   // ── Load movements ──────────────────────────────────────────────────────────
-  const loadMovements = useCallback(async () => {
+  const loadMovements = useCallback(async (isBackground = false) => {
     setMovLoad(true);
     try {
       const p = new URLSearchParams({ limit: '300' });
@@ -116,10 +119,11 @@ export default function InventoryPage() {
       if (mType !== 'all')   p.set('type', mType);
       if (mFrom)             p.set('from', mFrom);
       if (mTo)               p.set('to', mTo);
-      const res  = await apiFetch(`/api/inventory/movements?${p}`);
-      const data = await res.json();
-      if (data.success) setMovements(data.data ?? []);
+      const data = await fetchWithCache<any[]>(`/api/inventory/movements?${p}`, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
+      if (data) setMovements(data);
       else showToast('❌ Failed to load movements');
+    } catch (err) {
+      console.error('loadMovements error:', err);
     } finally { setMovLoad(false); }
   }, [mProdId, mType, mFrom, mTo]);
 
@@ -139,9 +143,11 @@ export default function InventoryPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/inventory');
+        invalidateCache('/api/reports');
         showToast(`✅ Wastage recorded — ${data.data?.refNo ?? ''}`);
         setWProdId(''); setWQty(0); setWReason(''); setWDate('');
-        load(); setView('list');
+        await load(true); setView('list');
       } else showToast('❌ ' + (data.error ?? 'Failed'));
     } finally { setSaving(false); }
   };
@@ -161,10 +167,12 @@ export default function InventoryPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/inventory');
+        invalidateCache('/api/reports');
         const { refNo, delta } = data.data;
         showToast(`✅ Stock adjusted — ${refNo} (${delta >= 0 ? '+' : ''}${delta})`);
         setAProdId(''); setAPhysQty(''); setAReason(''); setASysQty(0);
-        load(); setView('list');
+        await load(true); setView('list');
       } else showToast('❌ ' + (data.error ?? 'Failed'));
     } finally { setSaving(false); }
   };
@@ -299,11 +307,11 @@ export default function InventoryPage() {
                   placeholder="🔍 Search product…"
                   style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, width: 200 }}
                 />
-                <button className="va-btn secondary small" onClick={load}>↻ Refresh</button>
+                <button className="va-btn secondary small" onClick={() => load()}>↻ Refresh</button>
               </div>
             </div>
 
-            {loading ? <div className="va-loading">Loading inventory…</div>
+            {loading && inventory.length === 0 ? <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={5} /></div>
             : filtered.length === 0 ? (
               <div className="va-empty">
                 <div className="big">No inventory data</div>
@@ -573,8 +581,8 @@ export default function InventoryPage() {
               <span style={{ color: 'var(--muted)', fontSize: 12 }}>to</span>
               <input type="date" value={mTo} onChange={e => setMTo(e.target.value)}
                 style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }} />
-              <button className="va-btn secondary small" onClick={loadMovements}>Apply</button>
-              <button className="va-btn secondary small" onClick={loadMovements}>↻ Refresh</button>
+              <button className="va-btn secondary small" onClick={() => loadMovements()}>Apply</button>
+              <button className="va-btn secondary small" onClick={() => loadMovements()}>↻ Refresh</button>
             </div>
           </div>
 

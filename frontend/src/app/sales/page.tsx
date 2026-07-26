@@ -6,6 +6,8 @@ import { MobileInvoiceCard } from '@/components/sales/MobileInvoiceCard';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
@@ -148,9 +150,8 @@ export default function SalesPage() {
 
   const loadEmployees = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/employees?activeOnly=true');
-      const data = await res.json();
-      if (data.success) setEmployees(data.data ?? []);
+      const data = await fetchWithCache<any[]>('/api/employees?activeOnly=true', { ttl: TTL_MEDIUM });
+      if (data) setEmployees(data);
     } catch (err) {
       console.error('loadEmployees error:', err);
     }
@@ -169,8 +170,8 @@ export default function SalesPage() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3500); };
 
-  const loadSales = useCallback(async () => {
-    setLoading(true);
+  const loadSales = useCallback(async (isBackground = false) => {
+    if (!isBackground && sales.length === 0) setLoading(true);
     try {
       const p = new URLSearchParams({ limit: '200' });
       if (debouncedSrchInv)      p.set('search', debouncedSrchInv);
@@ -182,30 +183,28 @@ export default function SalesPage() {
       }
       const targetDate = filterDate || new Date().toISOString().slice(0, 10);
       
-      const [res, collRes] = await Promise.all([
-        apiFetch(`/api/sales?${p}`),
-        apiFetch(`/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=500`),
+      const salesKey = `/api/sales?${p}`;
+      const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=500`;
+
+      const [salesData, collData] = await Promise.all([
+        fetchWithCache<Sale[]>(salesKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any[]>(collKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
 
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : { success: false };
-      if (data.success) setSales(data.data ?? []);
+      if (salesData) setSales(salesData);
 
-      const collText = await collRes.text();
-      const collData = collText ? JSON.parse(collText) : { success: false };
-      if (collData.success && collData.data) {
-        const totalColl = collData.data.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+      if (collData && Array.isArray(collData)) {
+        const totalColl = collData.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
         setTodayCollectionsAmt(totalColl);
       } else {
         setTodayCollectionsAmt(0);
       }
     } catch (err) {
       console.error('loadSales error:', err);
-      setSales([]);
-      setTodayCollectionsAmt(0);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [debouncedSrchInv, filterSt, filterMode, filterDate]);
+  }, [debouncedSrchInv, filterSt, filterMode, filterDate, sales.length]);
 
   // ── Load clients (with error guard) ─────────────────────────────────────────
   const loadClients = useCallback(async () => {
@@ -213,10 +212,8 @@ export default function SalesPage() {
     try {
       const p = new URLSearchParams({ status: 'ACTIVE', minimal: 'true' });
       if (debouncedClientSrch.trim()) p.set('search', debouncedClientSrch.trim());
-      const res  = await apiFetch(`/api/clients?${p}`);
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : { success: false };
-      if (data.success) setClients(data.data ?? []);
+      const data = await fetchWithCache<Client[]>(`/api/clients?${p}`, { ttl: TTL_MEDIUM });
+      if (data) setClients(data);
     } catch (err) {
       console.error('loadClients error:', err);
     }
@@ -227,10 +224,8 @@ export default function SalesPage() {
   const loadPrices = useCallback(async () => {
     try {
       const today = todayInputDate();
-      const res   = await apiFetch(`/api/pricelist?date=${today}`);
-      const text  = await res.text();
-      const data  = text ? JSON.parse(text) : { success: false };
-      if (data.success && data.data?.items) setPriceItems(data.data.items);
+      const data = await fetchWithCache<any>(`/api/pricelist?date=${today}`, { ttl: TTL_MEDIUM });
+      if (data?.items) setPriceItems(data.items);
     } catch (err) {
       console.error('loadPrices error:', err);
     }
@@ -381,8 +376,13 @@ export default function SalesPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/sales');
+        invalidateCache('/api/clients');
+        invalidateCache('/api/inventory');
+        invalidateCache('/api/collections');
+        invalidateCache('/api/reports');
         showToast(`✅ Invoice ${data.data.invoiceNo} created`);
-        await loadSales();
+        await loadSales(true);
         openDetail(data.data);
       } else showToast('❌ ' + (data.error ?? 'Failed'));
     } finally { setSaving(false); }
@@ -390,14 +390,18 @@ export default function SalesPage() {
 
   // ── Open detail ───────────────────────────────────────────────────────────────
   const openDetail = async (s: Sale) => {
-    setDetailSale(null);
+    setDetailSale(getCachedData(`/api/sales/${s.id}`));
     setAddPayAmt(0);
     setDetailLoad(true);
     setView('detail');
-    const res  = await apiFetch(`/api/sales/${s.id}`);
-    const data = await res.json();
-    if (data.success) setDetailSale(data.data);
-    setDetailLoad(false);
+    try {
+      const data = await fetchWithCache<Sale>(`/api/sales/${s.id}`, { ttl: TTL_SHORT });
+      if (data) setDetailSale(data);
+    } catch {
+      // Keep cached sale if offline/error
+    } finally {
+      setDetailLoad(false);
+    }
   };
 
   // ── Record additional payment ────────────────────────────────────────────────
@@ -413,10 +417,14 @@ export default function SalesPage() {
     });
     const data = await res.json();
     if (res.ok && data.success) {
+      invalidateCache('/api/sales');
+      invalidateCache('/api/clients');
+      invalidateCache('/api/collections');
+      invalidateCache('/api/reports');
       showToast('✅ Payment recorded');
       setAddPayAmt(0);
       await openDetail(detailSale);
-      await loadSales();
+      await loadSales(true);
     } else showToast('❌ ' + (data.error ?? 'Failed'));
     setAddPayBusy(false);
   };
@@ -656,13 +664,15 @@ export default function SalesPage() {
                 <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
                   style={{ border: 'none', background: 'transparent', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, color: 'var(--ink)' }} />
               </div>
-              <button className="va-btn secondary small" onClick={loadSales}>↻ Refresh</button>
+              <button className="va-btn secondary small" onClick={() => loadSales()}>↻ Refresh</button>
             </div>
           </div>
 
           {/* Sales Table */}
           <div className="va-panel">
-            {loading ? <div className="va-loading">Loading invoices…</div> : sales.length === 0 ? (
+            {loading && sales.length === 0 ? (
+              <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={6} /></div>
+            ) : sales.length === 0 ? (
               <div className="va-empty"><div className="big">No invoices found</div><div>Create your first invoice with + New Invoice</div></div>
             ) : (
               <>

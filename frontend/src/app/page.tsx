@@ -51,34 +51,36 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, getCachedData, TTL_SHORT } from '@/utils/cacheStore';
+import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const [data, setData]     = useState<DashboardData | null>(null);
+  const [data, setData]     = useState<DashboardData | null>(() => getCachedData<DashboardData>('/api/reports/dashboard'));
   const [error, setError]   = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !getCachedData<DashboardData>('/api/reports/dashboard'));
 
   const load = useCallback(async (showLoadingSpinner = false) => {
-    if (showLoadingSpinner) setLoading(true);
+    if (showLoadingSpinner && !getCachedData('/api/reports/dashboard')) setLoading(true);
     try {
-      const res = await apiFetch('/api/reports/dashboard');
-      if (res.status === 401) { window.location.href = '/login'; return; }
-      const json = await res.json();
-      if (json.success) setData(json.data);
-      else setError(json.error ?? 'Failed to load');
+      const result = await fetchWithCache<DashboardData>('/api/reports/dashboard', {
+        ttl: TTL_SHORT,
+        forceRefresh: !showLoadingSpinner,
+      });
+      if (result) setData(result);
     } catch {
-      setError('Network error');
+      setError('Network error loading dashboard');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(true); }, [load]);
+  useEffect(() => { load(false); }, [load]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       load(false);
-    }, 10000);
+    }, 15000);
 
     const onFocus = () => {
       load(false);
@@ -91,8 +93,15 @@ export default function DashboardPage() {
     };
   }, [load]);
 
-  if (loading) {
-    return <DashboardLayout><div className="va-loading">Opening the ledger…</div></DashboardLayout>;
+  if (loading && !data) {
+    return (
+      <DashboardLayout>
+        <div style={{ padding: 16 }}>
+          <SkeletonKPI count={4} />
+          <SkeletonTable rows={5} cols={4} />
+        </div>
+      </DashboardLayout>
+    );
   }
   if (error || !data) {
     return (

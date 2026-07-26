@@ -6,6 +6,8 @@ import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatte
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, invalidateCache, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
+import { SkeletonTable } from '@/components/ui/Skeleton';
 import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
 
@@ -171,25 +173,21 @@ export default function PriceListPage() {
 
   const loadProducts = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/products?availability=ALL');
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : { success: false };
-      if (data.success) setProducts(data.data ?? []);
+      const data = await fetchWithCache<Product[]>('/api/products?availability=ALL', { ttl: TTL_LONG });
+      if (data) setProducts(data);
     } catch (err) {
       console.error('loadProducts error:', err);
     }
   }, []);
 
   const loadDateList = useCallback(async (date: string, isBackground = false) => {
-    if (!isBackground) setLoading(true);
+    if (!isBackground && (!currentList || currentList.date !== date)) setLoading(true);
     try {
-      const res = await apiFetch(`/api/pricelist?date=${date}`);
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : { success: false };
-      if (data.success) {
-        setCurrentList(data.data);
+      const data = await fetchWithCache<any>(`/api/pricelist?date=${date}`, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
+      if (data) {
+        setCurrentList(data);
         setIsDraft(!!data.isDraft);
-        const items = data.data?.items ?? [];
+        const items = data.items ?? [];
         if (!isEditing) {
           setEditItems(items.map((i: PriceItemRow) => ({
             ...i,
@@ -197,21 +195,19 @@ export default function PriceListPage() {
             origSellRate: i.sellRate,
           })));
         }
-        setListNotes(data.data?.notes ?? '');
+        setListNotes(data.notes ?? '');
       }
     } catch (err) {
       console.error('loadDateList error:', err);
     } finally {
-      if (!isBackground) setLoading(false);
+      setLoading(false);
     }
-  }, [isEditing]);
+  }, [isEditing, currentList]);
 
   const loadLists = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/pricelist?limit=30');
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : { success: false };
-      if (data.success) setLists(data.data ?? []);
+      const data = await fetchWithCache<PriceList[]>('/api/pricelist?limit=30', { ttl: TTL_MEDIUM });
+      if (data) setLists(data);
     } catch (err) {
       console.error('loadLists error:', err);
     }
@@ -523,11 +519,13 @@ export default function PriceListPage() {
       });
       const data = await res.json();
       if (data.success) {
+        invalidateCache('/api/products');
+        invalidateCache('/api/pricelist');
         showToast(`✅ ${newProdName} added to master catalog`);
         setNewProdName('');
         setNewProdUrdu('');
         await loadProducts();
-        await loadDateList(targetDate); // refresh dynamic lists
+        await loadDateList(targetDate, true); // refresh dynamic lists
       } else {
         showToast('❌ ' + (data.error ?? 'Failed to add product'));
       }
@@ -545,9 +543,11 @@ export default function PriceListPage() {
       });
       const data = await res.json();
       if (data.success) {
+        invalidateCache('/api/products');
+        invalidateCache('/api/pricelist');
         showToast('✅ Status updated');
         await loadProducts();
-        await loadDateList(targetDate);
+        await loadDateList(targetDate, true);
       }
     } catch {
       showToast('❌ Failed to update status');
@@ -599,9 +599,10 @@ export default function PriceListPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/pricelist');
         showToast(`✅ Saved pricing snapshot for ${fmtDate(targetDate)}`);
         setIsEditing(false);
-        await loadDateList(targetDate);
+        await loadDateList(targetDate, true);
         await loadLists();
       } else {
         // If conflict (exists), allow PATCH updates
@@ -616,9 +617,10 @@ export default function PriceListPage() {
           });
           const updateData = await updateRes.json();
           if (updateData.success) {
+            invalidateCache('/api/pricelist');
             showToast(`✅ Updated pricing snapshot for ${fmtDate(targetDate)}`);
             setIsEditing(false);
-            await loadDateList(targetDate);
+            await loadDateList(targetDate, true);
             await loadLists();
           } else {
             showToast('❌ ' + (updateData.error ?? 'Failed to update'));
@@ -899,8 +901,8 @@ export default function PriceListPage() {
             )}
           </div>
 
-          {loading ? (
-            <div className="va-loading">Loading catalog prices...</div>
+          {loading && filteredEditItems.length === 0 ? (
+            <div style={{ padding: 16 }}><SkeletonTable rows={7} cols={6} /></div>
           ) : (
             <>
               {/* Desktop Table View */}

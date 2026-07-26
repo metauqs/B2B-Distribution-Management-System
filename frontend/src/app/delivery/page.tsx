@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 
 interface DeliveryItem {
@@ -80,37 +82,29 @@ export default function DeliveryPage() {
     }
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (isBackground = false) => {
+    if (!isBackground && deliveries.length === 0) setLoading(true);
     try {
       const dParams = new URLSearchParams();
       if (filterDate) dParams.set('date', filterDate);
       if (selectedEmpId) dParams.set('employeeId', selectedEmpId);
 
-      const [dRes, vRes, eRes] = await Promise.all([
-        apiFetch(`/api/delivery?${dParams.toString()}`),
-        apiFetch('/api/vehicles'),
-        apiFetch('/api/employees?activeOnly=true'),
+      const dKey = `/api/delivery?${dParams.toString()}`;
+      const [dd, vd, ed] = await Promise.all([
+        fetchWithCache<Delivery[]>(dKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any[]>('/api/vehicles', { ttl: TTL_MEDIUM, forceRefresh: isBackground }),
+        fetchWithCache<any[]>('/api/employees?activeOnly=true', { ttl: TTL_MEDIUM, forceRefresh: isBackground }),
       ]);
       
-      const getJson = async (res: Response) => {
-        try {
-          const text = await res.text();
-          return text ? JSON.parse(text) : { success: false, data: [] };
-        } catch {
-          return { success: false, data: [] };
-        }
-      };
-
-      const [dd, vd, ed] = await Promise.all([getJson(dRes), getJson(vRes), getJson(eRes)]);
-      if (dd.success) setDeliveries(dd.data ?? []);
-      if (vd.success) setVehicles(vd.data ?? []);
-      if (ed.success) setEmployees(ed.data ?? []);
+      if (dd) setDeliveries(dd);
+      if (vd) setVehicles(vd);
+      if (ed) setEmployees(ed);
     } catch (err) {
       console.error('Error loading delivery data:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [filterDate, selectedEmpId]);
+  }, [filterDate, selectedEmpId, deliveries.length]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -123,8 +117,9 @@ export default function DeliveryPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/delivery');
         showToast(status === 'DELIVERED' ? '✅ Delivery marked as Delivered' : `✅ Delivery marked ${status}`);
-        await load();
+        await load(true);
       } else {
         showToast('❌ Update failed');
       }
@@ -142,8 +137,9 @@ export default function DeliveryPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/delivery');
         showToast('✅ Vehicle assigned');
-        await load();
+        await load(true);
       }
     } catch {
       showToast('❌ Error assigning vehicle');
@@ -159,8 +155,9 @@ export default function DeliveryPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/delivery');
         showToast('✅ Delivery employee updated');
-        await load();
+        await load(true);
       }
     } catch {
       showToast('❌ Error assigning employee');
@@ -339,11 +336,11 @@ export default function DeliveryPage() {
               ? `Assigned Deliveries for: ${activeEmpName}`
               : 'Delivery Dispatch & Tracking Register'}
           </h3>
-          <button className="va-btn secondary small" style={{ fontWeight: 600 }} onClick={load}>↻ Refresh</button>
+          <button className="va-btn secondary small" style={{ fontWeight: 600 }} onClick={() => load()}>↻ Refresh</button>
         </div>
 
-        {loading ? (
-          <div className="va-loading" style={{ padding: '40px 0', textAlign: 'center', color: '#64748B', fontWeight: 600 }}>Loading deliveries…</div>
+        {loading && deliveries.length === 0 ? (
+          <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={6} /></div>
         ) : filtered.length === 0 ? (
           <div className="va-empty" style={{ padding: '40px 0', textAlign: 'center' }}>
             <div className="big" style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>No deliveries found</div>

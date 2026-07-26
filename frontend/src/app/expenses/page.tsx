@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
+import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
+import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import {
@@ -148,38 +150,27 @@ export default function ExpensesPage() {
   // Load Reference Master Options (Vehicles, Employees, Accounts, Suppliers)
   const loadMasterData = useCallback(async () => {
     try {
-      const [vRes, eRes, sRes, cRes, bRes] = await Promise.all([
-        apiFetch('/api/vehicles'),
-        apiFetch('/api/employees?activeOnly=true'),
-        apiFetch('/api/suppliers'),
-        apiFetch('/api/cash-accounts'),
-        apiFetch('/api/bank-accounts'),
-      ]);
-
-      const parseJson = async (res: Response) => {
-        try {
-          const txt = await res.text();
-          return txt ? JSON.parse(txt) : { success: false, data: [] };
-        } catch { return { success: false, data: [] }; }
-      };
-
       const [vd, ed, sd, cd, bd] = await Promise.all([
-        parseJson(vRes), parseJson(eRes), parseJson(sRes), parseJson(cRes), parseJson(bRes)
+        fetchWithCache<Vehicle[]>('/api/vehicles', { ttl: TTL_LONG }),
+        fetchWithCache<Employee[]>('/api/employees?activeOnly=true', { ttl: TTL_LONG }),
+        fetchWithCache<Supplier[]>('/api/suppliers', { ttl: TTL_LONG }),
+        fetchWithCache<CashAccount[]>('/api/cash-accounts', { ttl: TTL_LONG }),
+        fetchWithCache<BankAccount[]>('/api/bank-accounts', { ttl: TTL_LONG }),
       ]);
 
-      if (vd.success) setVehicles(vd.data ?? []);
-      if (ed.success) setEmployees(ed.data ?? []);
-      if (sd.success) setSuppliers(sd.data ?? []);
-      if (cd.success) setCashAccounts(cd.data ?? []);
-      if (bd.success) setBankAccounts(bd.data ?? []);
+      if (vd) setVehicles(vd);
+      if (ed) setEmployees(ed);
+      if (sd) setSuppliers(sd);
+      if (cd) setCashAccounts(cd);
+      if (bd) setBankAccounts(bd);
     } catch (err) {
       console.error('Error loading expense options:', err);
     }
   }, []);
 
   // Fetch Expenses List & Summary analytics
-  const loadExpenses = useCallback(async () => {
-    setLoading(true);
+  const loadExpenses = useCallback(async (isBackground = false) => {
+    if (!isBackground && expenses.length === 0) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (dateRange !== 'custom') {
@@ -195,21 +186,22 @@ export default function ExpensesPage() {
       if (employeeFilter !== 'ALL') params.set('employeeId', employeeFilter);
       if (search.trim()) params.set('search', search.trim());
 
-      const [expRes, sumRes] = await Promise.all([
-        apiFetch(`/api/expenses?${params.toString()}`),
-        apiFetch(`/api/expenses/summary?${params.toString()}`),
+      const expKey = `/api/expenses?${params.toString()}`;
+      const sumKey = `/api/expenses/summary?${params.toString()}`;
+
+      const [expData, sumData] = await Promise.all([
+        fetchWithCache<Expense[]>(expKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<ExpenseSummary>(sumKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
 
-      const expData = await expRes.json();
-      const sumData = await sumRes.json();
-
-      if (expRes.ok && expData.success) setExpenses(expData.data ?? []);
-      if (sumRes.ok && sumData.success) setSummary(sumData.data ?? null);
+      if (expData) setExpenses(expData);
+      if (sumData) setSummary(sumData);
     } catch (err) {
       console.error('Error loading expenses:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [dateRange, customFrom, customTo, catFilter, payMethodFilter, vehicleFilter, employeeFilter, search]);
+  }, [dateRange, customFrom, customTo, catFilter, payMethodFilter, vehicleFilter, employeeFilter, search, expenses.length]);
 
   useEffect(() => {
     loadMasterData();
@@ -283,9 +275,11 @@ export default function ExpensesPage() {
 
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/expenses');
+        invalidateCache('/api/reports');
         showToast(view === 'edit' ? '✅ Expense updated & balances synced' : '✅ Expense recorded & balance adjusted');
         setView('list');
-        await loadExpenses();
+        await loadExpenses(true);
       } else {
         showToast('❌ ' + (data.error ?? 'Save failed'));
       }
@@ -303,10 +297,12 @@ export default function ExpensesPage() {
       const res = await apiFetch(`/api/expenses/${expenseToDelete.id}`, { method: 'DELETE' });
       const data = await res.json();
       if (res.ok && data.success) {
+        invalidateCache('/api/expenses');
+        invalidateCache('/api/reports');
         showToast('✅ Expense deleted & account balance refunded');
         setShowDeleteModal(false);
         setExpenseToDelete(null);
-        await loadExpenses();
+        await loadExpenses(true);
       } else {
         showToast('❌ ' + (data.error ?? 'Delete failed'));
       }
@@ -366,7 +362,7 @@ export default function ExpensesPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="va-btn secondary small" style={{ fontWeight: 600 }} onClick={loadExpenses}>
+            <button className="va-btn secondary small" style={{ fontWeight: 600 }} onClick={() => loadExpenses()}>
               <Icon path={mdiRefresh} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} />
               Refresh
             </button>
@@ -711,8 +707,8 @@ export default function ExpensesPage() {
               <span style={{ fontSize: 13, color: '#64748B', fontWeight: 600 }}>Showing {expenses.length} records</span>
             </div>
 
-            {loading ? (
-              <div className="va-loading" style={{ padding: '40px 0', textAlign: 'center', color: '#64748B', fontWeight: 600 }}>Loading expenses register…</div>
+            {loading && expenses.length === 0 ? (
+              <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={6} /></div>
             ) : expenses.length === 0 ? (
               <div className="va-empty" style={{ padding: '40px 0', textAlign: 'center' }}>
                 <div className="big" style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>No expenses found</div>
