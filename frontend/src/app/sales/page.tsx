@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MobileInvoiceCard } from '@/components/sales/MobileInvoiceCard';
+import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
@@ -750,26 +751,50 @@ export default function SalesPage() {
       {view === 'new' && (
         <>
           {/* Wizard header */}
-          <div className="va-panel" style={{ padding: '12px 20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="va-panel" style={{ padding: '12px 16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Top Row: Cancel + Title */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                 <button className="va-btn secondary small" onClick={() => setView('list')}>← Cancel</button>
-                <h3 style={{ margin: 0 }}>+ New Invoice</h3>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>+ New Invoice</h3>
               </div>
-              {/* Step indicator */}
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                {([1, 2, 3] as Step[]).map(s => (
-                  <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+
+              {/* Stepper Progress Indicator */}
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between', 
+                width: '100%', 
+                paddingTop: 10, 
+                borderTop: '1px solid var(--line-soft)' 
+              }}>
+                {([1, 2, 3] as Step[]).map((s) => (
+                  <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: s < 3 ? '1 1 0%' : '0 0 auto' }}>
                     <div style={{
-                      width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 700, fontSize: 13,
-                      background: step >= s ? 'var(--forest)' : 'var(--line-soft)',
-                      color: step >= s ? '#fff' : 'var(--muted)',
+                      width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 700, fontSize: 12, flexShrink: 0,
+                      background: step >= s ? 'var(--forest)' : '#E2E8F0',
+                      color: step >= s ? '#fff' : '#64748B',
                     }}>{s}</div>
-                    <span style={{ fontSize: 11, color: step === s ? 'var(--forest)' : 'var(--muted)', fontWeight: step === s ? 700 : 400 }}>
+                    
+                    <span style={{ 
+                      fontSize: 11, 
+                      color: step === s ? 'var(--forest)' : '#64748B', 
+                      fontWeight: step === s ? 700 : 500,
+                      whiteSpace: 'nowrap'
+                    }}>
                       {s === 1 ? 'Select Client' : s === 2 ? 'Add Items' : 'Review & Pay'}
                     </span>
-                    {s < 3 && <div style={{ width: 24, height: 2, background: step > s ? 'var(--forest)' : 'var(--line)', marginLeft: 4 }} />}
+                    
+                    {s < 3 && (
+                      <div style={{ 
+                        flex: 1, 
+                        height: 2, 
+                        background: step > s ? 'var(--forest)' : '#E2E8F0', 
+                        margin: '0 4px',
+                        minWidth: 8
+                      }} />
+                    )}
                   </div>
                 ))}
               </div>
@@ -1295,106 +1320,133 @@ export default function SalesPage() {
                 </div>
               </div>
 
-              {/* Mobile View: Vertical Details Card */}
-              <div className="show-mobile" style={{ flexDirection: 'column', gap: '16px', width: '100%' }}>
-                <div className="va-mobile-card">
-                  <div className="card-header">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <span className="card-title" style={{ color: '#FFFFFF', fontWeight: 700, fontSize: 16 }}>
-                        {detailSale.client?.name}
-                      </span>
-                      <span className="card-subtitle" style={{ opacity: 0.85 }}>
-                        {detailSale.client?.type} • {detailSale.client?.deliveryLocation ?? detailSale.client?.address}
-                      </span>
+              {/* Mobile View: Standardized MobileCard */}
+              <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '16px', width: '100%' }}>
+                <MobileCard
+                  title={detailSale.client?.name ?? 'Anonymous Client'}
+                  headerBadge={detailSale.client?.clientId || 'WH-0000'}
+                  footer={
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                      <button
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                          color: '#FFFFFF',
+                          fontWeight: 700,
+                          borderRadius: '10px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
+                        }}
+                        onClick={() => shareWhatsApp(detailSale)}
+                      >
+                        📲 Send WhatsApp
+                      </button>
+                      <button
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          background: '#F8FAFC',
+                          color: '#0F172A',
+                          fontWeight: 600,
+                          borderRadius: '10px',
+                          border: '1px solid #CBD5E1',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px'
+                        }}
+                        onClick={() => printInvoice(detailSale)}
+                      >
+                        👁️ View Invoice / Print
+                      </button>
+                      <button
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          background: '#F8FAFC',
+                          color: '#0F172A',
+                          fontWeight: 600,
+                          borderRadius: '10px',
+                          border: '1px solid #CBD5E1',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px'
+                        }}
+                        onClick={() => downloadInvoice(detailSale)}
+                      >
+                        💾 Download PDF
+                      </button>
+                      <button
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          background: '#F8FAFC',
+                          color: '#0F172A',
+                          fontWeight: 600,
+                          borderRadius: '10px',
+                          border: '1px solid #CBD5E1',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px'
+                        }}
+                        onClick={() => downloadInvoiceJPG(detailSale)}
+                      >
+                        🖼️ Download JPG
+                      </button>
                     </div>
-                    <span style={{ fontSize: 10, fontWeight: 500, opacity: 0.85, background: 'rgba(255,255,255,0.15)', padding: '2px 6px', borderRadius: 4, color: '#fff' }}>
-                      {detailSale.client?.clientId || 'WH-0000'}
-                    </span>
-                  </div>
-
-                  <div className="card-divider" />
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div className="card-info-row">
-                      <span className="card-label">Invoice ID</span>
-                      <span className="card-value font-mono">{detailSale.invoiceNo}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Date</span>
-                      <span className="card-value">{fmtDateTime(detailSale.date)}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Items</span>
-                      <span className="card-value">{detailSale.items.length} items</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Total</span>
-                      <span className="card-value amount">{fmtMoney(detailSale.total)}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Paid</span>
-                      <span className="card-value amount" style={{ color: '#6FD89A' }}>{fmtMoney(detailSale.paid)}</span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Balance</span>
-                      <span className={`card-value amount ${detailSale.balance > 0 ? 'danger' : ''}`}>
-                        {fmtMoney(detailSale.balance)}
-                      </span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Payment Mode</span>
-                      <span className="card-value">
-                        <ModeBadge mode={detailSale.paymentMode} light />
-                      </span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Payment Status</span>
-                      <span>
-                        <Badge status={detailSale.status} />
-                      </span>
-                    </div>
-                    <div className="card-info-row">
-                      <span className="card-label">Delivery Status</span>
-                      <span>
-                        <Badge status={detailSale.deliveryStatus} small />
-                      </span>
-                    </div>
-                    {detailSale.employee && (
-                      <div className="card-info-row">
-                        <span className="card-label">Delivery Employee</span>
-                        <span className="card-value">{detailSale.employee.name}</span>
-                      </div>
-                    )}
-                    {detailSale.deliveryDate && (
-                      <div className="card-info-row">
-                        <span className="card-label">Delivery Schedule</span>
-                        <span className="card-value">
-                          {fmtDate(detailSale.deliveryDate)} ({detailSale.deliveryTime || 'Anytime'})
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="card-divider" />
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-                    <button className="card-btn" onClick={() => printInvoice(detailSale)}>
-                      View Invoice / Print
-                    </button>
-                    <button className="card-btn" onClick={() => downloadInvoice(detailSale)}>
-                      💾 Download PDF
-                    </button>
-                    <button className="card-btn" onClick={() => downloadInvoiceJPG(detailSale)}>
-                      🖼️ Download JPG
-                    </button>
-                    <button
-                      className="card-btn primary"
-                      onClick={() => shareWhatsApp(detailSale)}
-                    >
-                      📲 Send WhatsApp
-                    </button>
-                  </div>
-                </div>
+                  }
+                >
+                  <MobileCardRow label="Invoice ID" value={detailSale.invoiceNo} isMono />
+                  <MobileCardRow label="Date" value={fmtDateTime(detailSale.date)} />
+                  <MobileCardRow label="Items Count" value={`${detailSale.items.length} items`} />
+                  <MobileCardRow label="Total Amount" value={fmtMoney(detailSale.total)} isMono />
+                  <MobileCardRow label="Paid Amount" value={fmtMoney(detailSale.paid)} valueColor="#166534" isMono />
+                  <MobileCardRow 
+                    label="Balance Due" 
+                    value={fmtMoney(detailSale.balance)} 
+                    valueColor={detailSale.balance > 0 ? '#991B1B' : '#166534'} 
+                    isMono 
+                  />
+                  <MobileCardRow label="Payment Mode">
+                    <MobileCardBadge variant="blue">
+                      {detailSale.paymentMode}
+                    </MobileCardBadge>
+                  </MobileCardRow>
+                  <MobileCardRow label="Payment Status">
+                    <MobileCardBadge variant={detailSale.balance <= 0 ? 'green' : detailSale.paid > 0 ? 'yellow' : 'red'}>
+                      {detailSale.status}
+                    </MobileCardBadge>
+                  </MobileCardRow>
+                  <MobileCardRow label="Delivery Status">
+                    <MobileCardBadge variant={detailSale.deliveryStatus === 'DELIVERED' ? 'green' : 'blue'}>
+                      {detailSale.deliveryStatus}
+                    </MobileCardBadge>
+                  </MobileCardRow>
+                  {detailSale.employee && (
+                    <MobileCardRow label="Delivery Employee" value={detailSale.employee.name} />
+                  )}
+                  {detailSale.deliveryDate && (
+                    <MobileCardRow 
+                      label="Delivery Schedule" 
+                      value={`${fmtDate(detailSale.deliveryDate)} (${detailSale.deliveryTime || 'Anytime'})`} 
+                    />
+                  )}
+                </MobileCard>
               </div>
             </>
           ) : null}

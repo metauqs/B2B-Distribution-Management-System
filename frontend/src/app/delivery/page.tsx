@@ -494,13 +494,13 @@ export default function DeliveryPage() {
               </div>
             )}
 
-            {/* Responsive Card Grid View (Automatically visible on mobile screens, or in Employee Mode) */}
+            {/* Responsive Card List View */}
             <div 
               className={isEmployeeMode ? '' : 'show-mobile'}
               style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', 
-                gap: '20px', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '14px', 
                 width: '100%'
               }}
             >
@@ -510,41 +510,76 @@ export default function DeliveryPage() {
                     title={d.client?.name ?? 'Customer'}
                     headerBadge={fmtDate(d.date)}
                     footer={
-                      d.status !== 'DELIVERED' ? (
-                        <button 
-                          style={{
+                      isEmployeeMode ? (
+                        d.status !== 'DELIVERED' ? (
+                          <button 
+                            style={{
+                              width: '100%',
+                              padding: '12px 18px',
+                              background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                              color: '#FFFFFF',
+                              fontWeight: 700,
+                              borderRadius: '10px',
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              fontSize: '14px',
+                              boxShadow: '0 4px 12px rgba(22, 163, 74, 0.35)',
+                            }} 
+                            onClick={() => updateStatus(d.id, 'DELIVERED')}
+                          >
+                            ✅ Mark as Delivered
+                          </button>
+                        ) : (
+                          <div style={{
                             width: '100%',
-                            padding: '12px 18px',
-                            background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
-                            color: '#FFFFFF',
+                            padding: '10px 14px',
+                            background: '#DCFCE7',
+                            color: '#15803D',
+                            textAlign: 'center',
                             fontWeight: 700,
-                            borderRadius: '10px',
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            fontSize: '14px',
-                            boxShadow: '0 4px 12px rgba(22, 163, 74, 0.35)',
-                          }} 
-                          onClick={() => updateStatus(d.id, 'DELIVERED')}
-                        >
-                          ✅ Mark as Delivered
-                        </button>
+                            borderRadius: '8px',
+                            fontSize: '13px',
+                            border: '1px solid #86EFAC'
+                          }}>
+                            ✓ Completed & Delivered ({fmtDateTime(d.deliveredAt || d.date)})
+                          </div>
+                        )
                       ) : (
-                        <div style={{
-                          width: '100%',
-                          padding: '10px 14px',
-                          background: '#DCFCE7',
-                          color: '#15803D',
-                          textAlign: 'center',
-                          fontWeight: 700,
-                          borderRadius: '8px',
-                          fontSize: '13px',
-                          border: '1px solid #86EFAC'
-                        }}>
-                          ✓ Completed & Delivered ({fmtDateTime(d.deliveredAt || d.date)})
+                        <div style={{ display: 'flex', gap: 8, width: '100%', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          {d.status === 'PENDING' && (
+                            <>
+                              <button className="va-btn small" style={{ background: '#0284C7', color: '#FFF', fontWeight: 700, flex: 1 }} onClick={() => updateStatus(d.id, 'OUT')}>
+                                🚚 Dispatch
+                              </button>
+                              <button className="va-btn small" style={{ background: '#16A34A', color: '#FFF', fontWeight: 700, flex: 1 }} onClick={() => updateStatus(d.id, 'DELIVERED')}>
+                                ✅ Delivered
+                              </button>
+                            </>
+                          )}
+                          {d.status === 'OUT' && (
+                            <>
+                              <button className="va-btn small" style={{ background: '#16A34A', color: '#FFF', fontWeight: 700, flex: 1 }} onClick={() => updateStatus(d.id, 'DELIVERED')}>
+                                ✅ Delivered
+                              </button>
+                              <button className="va-btn secondary small" style={{ color: '#DC2626', borderColor: '#FCA5A5', fontWeight: 700, flex: 1 }} onClick={() => updateStatus(d.id, 'FAILED')}>
+                                ❌ Failed
+                              </button>
+                            </>
+                          )}
+                          {d.status === 'FAILED' && (
+                            <button className="va-btn secondary small" style={{ color: '#D97706', fontWeight: 700, flex: 1 }} onClick={() => updateStatus(d.id, 'RETURNED')}>
+                              ↩️ Mark Returned
+                            </button>
+                          )}
+                          {d.status === 'DELIVERED' && (
+                            <span style={{ fontSize: '13px', color: '#166534', fontWeight: 700, width: '100%', textAlign: 'center', padding: '6px 0' }}>
+                              ✓ Delivered ({fmtDateTime(d.deliveredAt || d.date)})
+                            </span>
+                          )}
                         </div>
                       )
                     }
@@ -560,7 +595,37 @@ export default function DeliveryPage() {
                     </MobileCardRow>
 
                     <MobileCardRow label="Address" value={d.client?.address ?? '—'} />
-                    <MobileCardRow label="Staff Assigned" value={d.employee?.name || activeEmpName} />
+
+                    <MobileCardRow label="Staff Assigned">
+                      {!isEmployeeMode ? (
+                        <select 
+                          value={d.employee?.id ?? ''} 
+                          onChange={e => assignEmployee(d.id, e.target.value)}
+                          style={{ fontSize: '12px', padding: '4px 8px', border: '1px solid #CBD5E1', borderRadius: '6px', background: '#F8FAFC', fontWeight: 600, color: '#0F172A' }}
+                        >
+                          <option value="">— Assign Staff —</option>
+                          {availableStaff.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                        </select>
+                      ) : (
+                        d.employee?.name || activeEmpName
+                      )}
+                    </MobileCardRow>
+
+                    <MobileCardRow label="Vehicle">
+                      {!isEmployeeMode ? (
+                        <select 
+                          value={d.vehicle?.id ?? ''} 
+                          onChange={e => assignVehicle(d.id, e.target.value)}
+                          style={{ fontSize: '12px', padding: '4px 8px', border: '1px solid #CBD5E1', borderRadius: '6px', background: '#F8FAFC', fontWeight: 600 }}
+                        >
+                          <option value="">— Vehicle —</option>
+                          {vehicles.map(v => <option key={v.id} value={v.id}>{v.plateNo}</option>)}
+                        </select>
+                      ) : (
+                        d.vehicle?.plateNo || '—'
+                      )}
+                    </MobileCardRow>
+
                     <MobileCardRow label="Time Slot" value={d.scheduledTime || 'PHASE 1 (11:00 AM - 02:00 PM)'} />
 
                     <MobileCardRow label="Status">

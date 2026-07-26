@@ -508,58 +508,41 @@ export default function CollectionsPage() {
                           {g.items.map(item => {
                             const isPaid     = item.dueBalance <= 0;
                             const isPartial  = item.dueBalance > 0 && item.collectedAmount > 0;
+                            const statusVariant = isPaid ? 'green' : isPartial ? 'yellow' : 'red';
                             const statusLabel = isPaid ? 'PAID' : isPartial ? 'PARTIAL' : 'UNPAID';
-                            const statusColor = isPaid ? '#E3F9E9' : isPartial ? '#FFF3E0' : '#FFEBEE';
-                            const statusText  = isPaid ? '#1B5E20' : isPartial ? '#E65100' : '#C62828';
-                            const statusBorder = isPaid ? '#C8E6C9' : isPartial ? '#FFE0B2' : '#FFCDD2';
 
                             return (
-                              <div
+                              <MobileCardBox
                                 key={item.id}
-                                style={{
-                                  background: 'rgba(0,0,0,0.12)',
-                                  border: '1px solid rgba(255,255,255,0.15)',
-                                  borderRadius: 12,
-                                  padding: 14,
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: 10
-                                }}
-                              >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontWeight: 700, color: '#fff', fontSize: 13 }}>{item.invoiceNo}</span>
-                                  <span style={{ fontSize: 11, color: '#E2EFEB' }}>{fmtDateTime(item.date)}</span>
-                                </div>
-                                <div style={{ height: 1, background: 'rgba(255,255,255,0.1)' }} />
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                  <div className="card-info-row" style={{ padding: 0 }}>
-                                    <span className="card-label">Total Payable</span>
-                                    <span className="card-value">{fmtMoney(item.totalPayable)}</span>
-                                  </div>
-                                  <div className="card-info-row" style={{ padding: 0 }}>
-                                    <span className="card-label">Collected</span>
-                                    <span className="card-value">{fmtMoney(item.collectedAmount)}</span>
-                                  </div>
-                                  <div className="card-info-row" style={{ padding: 0 }}>
-                                    <span className="card-label">Balance</span>
-                                    <span className={`card-value amount ${item.dueBalance > 0 ? 'danger' : ''}`}>{fmtMoney(item.dueBalance)}</span>
-                                  </div>
-                                  <div className="card-info-row" style={{ padding: 0 }}>
-                                    <span className="card-label">Status</span>
-                                    <span style={{
-                                      background: statusColor,
-                                      color: statusText,
-                                      border: `1px solid ${statusBorder}`,
-                                      padding: '2px 8px',
-                                      borderRadius: 6,
-                                      fontSize: 10,
-                                      fontWeight: 700
-                                    }}>
-                                      {statusLabel}
+                                title={
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                    <span className="mono" style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                                      {item.invoiceNo}
+                                    </span>
+                                    <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>
+                                      {fmtDateTime(item.date)}
                                     </span>
                                   </div>
+                                }
+                                bg="#F8FAFC"
+                                borderColor="#CBD5E1"
+                              >
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '4px' }}>
+                                  <MobileCardRow label="Total Payable" value={fmtMoney(item.totalPayable)} isMono />
+                                  <MobileCardRow label="Collected Amount" value={fmtMoney(item.collectedAmount)} valueColor="#166534" isMono />
+                                  <MobileCardRow 
+                                    label="Remaining Balance" 
+                                    value={fmtMoney(item.dueBalance)} 
+                                    valueColor={item.dueBalance > 0 ? '#991B1B' : '#166534'} 
+                                    isMono 
+                                  />
+                                  <MobileCardRow label="Status">
+                                    <MobileCardBadge variant={statusVariant}>
+                                      {statusLabel}
+                                    </MobileCardBadge>
+                                  </MobileCardRow>
                                 </div>
-                              </div>
+                              </MobileCardBox>
                             );
                           })}
                         </div>

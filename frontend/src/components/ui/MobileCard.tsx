@@ -78,7 +78,7 @@ export function MobileCard({
           gap: '8px',
         }}
       >
-        <div style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '0.01em', wordBreak: 'break-word' }}>
+        <div style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '0.01em', wordBreak: 'break-word', minWidth: 0, flex: 1 }}>
           {title}
         </div>
         {headerBadge && (
@@ -91,6 +91,7 @@ export function MobileCard({
               padding: '4px 10px',
               borderRadius: '12px',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
               backdropFilter: 'blur(4px)',
             }}
           >
@@ -257,6 +258,7 @@ export function MobileCardBadge({ children, variant = 'blue', style = {} }: Mobi
         fontWeight: 700,
         textTransform: 'uppercase',
         letterSpacing: '0.03em',
+        whiteSpace: 'nowrap',
         background: current.bg,
         color: current.color,
         border: `1px solid ${current.border}`,

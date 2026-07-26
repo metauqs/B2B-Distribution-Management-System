@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
+import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 
 type Tab = 'Overview' | 'Sales' | 'Purchases' | 'Collections' | 'Inventory' | 'Expenses' | 'Aging' | 'Cash Flow';
 
@@ -177,38 +177,83 @@ export default function ReportsPage() {
               {/* Profit Loss Summary sheet */}
               <div className="va-panel">
                 <div className="va-panel-head"><h3>Profit &amp; Loss Statement</h3></div>
-                <table className="va-table">
-                  <tbody>
-                    <tr>
-                      <td><strong>Gross Revenue</strong> (Subtotal - Discount)</td>
-                      <td className="mono" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(pnl.summary.revenue)}</td>
-                    </tr>
-                    <tr>
-                      <td style={{ paddingLeft: 24, color: 'var(--muted)' }}>Discounts Given</td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(pnl.summary.discounts)}</td>
-                    </tr>
-                    <tr style={{ borderTop: '1.5px solid var(--line)' }}>
-                      <td><strong>Cost of Goods Sold (COGS)</strong></td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)' }}>-{fmtMoney(pnl.summary.cogs)}</td>
-                    </tr>
-                    <tr>
-                      <td style={{ paddingLeft: 24, color: 'var(--muted)' }}>Transport Costs</td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{pnl.summary.transport > 0 ? fmtMoney(pnl.summary.transport) : '—'}</td>
-                    </tr>
-                    <tr style={{ background: 'var(--line-soft)', fontWeight: 700 }}>
-                      <td>Gross Profit</td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{fmtMoney(pnl.summary.grossProfit)} ({pnl.summary.grossMarginPct}%)</td>
-                    </tr>
-                    <tr>
-                      <td><strong>Operating Expenses</strong></td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)' }}>-{fmtMoney(pnl.summary.expenses)}</td>
-                    </tr>
-                    <tr style={{ background: 'var(--forest)', color: 'var(--cream)', fontWeight: 700, fontSize: 15 }}>
-                      <td>Net Profit</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(pnl.summary.netProfit)} ({pnl.summary.netMarginPct}%)</td>
-                    </tr>
-                  </tbody>
-                </table>
+                
+                {/* Desktop Table View */}
+                <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                  <table className="va-table">
+                    <tbody>
+                      <tr>
+                        <td><strong>Gross Revenue</strong> (Subtotal - Discount)</td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(pnl.summary.revenue)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ paddingLeft: 24, color: 'var(--muted)' }}>Discounts Given</td>
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(pnl.summary.discounts)}</td>
+                      </tr>
+                      <tr style={{ borderTop: '1.5px solid var(--line)' }}>
+                        <td><strong>Cost of Goods Sold (COGS)</strong></td>
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)' }}>-{fmtMoney(pnl.summary.cogs)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ paddingLeft: 24, color: 'var(--muted)' }}>Transport Costs</td>
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{pnl.summary.transport > 0 ? fmtMoney(pnl.summary.transport) : '—'}</td>
+                      </tr>
+                      <tr style={{ background: 'var(--line-soft)', fontWeight: 700 }}>
+                        <td>Gross Profit</td>
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{fmtMoney(pnl.summary.grossProfit)} ({pnl.summary.grossMarginPct}%)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>Operating Expenses</strong></td>
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)' }}>-{fmtMoney(pnl.summary.expenses)}</td>
+                      </tr>
+                      <tr style={{ background: 'var(--forest)', color: 'var(--cream)', fontWeight: 700, fontSize: 15 }}>
+                        <td>Net Profit</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(pnl.summary.netProfit)} ({pnl.summary.netMarginPct}%)</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Card List View */}
+                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '8px' }}>
+                  <MobileCardBox title="Revenue &amp; COGS Summary" bg="#F8FAFC" borderColor="#CBD5E1">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <MobileCardRow label="Gross Revenue" value={fmtMoney(pnl.summary.revenue)} isMono />
+                      <MobileCardRow label="Discounts Given" value={`-${fmtMoney(pnl.summary.discounts)}`} valueColor="#991B1B" isMono />
+                      <MobileCardRow label="Cost of Goods Sold (COGS)" value={`-${fmtMoney(pnl.summary.cogs)}`} valueColor="#991B1B" isMono />
+                      <MobileCardRow label="Transport Costs" value={pnl.summary.transport > 0 ? fmtMoney(pnl.summary.transport) : '—'} isMono />
+                      
+                      <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
+                      
+                      <MobileCardRow 
+                        label="Gross Profit" 
+                        value={`${fmtMoney(pnl.summary.grossProfit)} (${pnl.summary.grossMarginPct}%)`} 
+                        valueColor="#166534" 
+                        isMono 
+                      />
+                      <MobileCardRow label="Operating Expenses" value={`-${fmtMoney(pnl.summary.expenses)}`} valueColor="#991B1B" isMono />
+                      
+                      <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
+                      
+                      <div style={{
+                        background: '#1E5E3A',
+                        color: '#FFFFFF',
+                        padding: '12px 14px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontWeight: 700,
+                        marginTop: '4px'
+                      }}>
+                        <span>Net Profit</span>
+                        <span className="mono" style={{ fontSize: '15px' }}>
+                          {fmtMoney(pnl.summary.netProfit)} ({pnl.summary.netMarginPct}%)
+                        </span>
+                      </div>
+                    </div>
+                  </MobileCardBox>
+                </div>
               </div>
             </>
           )}
@@ -281,38 +326,78 @@ export default function ReportsPage() {
               {/* Cash Flow Statement */}
               <div className="va-panel">
                 <div className="va-panel-head"><h3>Cash Inflows and Outflows</h3></div>
-                <table className="va-table">
-                  <tbody>
-                    <tr style={{ background: 'var(--line-soft)', fontWeight: 600 }}>
-                      <td>Operating Cash Inflow</td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>+{fmtMoney(cashFlow.inflow?.total ?? 0)}</td>
-                    </tr>
-                    <tr>
-                      <td style={{ paddingLeft: 24 }}>Client Collections</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.inflow?.collections ?? 0)}</td>
-                    </tr>
-                    <tr style={{ background: 'var(--line-soft)', fontWeight: 600, borderTop: '1.5px solid var(--line)' }}>
-                      <td>Operating Cash Outflow</td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow?.total ?? 0)}</td>
-                    </tr>
-                    <tr>
-                      <td style={{ paddingLeft: 24 }}>Supplier Mandi Payments (Cash/Paid)</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.purchases ?? 0)}</td>
-                    </tr>
-                    <tr>
-                      <td style={{ paddingLeft: 24 }}>Operating &amp; Overhead Expenses</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.expenses ?? 0)}</td>
-                    </tr>
-                    <tr>
-                      <td style={{ paddingLeft: 24 }}>Supplier Balance Payments</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.supplierPayments ?? 0)}</td>
-                    </tr>
-                    <tr style={{ background: 'var(--forest)', color: 'var(--cream)', fontWeight: 700, fontSize: 15 }}>
-                      <td>Net Cash Position Increase/Decrease</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.netCashFlow ?? 0)}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                
+                {/* Desktop Table View */}
+                <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                  <table className="va-table">
+                    <tbody>
+                      <tr style={{ background: 'var(--line-soft)', fontWeight: 600 }}>
+                        <td>Operating Cash Inflow</td>
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>+{fmtMoney(cashFlow.inflow?.total ?? 0)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ paddingLeft: 24 }}>Client Collections</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.inflow?.collections ?? 0)}</td>
+                      </tr>
+                      <tr style={{ background: 'var(--line-soft)', fontWeight: 600, borderTop: '1.5px solid var(--line)' }}>
+                        <td>Operating Cash Outflow</td>
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow?.total ?? 0)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ paddingLeft: 24 }}>Supplier Mandi Payments (Cash/Paid)</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.purchases ?? 0)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ paddingLeft: 24 }}>Operating &amp; Overhead Expenses</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.expenses ?? 0)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ paddingLeft: 24 }}>Supplier Balance Payments</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.supplierPayments ?? 0)}</td>
+                      </tr>
+                      <tr style={{ background: 'var(--forest)', color: 'var(--cream)', fontWeight: 700, fontSize: 15 }}>
+                        <td>Net Cash Position Increase/Decrease</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.netCashFlow ?? 0)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Card List View */}
+                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '8px' }}>
+                  <MobileCardBox title="Cash Flow Breakdown" bg="#F8FAFC" borderColor="#CBD5E1">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <MobileCardRow label="Operating Cash Inflow" value={`+${fmtMoney(cashFlow.inflow?.total ?? 0)}`} valueColor="#166534" isMono />
+                      <MobileCardRow label="Client Collections" value={fmtMoney(cashFlow.inflow?.collections ?? 0)} isMono />
+                      
+                      <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
+                      
+                      <MobileCardRow label="Operating Cash Outflow" value={`-${fmtMoney(cashFlow.outflow?.total ?? 0)}`} valueColor="#991B1B" isMono />
+                      <MobileCardRow label="Supplier Mandi Payments" value={fmtMoney(cashFlow.outflow?.purchases ?? 0)} isMono />
+                      <MobileCardRow label="Operating &amp; Overhead Expenses" value={fmtMoney(cashFlow.outflow?.expenses ?? 0)} isMono />
+                      <MobileCardRow label="Supplier Balance Payments" value={fmtMoney(cashFlow.outflow?.supplierPayments ?? 0)} isMono />
+                      
+                      <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
+                      
+                      <div style={{
+                        background: '#1E5E3A',
+                        color: '#FFFFFF',
+                        padding: '12px 14px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontWeight: 700,
+                        marginTop: '4px'
+                      }}>
+                        <span>Net Cash Position Change</span>
+                        <span className="mono" style={{ fontSize: '15px' }}>
+                          {fmtMoney(cashFlow.netCashFlow ?? 0)}
+                        </span>
+                      </div>
+                    </div>
+                  </MobileCardBox>
+                </div>
               </div>
             </>
           )}

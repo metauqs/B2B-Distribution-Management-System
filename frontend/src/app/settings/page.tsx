@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { fmtMoney } from '@/utils/formatters';
+import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 
 type SettingsTab = 'branch' | 'users' | 'products' | 'suppliers' | 'vehicles' | 'whatsapp';
 
@@ -147,7 +147,9 @@ export default function SettingsPage() {
 
           <div className="va-panel">
             <div className="va-panel-head"><h3>All Users</h3></div>
-            <div style={{ overflowX: 'auto' }}>
+            
+            {/* Desktop Table View */}
+            <div className="hide-mobile" style={{ overflowX: 'auto' }}>
               <table className="va-table">
                 <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th></tr></thead>
                 <tbody>
@@ -161,6 +163,30 @@ export default function SettingsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Card List View */}
+            <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+              {users.map(u => (
+                <MobileCard
+                  key={u.id}
+                  title={u.name}
+                  headerBadge={
+                    <MobileCardBadge variant="green">
+                      {u.role}
+                    </MobileCardBadge>
+                  }
+                >
+                  <MobileCardRow 
+                    label="Email" 
+                    value={<span style={{ wordBreak: 'break-all' }}>{u.email}</span>} 
+                  />
+                  <MobileCardRow 
+                    label="Account Status" 
+                    value={u.isActive ? '✅ Active' : '❌ Inactive'} 
+                  />
+                </MobileCard>
+              ))}
             </div>
           </div>
         </>
@@ -199,7 +225,9 @@ export default function SettingsPage() {
               <h3>Product Master</h3>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{products.length} products</span>
             </div>
-            <div style={{ overflowX: 'auto' }}>
+            
+            {/* Desktop Table View */}
+            <div className="hide-mobile" style={{ overflowX: 'auto' }}>
               <table className="va-table">
                 <thead><tr><th>Name</th><th>Urdu</th><th>Category</th><th>Unit</th><th>Min Stock</th></tr></thead>
                 <tbody>
@@ -214,6 +242,24 @@ export default function SettingsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Card List View */}
+            <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+              {products.map(p => (
+                <MobileCard
+                  key={p.id}
+                  title={`${p.name} ${p.urduName ? `(${p.urduName})` : ''}`}
+                  headerBadge={
+                    <MobileCardBadge variant="green">
+                      {p.category}
+                    </MobileCardBadge>
+                  }
+                >
+                  <MobileCardRow label="Default Unit" value={p.defaultUnit} />
+                  <MobileCardRow label="Min Stock Alert" value={p.minStock.toString()} isMono />
+                </MobileCard>
+              ))}
             </div>
           </div>
         </>
