@@ -110,15 +110,14 @@ export default function EmployeesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Dynamically calculate unique Employee ID based on phone/whatsapp as user types
+  // Dynamically calculate unique 4-digit Employee ID based on phone/whatsapp ONLY when adding a new employee
   useEffect(() => {
-    if (view === 'add' || view === 'edit') {
+    if (view === 'add') {
       const fetchEmployeeId = async () => {
         try {
           const params = new URLSearchParams();
           if (form.phone) params.append('phone', form.phone);
           if (form.whatsapp) params.append('whatsapp', form.whatsapp);
-          if (view === 'edit' && activeEmp?.id) params.append('excludeId', activeEmp.id);
           
           const res = await apiFetch(`/api/employees/generate-id?${params.toString()}`);
           const data = await res.json();
@@ -132,7 +131,7 @@ export default function EmployeesPage() {
       const timer = setTimeout(fetchEmployeeId, 300);
       return () => clearTimeout(timer);
     }
-  }, [form.phone, form.whatsapp, view, activeEmp?.id]);
+  }, [form.phone, form.whatsapp, view]);
 
   // Load single employee profile details
   const loadProfile = async (id: string) => {
@@ -369,14 +368,16 @@ export default function EmployeesPage() {
               </div>
               <div className="va-form-row">
                 <div className="va-field">
-                  <label>Employee ID (Read-Only) *</label>
+                  <label>Employee ID (Permanent Login ID) *</label>
                   <input
                     readOnly
                     disabled
-                    value={computedEmployeeId || form.employeeId || 'Auto-generated (e.g. 9001)'}
-                    style={{ background: '#EDF2F7', color: '#2D3748', fontWeight: 700, cursor: 'not-allowed' }}
+                    value={view === 'edit' ? (activeEmp?.employeeId || form.employeeId || '') : (computedEmployeeId || form.employeeId || 'Auto-generated from phone (e.g. 0041)')}
+                    style={{ background: '#EDF2F7', color: '#1A3C28', fontWeight: 700, cursor: 'not-allowed' }}
                   />
-                  <small style={{ fontSize: 11, color: '#718096', marginTop: 4 }}>Auto-computed from last 4+ digits of WhatsApp/mobile number.</small>
+                  <small style={{ fontSize: 11, color: '#718096', marginTop: 4 }}>
+                    {view === 'edit' ? 'Permanent Employee Login ID (Immutable).' : 'Derived from last 4 digits of phone number.'}
+                  </small>
                 </div>
                 <div className="va-field">
                   <label>{view === 'edit' ? 'New Login Password (Leave blank to keep existing)' : 'Assign Login Password *'}</label>

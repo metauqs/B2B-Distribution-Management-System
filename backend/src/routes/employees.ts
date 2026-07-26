@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../lib/prisma';
 import { writeAuditLog } from '../lib/business';
-import { generateUniqueEmployeeId } from '../utils/employeeId';
+import { generateEmployeeIdFromPhone } from '../utils/employeeId';
 
 const router = Router();
 
@@ -20,12 +20,12 @@ async function getTargetBranchId(req: Request): Promise<string> {
 router.get('/generate-id', async (req: Request, res: Response) => {
   try {
     const { phone, whatsapp, excludeId } = req.query;
-    const generatedId = await generateUniqueEmployeeId(
+    const result = await generateEmployeeIdFromPhone(
       phone as string,
       whatsapp as string,
       excludeId as string
     );
-    return res.json({ success: true, data: { employeeId: generatedId } });
+    return res.json({ success: true, data: result });
   } catch (err: any) {
     console.error('[GET /api/employees/generate-id]', err);
     return res.status(500).json({ success: false, error: 'Failed to generate Employee ID' });
@@ -155,8 +155,15 @@ router.post('/', async (req: Request, res: Response) => {
   }
 
   try {
-    // Automatically generate unique Employee ID based on phone/whatsapp last 4+ digits
-    const uniqueEmployeeId = await generateUniqueEmployeeId(phone, whatsapp);
+    // Generate 4-digit Employee ID based on last 4 digits of phone/whatsapp
+    const { employeeId: uniqueEmployeeId, isAvailable } = await generateEmployeeIdFromPhone(phone, whatsapp);
+
+    if (!isAvailable) {
+      return res.status(400).json({
+        success: false,
+        error: 'Employee ID already exists. Please use a different phone number.'
+      });
+    }
 
     // Hash assigned password securely
     const hashedPassword = await bcrypt.hash(password.trim(), 10);
@@ -268,11 +275,8 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     const branchId = (req.headers['x-branch-id'] as string) || original.branchId;
 
-    // Ensure employeeId exists and is unique
-    let updatedEmployeeId = original.employeeId;
-    if (!updatedEmployeeId || (phone && phone !== original.phone) || (whatsapp && whatsapp !== original.whatsapp)) {
-      updatedEmployeeId = await generateUniqueEmployeeId(phone || original.phone, whatsapp || original.whatsapp, id);
-    }
+    // Employee ID MUST REMAIN PERMANENT & UNCHANGED
+    const updatedEmployeeId = original.employeeId;
 
     let updatedPassword = original.password;
     if (password && typeof password === 'string' && password.trim().length > 0) {
