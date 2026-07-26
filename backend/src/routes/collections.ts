@@ -9,13 +9,36 @@ const router = Router();
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
-    const { clientId } = req.query;
+    const { clientId, from, to, limit: limitQuery } = req.query;
+    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 500) : 100;
+
+    const dateFrom = from ? new Date(String(from)) : undefined;
+    const dateTo = to ? new Date(String(to)) : undefined;
+
+    if (dateFrom && isNaN(dateFrom.getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid from date' });
+    }
+    if (dateTo && isNaN(dateTo.getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid to date' });
+    }
+
+    const where: any = {
+      deletedAt: null,
+      ...(branchId ? { branchId } : {}),
+      ...(clientId ? { clientId: String(clientId) } : {}),
+      ...(dateFrom || dateTo ? {
+        date: {
+          ...(dateFrom ? { gte: dateFrom } : {}),
+          ...(dateTo ? { lte: dateTo } : {}),
+        }
+      } : {}),
+    };
 
     const collections = await prisma.collection.findMany({
-      where: { ...(branchId ? { branchId } : {}), ...(clientId ? { clientId: String(clientId) } : {}), deletedAt: null },
+      where,
       include: { client: { select: { id: true, name: true } } },
       orderBy: { date: 'asc' },
-      take: 100,
+      take: limit,
     });
 
     if (collections.length === 0) {

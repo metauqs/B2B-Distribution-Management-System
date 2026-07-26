@@ -102,6 +102,7 @@ export default function SalesPage() {
   // ── List state ──────────────────────────────────────────────────────────────
   const [sales,      setSales]      = useState<Sale[]>([]);
   const [loading,    setLoading]    = useState(true);
+  const [todayCollectionsAmt, setTodayCollectionsAmt] = useState(0);
   const [srchInv,    setSrchInv]    = useState('');
   const [debouncedSrchInv, setDebouncedSrchInv] = useState('');
   const [filterSt,   setFilterSt]   = useState('all');
@@ -183,9 +184,22 @@ export default function SalesPage() {
       const text = await res.text();
       const data = text ? JSON.parse(text) : { success: false };
       if (data.success) setSales(data.data ?? []);
+
+      // Also load collections amount for the selected date for KPI calculation
+      const targetDate = filterDate || new Date().toISOString().slice(0, 10);
+      const collRes = await fetch(`/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=500`);
+      const collText = await collRes.text();
+      const collData = collText ? JSON.parse(collText) : { success: false };
+      if (collData.success && collData.data) {
+        const totalColl = collData.data.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+        setTodayCollectionsAmt(totalColl);
+      } else {
+        setTodayCollectionsAmt(0);
+      }
     } catch (err) {
       console.error('loadSales error:', err);
       setSales([]);
+      setTodayCollectionsAmt(0);
     }
     setLoading(false);
   }, [debouncedSrchInv, filterSt, filterMode, filterDate]);
@@ -573,13 +587,12 @@ export default function SalesPage() {
     }
   };
 
-  // ── KPIs for list view ─────────────────────────────────────────────────────
-  const today       = new Date().toISOString().slice(0, 10);
-  const todaySales  = sales.filter(s => s.date?.slice(0, 10) === today);
-  const todayTotal  = todaySales.reduce((s, x) => s + x.total, 0);
-  const todayCash   = todaySales.filter(s => s.paymentMode === 'CASH').reduce((s, x) => s + x.paid, 0);
-  const totalBal    = sales.reduce((s, x) => s + x.balance, 0);
-  const pendingDel  = sales.filter(s => s.deliveryStatus === 'PENDING').length;
+  // ── KPIs for list view (synchronized with selected date) ───────────────────
+  const selectedSales = sales;
+  const selectedTotal = selectedSales.reduce((s, x) => s + x.total, 0);
+  const todayCash     = todayCollectionsAmt;
+  const totalBal      = selectedSales.reduce((s, x) => s + x.balance, 0);
+  const pendingDel    = selectedSales.filter(s => s.deliveryStatus === 'PENDING').length;
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
@@ -614,9 +627,9 @@ export default function SalesPage() {
 
           {/* KPI Strip */}
           <div className="va-cards">
-            <div className="va-card"><div className="label">Today's Sales</div><div className="value" style={{ color: 'var(--forest)' }}>{fmtMoney(todayTotal)}</div><div className="foot">{todaySales.length} invoices today</div></div>
-            <div className="va-card"><div className="label">Cash Collected Today</div><div className="value" style={{ color: 'var(--ok)' }}>{fmtMoney(todayCash)}</div><div className="foot">cash mode only</div></div>
-            <div className="va-card"><div className="label">Total Receivables</div><div className="value" style={{ color: totalBal > 0 ? 'var(--clay)' : undefined }}>{fmtMoney(totalBal)}</div><div className="foot">outstanding balance</div></div>
+            <div className="va-card"><div className="label">Total Sales</div><div className="value" style={{ color: 'var(--forest)' }}>{fmtMoney(selectedTotal)}</div><div className="foot">{selectedSales.length} invoice{selectedSales.length !== 1 ? 's' : ''} for selected date</div></div>
+            <div className="va-card"><div className="label">Cash Collected</div><div className="value" style={{ color: 'var(--ok)' }}>{fmtMoney(todayCash)}</div><div className="foot">collections for day</div></div>
+            <div className="va-card"><div className="label">Outstanding Amount</div><div className="value" style={{ color: totalBal > 0 ? 'var(--clay)' : undefined }}>{fmtMoney(totalBal)}</div><div className="foot">invoice balance due</div></div>
             <div className="va-card"><div className="label">Pending Deliveries</div><div className="value" style={{ color: pendingDel > 0 ? 'var(--danger)' : undefined }}>{pendingDel}</div><div className="foot">awaiting dispatch</div></div>
           </div>
 
