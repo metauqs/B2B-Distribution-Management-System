@@ -12,12 +12,44 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const todayStart = new Date(Date.now() - 5 * 60 * 60 * 1000); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(todayStart); todayEnd.setHours(23, 59, 59, 999);
     const tWhere = { ...bWhere, date: { gte: todayStart, lte: todayEnd }, deletedAt: null };
+    const l30Start = new Date(Date.now() - 30 * 86400000);
 
-    const [todaySalesAgg, todayPurchasesAgg, todayExpensesAgg, todayCollectionsAgg] = await Promise.all([
+    const [
+      todaySalesAgg,
+      todayPurchasesAgg,
+      todayExpensesAgg,
+      todayCollectionsAgg,
+      totalReceivablesAgg,
+      clientCount,
+      supplierPurchasesArr,
+      supplierPaymentsArr,
+      allSuppliers,
+      pendingDeliveries,
+      lowStockItems,
+      atRiskClients,
+      recentSales,
+      l30Sales,
+      l30Purchases,
+      l30Expenses,
+      attentionRaw
+    ] = await Promise.all([
       prisma.sale.aggregate({ where: tWhere, _sum: { total: true }, _count: true }),
       prisma.purchase.aggregate({ where: tWhere, _sum: { total: true } }),
       prisma.expense.aggregate({ where: { ...tWhere, deletedAt: undefined }, _sum: { amount: true } }),
       prisma.collection.aggregate({ where: { ...tWhere, deletedAt: undefined }, _sum: { amount: true } }),
+      prisma.client.aggregate({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, _sum: { currentBalance: true } }),
+      prisma.client.count({ where: { ...bWhere, deletedAt: null } }),
+      prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
+      prisma.supplierPayment.groupBy({ by: ['supplierId'], where: branchId ? { branchId } : {}, _sum: { amount: true } }),
+      prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } }),
+      prisma.delivery.count({ where: { ...bWhere, status: { not: 'DELIVERED' } } }),
+      prisma.inventory.findMany({ where: bWhere, include: { product: { select: { minStock: true } } } }),
+      prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
+      prisma.sale.findMany({ where: { ...bWhere, deletedAt: null }, include: { client: { select: { name: true } } }, orderBy: { date: 'asc' }, take: 5 }),
+      prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
+      prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
+      prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
+      prisma.client.findMany({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, select: { id: true, name: true, currentBalance: true }, orderBy: { currentBalance: 'desc' }, take: 5 }),
     ]);
 
     const todaySales = todaySalesAgg._sum.total ?? 0;
@@ -26,65 +58,23 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const todayCollections = todayCollectionsAgg._sum.amount ?? 0;
     const todayProfit = todaySales - todayPurchases - todayExpenses;
     const cashPosition = todayCollections - todayExpenses - todayPurchases;
-
-    const totalReceivablesAgg = await prisma.client.aggregate({
-      where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } },
-      _sum: { currentBalance: true },
-    });
     const totalReceivables = totalReceivablesAgg._sum.currentBalance ?? 0;
-    const clientCount = await prisma.client.count({ where: { ...bWhere, deletedAt: null } });
 
-    const supplierPurchasesArr = await prisma.purchase.groupBy({
-      by: ['supplierId'],
-      where: { ...bWhere, deletedAt: null },
-      _sum: { total: true },
-    });
-    const supplierPaymentsArr = await prisma.supplierPayment.groupBy({
-      by: ['supplierId'],
-      where: branchId ? { branchId } : {},
-      _sum: { amount: true },
-    });
     const suppPurchMap = Object.fromEntries(supplierPurchasesArr.map(x => [x.supplierId, x._sum.total ?? 0]));
     const suppPayMap = Object.fromEntries(supplierPaymentsArr.map(x => [x.supplierId, x._sum.amount ?? 0]));
-    const allSuppliers = await prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } });
     const totalPayables = allSuppliers.reduce((s, sup) => {
       const bal = sup.openingBalance + (suppPurchMap[sup.id] ?? 0) - (suppPayMap[sup.id] ?? 0);
       return s + Math.max(0, bal);
     }, 0);
 
-    const [pendingDeliveries, lowStockItems, atRiskClients, recentSales] = await Promise.all([
-      prisma.delivery.count({ where: { ...bWhere, status: { not: 'DELIVERED' } } }),
-      prisma.inventory.findMany({ where: bWhere, include: { product: { select: { minStock: true } } } }),
-      prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
-      prisma.sale.findMany({
-        where: { ...bWhere, deletedAt: null },
-        include: { client: { select: { name: true } } },
-        orderBy: { date: 'asc' },
-        take: 5,
-      }),
-    ]);
-
     const lowStockCount = lowStockItems.filter(inv => inv.qty <= (inv.product?.minStock ?? 0)).length;
 
-    const l30Start = new Date(Date.now() - 30 * 86400000);
-    const [l30Sales, l30Purchases, l30Expenses] = await Promise.all([
-      prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
-      prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
-      prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
-    ]);
     const l30Rev = l30Sales._sum.total ?? 0;
     const l30Cost = (l30Purchases._sum.total ?? 0) + (l30Expenses._sum.amount ?? 0);
     const l30Profit = l30Rev - l30Cost;
     const marginScore = l30Rev > 0 ? Math.max(0, Math.min(100, (l30Profit / l30Rev) * 100)) : 0;
     const collectionScore = l30Rev > 0 ? Math.max(0, Math.min(100, (totalReceivables / l30Rev) * -50 + 100)) : 80;
     const healthScore = Math.round(marginScore * 0.5 + collectionScore * 0.5);
-
-    const attentionRaw = await prisma.client.findMany({
-      where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } },
-      select: { id: true, name: true, currentBalance: true },
-      orderBy: { currentBalance: 'desc' },
-      take: 5,
-    });
 
     const attention = attentionRaw.map(c => ({
       id: c.id,
