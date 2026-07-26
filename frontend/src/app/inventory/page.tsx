@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime } from '@/utils/formatters';
+import { apiFetch } from '@/utils/apiFetch';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiArchive } from '@mdi/js';
@@ -95,7 +96,7 @@ export default function InventoryPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res  = await fetch('/api/inventory');
+      const res  = await apiFetch('/api/inventory');
       const data = await res.json();
       if (data.success) {
         setInventory(data.data ?? []);
@@ -115,7 +116,7 @@ export default function InventoryPage() {
       if (mType !== 'all')   p.set('type', mType);
       if (mFrom)             p.set('from', mFrom);
       if (mTo)               p.set('to', mTo);
-      const res  = await fetch(`/api/inventory/movements?${p}`);
+      const res  = await apiFetch(`/api/inventory/movements?${p}`);
       const data = await res.json();
       if (data.success) setMovements(data.data ?? []);
       else showToast('❌ Failed to load movements');
@@ -131,7 +132,7 @@ export default function InventoryPage() {
     if (inv && wQty > inv.qty) return showToast(`❌ Qty (${wQty}) exceeds stock (${inv.qty.toFixed(2)})`);
     setSaving(true);
     try {
-      const res  = await fetch('/api/inventory', {
+      const res  = await apiFetch('/api/inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId: wProdId, itemName: inv?.product?.name ?? '', qty: wQty, unit: wUnit, reason: wReason, date: wDate || undefined }),
@@ -153,7 +154,7 @@ export default function InventoryPage() {
     if (Number(aPhysQty) < 0) return showToast('❌ Physical count cannot be negative');
     setSaving(true);
     try {
-      const res  = await fetch('/api/inventory/adjust', {
+      const res  = await apiFetch('/api/inventory/adjust', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId: aProdId, adjustedQty: Number(aPhysQty), reason: aReason }),

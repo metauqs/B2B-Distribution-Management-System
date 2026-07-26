@@ -105,7 +105,7 @@ export default function CollectionsPage() {
       if (regStatus !== 'all') p.set('status', regStatus);
       if (regFrom)             p.set('from', regFrom);
       if (regTo)               p.set('to', regTo + 'T23:59:59');
-      const res  = await fetch(`/api/reports/invoice-registry?${p}`);
+      const res  = await apiFetch(`/api/reports/invoice-registry?${p}`);
       const data = await res.json();
       if (res.ok && data.success) {
         setRegRows(data.data ?? []);

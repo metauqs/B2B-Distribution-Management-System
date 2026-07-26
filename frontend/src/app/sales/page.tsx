@@ -148,7 +148,7 @@ export default function SalesPage() {
 
   const loadEmployees = useCallback(async () => {
     try {
-      const res = await fetch('/api/employees?activeOnly=true');
+      const res = await apiFetch('/api/employees?activeOnly=true');
       const data = await res.json();
       if (data.success) setEmployees(data.data ?? []);
     } catch (err) {
@@ -180,14 +180,17 @@ export default function SalesPage() {
         p.set('from', filterDate);
         p.set('to', filterDate + 'T23:59:59');
       }
-      const res  = await fetch(`/api/sales?${p}`);
+      const targetDate = filterDate || new Date().toISOString().slice(0, 10);
+      
+      const [res, collRes] = await Promise.all([
+        apiFetch(`/api/sales?${p}`),
+        apiFetch(`/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=500`),
+      ]);
+
       const text = await res.text();
       const data = text ? JSON.parse(text) : { success: false };
       if (data.success) setSales(data.data ?? []);
 
-      // Also load collections amount for the selected date for KPI calculation
-      const targetDate = filterDate || new Date().toISOString().slice(0, 10);
-      const collRes = await fetch(`/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=500`);
       const collText = await collRes.text();
       const collData = collText ? JSON.parse(collText) : { success: false };
       if (collData.success && collData.data) {
@@ -210,7 +213,7 @@ export default function SalesPage() {
     try {
       const p = new URLSearchParams({ status: 'ACTIVE', minimal: 'true' });
       if (debouncedClientSrch.trim()) p.set('search', debouncedClientSrch.trim());
-      const res  = await fetch(`/api/clients?${p}`);
+      const res  = await apiFetch(`/api/clients?${p}`);
       const text = await res.text();
       const data = text ? JSON.parse(text) : { success: false };
       if (data.success) setClients(data.data ?? []);
@@ -224,7 +227,7 @@ export default function SalesPage() {
   const loadPrices = useCallback(async () => {
     try {
       const today = todayInputDate();
-      const res   = await fetch(`/api/pricelist?date=${today}`);
+      const res   = await apiFetch(`/api/pricelist?date=${today}`);
       const text  = await res.text();
       const data  = text ? JSON.parse(text) : { success: false };
       if (data.success && data.data?.items) setPriceItems(data.data.items);
@@ -270,7 +273,7 @@ export default function SalesPage() {
     if (!newClientForm.name.trim()) return showToast('Business name is required');
     setSavingClient(true);
     try {
-      const res  = await fetch('/api/clients', {
+      const res  = await apiFetch('/api/clients', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newClientForm),
       });
@@ -391,7 +394,7 @@ export default function SalesPage() {
     setAddPayAmt(0);
     setDetailLoad(true);
     setView('detail');
-    const res  = await fetch(`/api/sales/${s.id}`);
+    const res  = await apiFetch(`/api/sales/${s.id}`);
     const data = await res.json();
     if (data.success) setDetailSale(data.data);
     setDetailLoad(false);
@@ -404,7 +407,7 @@ export default function SalesPage() {
       return showToast(`❌ Payment amount (Rs ${addPayAmt.toLocaleString()}) cannot exceed remaining balance (Rs ${detailSale.balance.toLocaleString()})`);
     }
     setAddPayBusy(true);
-    const res  = await fetch(`/api/sales/${detailSale.id}`, {
+    const res  = await apiFetch(`/api/sales/${detailSale.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ additionalPayment: addPayAmt }),
     });

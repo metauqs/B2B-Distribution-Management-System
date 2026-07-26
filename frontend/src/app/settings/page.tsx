@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { apiFetch } from '@/utils/apiFetch';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 
 type SettingsTab = 'branch' | 'users' | 'products' | 'suppliers' | 'vehicles' | 'whatsapp';
@@ -34,20 +35,22 @@ export default function SettingsPage() {
   });
   const [waSaved, setWaSaved] = useState(false);
 
-  useEffect(() => { loadUsers(); loadProducts(); loadWaSettings(); }, []);
+  useEffect(() => {
+    Promise.all([loadUsers(), loadProducts(), loadWaSettings()]);
+  }, []);
 
   const loadUsers = async () => {
-    const res = await fetch('/api/settings/users');
+    const res = await apiFetch('/api/settings/users');
     if (res.ok) { const d = await res.json(); setUsers(d.data ?? []); }
   };
 
   const loadProducts = async () => {
-    const res = await fetch('/api/products');
+    const res = await apiFetch('/api/products');
     if (res.ok) { const d = await res.json(); setProducts(d.data ?? []); }
   };
 
   const loadWaSettings = async () => {
-    const res = await fetch('/api/broadcasts/settings');
+    const res = await apiFetch('/api/broadcasts/settings');
     if (res.ok) {
       const d = await res.json();
       if (d.data) setWaSettings(d.data);
@@ -56,13 +59,13 @@ export default function SettingsPage() {
 
   const saveBranch = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/settings/branch', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(branch) });
+    const res = await apiFetch('/api/settings/branch', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(branch) });
     if (res.ok) { setBranchSaved(true); setTimeout(() => setBranchSaved(false), 2000); }
   };
 
   const saveWaSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/broadcasts/settings', {
+    const res = await apiFetch('/api/broadcasts/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(waSettings)
@@ -72,7 +75,7 @@ export default function SettingsPage() {
 
   const addUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/settings/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) });
+    const res = await apiFetch('/api/settings/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) });
     const d = await res.json();
     if (res.ok) { setUserMsg('✅ User added'); setNewUser({ name: '', email: '', password: '', role: 'SALESMAN' }); loadUsers(); }
     else         setUserMsg('❌ ' + (d.error ?? 'Failed'));
@@ -81,7 +84,7 @@ export default function SettingsPage() {
 
   const addProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newProduct) });
+    const res = await apiFetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newProduct) });
     const d = await res.json();
     if (res.ok) { setProdMsg('✅ Product added'); setNewProduct({ name: '', urduName: '', category: 'vegetable', defaultUnit: 'KG', minStock: 10 }); loadProducts(); }
     else         setProdMsg('❌ ' + (d.error ?? 'Failed'));

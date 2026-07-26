@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
+import { apiFetch } from '@/utils/apiFetch';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 
@@ -81,9 +82,9 @@ export default function PurchasesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const [pRes, sRes, prRes] = await Promise.all([
-      fetch('/api/purchases'),
-      fetch('/api/suppliers'),
-      fetch('/api/products'),
+      apiFetch('/api/purchases'),
+      apiFetch('/api/suppliers'),
+      apiFetch('/api/products'),
     ]);
     const [pd, sd, prd] = await Promise.all([pRes.json(), sRes.json(), prRes.json()]);
     if (pd.success)  setPurchases(pd.data);
@@ -118,7 +119,7 @@ export default function PurchasesPage() {
     e.preventDefault();
     if (!newSupplierName.trim()) return showToast('Supplier name is required');
     try {
-      const res = await fetch('/api/suppliers', {
+      const res = await apiFetch('/api/suppliers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newSupplierName, phone: newSupplierPhone, address: newSupplierAddress })
@@ -126,7 +127,7 @@ export default function PurchasesPage() {
       const data = await res.json();
       if (data.success) {
         showToast('✅ Supplier created successfully');
-        const sRes = await fetch('/api/suppliers');
+        const sRes = await apiFetch('/api/suppliers');
         const sData = await sRes.json();
         if (sData.success) setSuppliers(sData.data);
         
@@ -167,7 +168,7 @@ export default function PurchasesPage() {
   const handleDeleteClick = async (pId: string) => {
     if (!confirm('Are you sure you want to cancel and delete this purchase entry? This will reverse inventory stock levels.')) return;
     try {
-      const res = await fetch(`/api/purchases/${pId}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/purchases/${pId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         showToast('✅ Purchase deleted & stock levels adjusted');
@@ -304,7 +305,7 @@ export default function PurchasesPage() {
       const url = purchaseId ? `/api/purchases/${purchaseId}` : '/api/purchases';
       const method = purchaseId ? 'PATCH' : 'POST';
 
-      const res  = await fetch(url, {
+      const res  = await apiFetch(url, {
         method, headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ supplierId: finalSupplierId, items: itemsToSave, paid, transportCost, notes, date }),
       });

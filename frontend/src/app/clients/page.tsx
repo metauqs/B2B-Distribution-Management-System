@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime } from '@/utils/formatters';
+import { apiFetch } from '@/utils/apiFetch';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateStatementHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
@@ -226,7 +227,7 @@ export default function ClientsPage() {
     if (typeFilter !== 'all')   params.set('type', typeFilter);
     if (ratingFilter !== 'all') params.set('rating', ratingFilter);
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-    const res  = await fetch(`/api/clients?${params}`);
+    const res  = await apiFetch(`/api/clients?${params}`);
     const data = await res.json();
     if (data.success) setClients(data.data);
     setLoading(false);
@@ -234,7 +235,7 @@ export default function ClientsPage() {
 
   const loadProfile = useCallback(async (id: string) => {
     setProfLoad(true);
-    const res  = await fetch(`/api/clients/${id}`);
+    const res  = await apiFetch(`/api/clients/${id}`);
     const data = await res.json();
     if (data.success) setProfile(data.data);
     setProfLoad(false);
@@ -284,7 +285,7 @@ export default function ClientsPage() {
       const isEdit = view === 'edit' && editId;
       const url    = isEdit ? `/api/clients/${editId}` : '/api/clients';
       const method = isEdit ? 'PATCH' : 'POST';
-      const res    = await fetch(url, {
+      const res    = await apiFetch(url, {
         method, headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
@@ -300,7 +301,7 @@ export default function ClientsPage() {
   };
 
   const updateRating = async (clientId: string, rating: string) => {
-    await fetch(`/api/clients/${clientId}`, {
+    await apiFetch(`/api/clients/${clientId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rating }),
     });
@@ -312,7 +313,7 @@ export default function ClientsPage() {
   };
 
   const updateStatus = async (clientId: string, status: string) => {
-    await fetch(`/api/clients/${clientId}`, {
+    await apiFetch(`/api/clients/${clientId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });

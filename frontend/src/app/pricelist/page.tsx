@@ -5,6 +5,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
+import { apiFetch } from '@/utils/apiFetch';
 import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
 
@@ -170,7 +171,7 @@ export default function PriceListPage() {
 
   const loadProducts = useCallback(async () => {
     try {
-      const res = await fetch('/api/products?availability=ALL');
+      const res = await apiFetch('/api/products?availability=ALL');
       const text = await res.text();
       const data = text ? JSON.parse(text) : { success: false };
       if (data.success) setProducts(data.data ?? []);
@@ -182,7 +183,7 @@ export default function PriceListPage() {
   const loadDateList = useCallback(async (date: string, isBackground = false) => {
     if (!isBackground) setLoading(true);
     try {
-      const res = await fetch(`/api/pricelist?date=${date}`);
+      const res = await apiFetch(`/api/pricelist?date=${date}`);
       const text = await res.text();
       const data = text ? JSON.parse(text) : { success: false };
       if (data.success) {
@@ -207,7 +208,7 @@ export default function PriceListPage() {
 
   const loadLists = useCallback(async () => {
     try {
-      const res = await fetch('/api/pricelist?limit=30');
+      const res = await apiFetch('/api/pricelist?limit=30');
       const text = await res.text();
       const data = text ? JSON.parse(text) : { success: false };
       if (data.success) setLists(data.data ?? []);
@@ -219,7 +220,7 @@ export default function PriceListPage() {
   const loadHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/pricelist/history?days=${historyDays}`);
+      const res = await apiFetch(`/api/pricelist/history?days=${historyDays}`);
       const text = await res.text();
       const data = text ? JSON.parse(text) : { success: false };
       if (data.success) setHistory(data.data ?? []);
@@ -231,7 +232,7 @@ export default function PriceListPage() {
 
   const loadWaSettings = useCallback(async () => {
     try {
-      const res = await fetch('/api/broadcasts/settings');
+      const res = await apiFetch('/api/broadcasts/settings');
       const d = await res.json();
       if (d.success && d.data) {
         setWaSettings(d.data);
@@ -244,7 +245,7 @@ export default function PriceListPage() {
 
   const loadBroadcastClients = useCallback(async () => {
     try {
-      const res = await fetch('/api/clients?minimal=true');
+      const res = await apiFetch('/api/clients?minimal=true');
       const d = await res.json();
       if (d.success) setBroadcastClients(d.data ?? []);
     } catch (err) {
@@ -254,10 +255,12 @@ export default function PriceListPage() {
 
   // Initial resources load on mount (no date dependency)
   useEffect(() => {
-    loadProducts();
-    loadLists();
-    loadWaSettings();
-    loadBroadcastClients();
+    Promise.all([
+      loadProducts(),
+      loadLists(),
+      loadWaSettings(),
+      loadBroadcastClients(),
+    ]);
   }, [loadProducts, loadLists, loadWaSettings, loadBroadcastClients]);
 
   // Load daily price list when targetDate changes
@@ -274,7 +277,7 @@ export default function PriceListPage() {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/broadcasts/${activeBroadcastId}`);
+        const res = await apiFetch(`/api/broadcasts/${activeBroadcastId}`);
         const d = await res.json();
         if (d.success) {
           setBroadcastProgress(d.data);
@@ -383,7 +386,7 @@ export default function PriceListPage() {
         return;
       }
 
-      const uploadRes = await fetch('/api/broadcasts/upload', {
+      const uploadRes = await apiFetch('/api/broadcasts/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -412,7 +415,7 @@ export default function PriceListPage() {
         }
       }
 
-      const res = await fetch('/api/broadcasts', {
+      const res = await apiFetch('/api/broadcasts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -484,7 +487,7 @@ export default function PriceListPage() {
 
   const handleRetryFailed = async (broadcastId: string) => {
     try {
-      const res = await fetch(`/api/broadcasts/${broadcastId}/retry`, {
+      const res = await apiFetch(`/api/broadcasts/${broadcastId}/retry`, {
         method: 'POST'
       });
       const d = await res.json();
@@ -507,7 +510,7 @@ export default function PriceListPage() {
 
     setSaving(true);
     try {
-      const res = await fetch('/api/products', {
+      const res = await apiFetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -535,7 +538,7 @@ export default function PriceListPage() {
 
   const handleUpdateProductAvailability = async (id: string, avail: ProductAvailability) => {
     try {
-      const res = await fetch(`/api/products/${id}`, {
+      const res = await apiFetch(`/api/products/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ availability: avail })
@@ -578,7 +581,7 @@ export default function PriceListPage() {
     setSaving(true);
     try {
       // Always store daily snapshot
-      const res = await fetch('/api/pricelist', {
+      const res = await apiFetch('/api/pricelist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -603,7 +606,7 @@ export default function PriceListPage() {
       } else {
         // If conflict (exists), allow PATCH updates
         if (res.status === 409 && currentList?.id) {
-          const updateRes = await fetch(`/api/pricelist/${currentList.id}`, {
+          const updateRes = await apiFetch(`/api/pricelist/${currentList.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -637,7 +640,7 @@ export default function PriceListPage() {
     }
     setSaving(true);
     try {
-      const res = await fetch('/api/pricelist/duplicate', {
+      const res = await apiFetch('/api/pricelist/duplicate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
@@ -662,8 +665,8 @@ export default function PriceListPage() {
     setLoading(true);
     try {
       const [resA, resB] = await Promise.all([
-        fetch(`/api/pricelist?date=${compareDateA}`),
-        fetch(`/api/pricelist?date=${compareDateB}`)
+        apiFetch(`/api/pricelist?date=${compareDateA}`),
+        apiFetch(`/api/pricelist?date=${compareDateB}`)
       ]);
       
       const getJson = async (res: Response) => {
