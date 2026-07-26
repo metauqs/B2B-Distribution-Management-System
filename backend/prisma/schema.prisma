@@ -59,6 +59,7 @@ model User {
   priceBroadcasts   PriceBroadcast[] @relation("BroadcastCreator")
   priceListsCreated PriceList[]      @relation("PriceListCreator")
   sales             Sale[]
+  expensesCreated   Expense[]        @relation("ExpenseCreator")
   branch            Branch           @relation(fields: [branchId], references: [id])
 
   @@index([branchId])
@@ -142,6 +143,7 @@ model Supplier {
   purchases        Purchase[]
   ledgers          SupplierLedger[]
   supplierPayments SupplierPayment[]
+  expenses         Expense[]
   branch           Branch            @relation(fields: [branchId], references: [id])
 
   @@index([branchId])
@@ -308,26 +310,37 @@ model Collection {
 
 model Expense {
   id            String          @id @default(cuid())
+  reference     String?
   category      ExpenseCategory
   description   String?
   amount        Float
-  date          DateTime @db.Timestamptz(3)        @default(now())
+  date          DateTime        @db.Timestamptz(3) @default(now())
   vehicleId     String?
+  employeeId    String?
+  supplierId    String?
+  createdById   String?
   paidBy        PaymentMethod?
   cashAccountId String?
   bankAccountId String?
+  notes         String?
   branchId      String
-  createdAt     DateTime @db.Timestamptz(3)        @default(now())
-  deletedAt     DateTime? @db.Timestamptz(3)
+  createdAt     DateTime        @db.Timestamptz(3) @default(now())
+  deletedAt     DateTime?       @db.Timestamptz(3)
   bankAccount   BankAccount?    @relation(fields: [bankAccountId], references: [id])
   branch        Branch          @relation(fields: [branchId], references: [id])
   cashAccount   CashAccount?    @relation(fields: [cashAccountId], references: [id])
   vehicle       Vehicle?        @relation(fields: [vehicleId], references: [id])
+  employee      Employee?       @relation(fields: [employeeId], references: [id])
+  supplier      Supplier?       @relation(fields: [supplierId], references: [id])
+  createdBy     User?           @relation("ExpenseCreator", fields: [createdById], references: [id])
 
   @@index([branchId])
   @@index([date])
   @@index([category])
   @@index([vehicleId])
+  @@index([employeeId])
+  @@index([supplierId])
+  @@index([createdById])
   @@index([cashAccountId])
   @@index([bankAccountId])
   @@map("expenses")
@@ -519,6 +532,7 @@ model Employee {
   salaryPayments SalaryPayment[]
   sales          Sale[]
   deliveries     Delivery[]
+  expenses       Expense[]
 
   @@index([branchId])
   @@index([employeeId])

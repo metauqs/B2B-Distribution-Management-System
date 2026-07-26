@@ -24,6 +24,8 @@ import broadcastsRouter from './routes/broadcasts';
 import settingsRouter from './routes/settings';
 import employeesRouter from './routes/employees';
 import renderRouter from './routes/render';
+import cashAccountsRouter from './routes/cashAccounts';
+import bankAccountsRouter from './routes/bankAccounts';
 
 // Import Middleware
 import { authMiddleware } from './middleware/auth';
@@ -68,6 +70,8 @@ app.use('/api/vehicles', vehiclesRouter);
 app.use('/api/broadcasts', broadcastsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/employees', employeesRouter);
+app.use('/api/cash-accounts', cashAccountsRouter);
+app.use('/api/bank-accounts', bankAccountsRouter);
 
 // Start server
 app.listen(Number(port), '0.0.0.0', () => {

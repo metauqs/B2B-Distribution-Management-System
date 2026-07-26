@@ -182,6 +182,13 @@ router.get('/pnl', async (req: Request, res: Response) => {
       orderBy: { _sum: { amount: 'desc' } },
     });
 
+    const expensesByPaymentMethod = await prisma.expense.groupBy({
+      by: ['paidBy'],
+      where: { ...bWhere, date: dateRange, deletedAt: null },
+      _sum: { amount: true },
+      orderBy: { _sum: { amount: 'desc' } },
+    });
+
     const [dailySales, dailyPurchases, dailyExpenses] = await Promise.all([
       prisma.sale.groupBy({
         by: ['date'], where: { ...bWhere, date: dateRange, deletedAt: null },
@@ -221,7 +228,8 @@ router.get('/pnl', async (req: Request, res: Response) => {
       success: true,
       data: {
         summary: { revenue, cogs, grossProfit, grossMarginPct, expenses, netProfit, netMarginPct, collected, transport, discounts, wastageCount: wastageAgg._count },
-        expensesByCategory,
+        expensesByCategory: expensesByCategory.map(e => ({ category: e.category, total: e._sum.amount ?? 0 })),
+        expensesByPaymentMethod: expensesByPaymentMethod.map(e => ({ method: e.paidBy || 'CASH', total: e._sum.amount ?? 0 })),
         trend,
       }
     });
