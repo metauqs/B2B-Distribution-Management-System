@@ -12,6 +12,8 @@
  * Each function updates Inventory + creates a StockMovement inside the same transaction.
  */
 
+import { prisma } from './prisma';
+
 // ── stockIn — called from Purchases ─────────────────────────────────────────
 
 export interface StockInParams {
@@ -78,38 +80,36 @@ export interface StockOutParams {
 }
 
 export async function stockOut(tx: any, p: StockOutParams): Promise<void> {
-  const existing = await tx.inventory.findUnique({
+  const db = tx || prisma;
+  const existing = await db.inventory.findUnique({
     where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
+    select: { qty: true },
   });
 
   const currentQty = existing?.qty ?? 0;
   const newQty = Math.max(0, currentQty - p.qty);
 
-  if (existing) {
-    await tx.inventory.update({
+  await Promise.all([
+    db.inventory.upsert({
       where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
-      data:  { qty: newQty },
-    });
-  } else {
-    await tx.inventory.create({
-      data: { productId: p.productId, branchId: p.branchId, qty: 0, avgCost: 0 },
-    });
-  }
-
-  await tx.stockMovement.create({
-    data: {
-      productId: p.productId,
-      branchId:  p.branchId,
-      type:      'SALE',
-      qty:       -p.qty,
-      refType:   p.refType ?? 'sale',
-      refId:     p.refId   ?? undefined,
-      date:      p.date    ?? new Date(),
-      note:      p.note    ?? (p.refNo
-        ? `Stock OUT — ${p.refNo} | Qty: ${p.qty} ${p.unit ?? 'KG'}`
-        : `Stock OUT | Qty: ${p.qty} ${p.unit ?? 'KG'}`),
-    },
-  });
+      update: { qty: newQty },
+      create: { productId: p.productId, branchId: p.branchId, qty: 0, avgCost: 0 },
+    }),
+    db.stockMovement.create({
+      data: {
+        productId: p.productId,
+        branchId:  p.branchId,
+        type:      'SALE',
+        qty:       -p.qty,
+        refType:   p.refType ?? 'sale',
+        refId:     p.refId   ?? undefined,
+        date:      p.date    ?? new Date(),
+        note:      p.note    ?? (p.refNo
+          ? `Stock OUT — ${p.refNo} | Qty: ${p.qty} ${p.unit ?? 'KG'}`
+          : `Stock OUT | Qty: ${p.qty} ${p.unit ?? 'KG'}`),
+      },
+    }),
+  ]);
 }
 
 // ── recordWastage — called from Wastage entry ─────────────────────────────────

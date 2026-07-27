@@ -190,6 +190,7 @@ model Sale {
   @@index([date])
   @@index([status])
   @@index([invoiceNo])
+  @@index([employeeId])
   @@map("sales")
 }
 
@@ -470,6 +471,7 @@ model Delivery {
   @@index([status])
   @@index([vehicleId])
   @@index([driverId])
+  @@index([employeeId])
   @@map("deliveries")
 }
 
@@ -679,6 +681,7 @@ model CustomerLedger {
   @@index([clientId])
   @@index([branchId])
   @@index([date])
+  @@index([clientId, date])
   @@map("customer_ledger")
 }
 

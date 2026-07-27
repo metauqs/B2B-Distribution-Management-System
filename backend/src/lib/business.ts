@@ -494,56 +494,38 @@ export async function syncPriceListFromSale(
 
   const priceListId = priceList.id;
 
-  for (const item of items) {
-    if (!item.rate || item.rate <= 0) continue;
+  await Promise.all(
+    items.map(async (item) => {
+      if (!item.rate || item.rate <= 0) return;
 
-    if (item.productId) {
-      const existing = await tx.priceItem.findFirst({
-        where: { priceListId, productId: item.productId },
-        select: { id: true, buyRate: true },
-      });
-
-      if (existing) {
-        await tx.priceItem.update({
-          where: { id: existing.id },
-          data:  { sellRate: item.rate },
-        });
-      } else {
-        await tx.priceItem.create({
-          data: {
+      if (item.productId) {
+        await tx.priceItem.upsert({
+          where: { priceListId_productId: { priceListId, productId: item.productId } },
+          update: { sellRate: item.rate },
+          create: {
             priceListId,
             productId: item.productId,
-            itemName:  item.itemName,
-            unit:      item.unit as any,
-            buyRate:   0,
-            sellRate:  item.rate,
+            itemName: item.itemName,
+            unit: item.unit as any,
+            buyRate: 0,
+            sellRate: item.rate,
           },
         });
-      }
-    } else {
-      const existing = await tx.priceItem.findFirst({
-        where: { priceListId, itemName: item.itemName },
-        select: { id: true, buyRate: true },
-      });
-
-      if (existing) {
-        await tx.priceItem.update({
-          where: { id: existing.id },
-          data:  { sellRate: item.rate },
-        });
       } else {
-        await tx.priceItem.create({
-          data: {
+        await tx.priceItem.upsert({
+          where: { priceListId_itemName: { priceListId, itemName: item.itemName } },
+          update: { sellRate: item.rate },
+          create: {
             priceListId,
             itemName: item.itemName,
-            unit:     item.unit as any,
-            buyRate:  0,
+            unit: item.unit as any,
+            buyRate: 0,
             sellRate: item.rate,
           },
         });
       }
-    }
-  }
+    })
+  );
 
   return priceListId;
 }

@@ -99,6 +99,7 @@ router.post('/', async (req: Request, res: Response) => {
   const invoiceNo = await generateInvoiceNo(clientId, branchId);
   const validatedUserId = await getValidUserId(userId);
 
+  const startTime = Date.now();
   try {
     const sale = await prisma.$transaction(async tx => {
       const cRecord = await tx.client.findUnique({
@@ -158,35 +159,36 @@ router.post('/', async (req: Request, res: Response) => {
         },
       });
 
-      // Automatically create delivery assignment for selected Delivery Staff member
-      await tx.delivery.create({
-        data: {
-          saleId: s.id,
-          clientId,
-          branchId,
-          employeeId: employeeId || undefined,
-          date: deliveryDate ? new Date(deliveryDate) : s.date,
-          scheduledTime: deliveryTime || undefined,
-          status: 'PENDING',
-        }
-      });
-
-      await Promise.all(
-        items
-          .filter((item: any) => item.productId)
-          .map((item: any) =>
-            stockOut(tx, {
-              productId: item.productId,
-              branchId,
-              qty: Number(item.qty),
-              unit: item.unit ?? 'KG',
-              refType: 'sale',
-              refId: s.id,
-              refNo: invoiceNo,
-              date: s.date,
-            })
-          )
-      );
+      // Execute Delivery assignment, Inventory StockOuts, and Ledger in parallel
+      await Promise.all([
+        tx.delivery.create({
+          data: {
+            saleId: s.id,
+            clientId,
+            branchId,
+            employeeId: employeeId || undefined,
+            date: deliveryDate ? new Date(deliveryDate) : s.date,
+            scheduledTime: deliveryTime || undefined,
+            status: 'PENDING',
+          }
+        }),
+        Promise.all(
+          items
+            .filter((item: any) => item.productId)
+            .map((item: any) =>
+              stockOut(tx, {
+                productId: item.productId,
+                branchId,
+                qty: Number(item.qty),
+                unit: item.unit ?? 'KG',
+                refType: 'sale',
+                refId: s.id,
+                refNo: invoiceNo,
+                date: s.date,
+              })
+            )
+        )
+      ]);
 
       await recordCustomerLedgerEntry(tx, {
         clientId,
@@ -232,16 +234,28 @@ router.post('/', async (req: Request, res: Response) => {
       });
 
       await syncPriceListFromSale(tx, branchId, validatedUserId, s.date, s.items);
-      await updateClientCreditRating(clientId, tx);
 
       return s;
     }, { maxWait: 10000, timeout: 30000 });
 
+    // Non-blocking credit rating update outside transaction
+    updateClientCreditRating(clientId).catch(err =>
+      console.warn('[POST /api/sales] Async credit rating update warning:', err)
+    );
+
     await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Sale', entityId: sale.id, newData: { invoiceNo, total } });
     return res.status(201).json({ success: true, data: sale });
   } catch (error: any) {
-    console.error('[POST /api/sales]', error);
-    return res.status(500).json({ success: false, error: error.message ?? 'Internal server error' });
+    const durationMs = Date.now() - startTime;
+    console.error('[POST /api/sales] Transaction Failed:', {
+      endpoint: 'POST /api/sales',
+      durationMs,
+      clientId,
+      invoiceNo: invoiceNo ?? 'N/A',
+      error: error.message ?? String(error),
+      stack: error.stack,
+    });
+    return res.status(500).json({ success: false, error: error.message ?? 'Invoice generation failed. Please try again.' });
   }
 });
 
