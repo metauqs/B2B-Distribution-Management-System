@@ -6,6 +6,7 @@ import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonTable } from '@/components/ui/Skeleton';
+import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 
@@ -537,8 +538,29 @@ export default function PurchasesPage() {
               <div key={i} className="va-item-row">
                 <div className="va-field" style={{ flex: 3 }}>
                   {i === 0 && <label>Item</label>}
-                  <input list={`prod-${i}`} value={item.itemName} onChange={e => updateItem(i, 'itemName', e.target.value)} placeholder="Product name" required />
-                  <datalist id={`prod-${i}`}>{products.map(p => <option key={p.id} value={p.name} />)}</datalist>
+                  <ProductAutocomplete
+                    value={item.itemName}
+                    onChange={val => updateItem(i, 'itemName', val)}
+                    onSelect={selectedProd => {
+                      const selName = selectedProd.name || selectedProd.itemName || '';
+                      const selId = selectedProd.id || selectedProd.productId || undefined;
+                      const selUnit = selectedProd.defaultUnit || selectedProd.unit;
+                      setItems(prev => prev.map((it, idx) => {
+                        if (idx !== i) return it;
+                        const updated = {
+                          ...it,
+                          itemName: selName,
+                          productId: selId,
+                          unit: selUnit || it.unit,
+                        };
+                        updated.amount = updated.qty * updated.rate;
+                        return updated;
+                      }));
+                    }}
+                    products={products}
+                    placeholder="Product name"
+                    required
+                  />
                 </div>
                 <div className="va-field" style={{ flex: 1 }}>
                   {i === 0 && <label>Qty</label>}

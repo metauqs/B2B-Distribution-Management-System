@@ -6,15 +6,18 @@ export interface PriceItem {
   productId: string;
   itemName: string;
   unit: string;
-  sellRate: number;
-  product?: { id: string; name: string; urduName?: string | null; category: string };
+  sellRate?: number;
+  buyRate?: number;
+  product?: { id: string; name: string; urduName?: string | null; category?: string };
 }
 
 interface ProductAutocompleteProps {
   value: string;
   onChange: (val: string) => void;
-  onSelect: (item: PriceItem) => void;
-  priceItems: PriceItem[];
+  onSelect: (item: any) => void;
+  priceItems?: any[];
+  products?: any[];
+  items?: any[];
   placeholder?: string;
   required?: boolean;
   style?: React.CSSProperties;
@@ -26,6 +29,8 @@ export function ProductAutocomplete({
   onChange,
   onSelect,
   priceItems,
+  products,
+  items,
   placeholder = "Product name",
   required = false,
   style,
@@ -37,36 +42,51 @@ export function ProductAutocomplete({
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Compute matching products
+  // Normalize source list
+  const rawList: any[] = items || priceItems || products || [];
+
   const q = value.trim().toLowerCase();
 
+  // Helper to extract searchable names and details
+  const getSearchFields = (p: any) => {
+    const itemName = (p?.itemName || p?.name || '').toString();
+    const prodName = (p?.product?.name || '').toString();
+    const urdu = (p?.product?.urduName || p?.urduName || '').toString();
+    const unit = p?.unit || p?.defaultUnit || 'KG';
+    const rate = p?.sellRate ?? p?.rate ?? p?.buyRate ?? 0;
+    const productId = p?.productId || p?.id || '';
+    return { itemName, prodName, urdu, unit, rate, productId };
+  };
+
   // 1. Prefix matches (itemName, product name, or urduName starts with query)
-  const prefixMatches = priceItems.filter((p) => {
+  const prefixMatches = rawList.filter((p) => {
     if (!q) return true;
-    const name = p.itemName.toLowerCase();
-    const prodName = p.product?.name.toLowerCase() ?? '';
-    const urdu = p.product?.urduName?.toLowerCase() ?? '';
-    return name.startsWith(q) || prodName.startsWith(q) || urdu.startsWith(q);
+    const { itemName, prodName, urdu } = getSearchFields(p);
+    const nameLower = itemName.toLowerCase();
+    const prodLower = prodName.toLowerCase();
+    const urduLower = urdu.toLowerCase();
+    return nameLower.startsWith(q) || prodLower.startsWith(q) || urduLower.startsWith(q);
   });
 
   // 2. Contains matches (includes query but doesn't start with query)
-  const containsMatches = priceItems.filter((p) => {
+  const containsMatches = rawList.filter((p) => {
     if (!q) return false;
-    const name = p.itemName.toLowerCase();
-    const prodName = p.product?.name.toLowerCase() ?? '';
-    const urdu = p.product?.urduName?.toLowerCase() ?? '';
-    const starts = name.startsWith(q) || prodName.startsWith(q) || urdu.startsWith(q);
-    const contains = name.includes(q) || prodName.includes(q) || urdu.includes(q);
+    const { itemName, prodName, urdu } = getSearchFields(p);
+    const nameLower = itemName.toLowerCase();
+    const prodLower = prodName.toLowerCase();
+    const urduLower = urdu.toLowerCase();
+    const starts = nameLower.startsWith(q) || prodLower.startsWith(q) || urduLower.startsWith(q);
+    const contains = nameLower.includes(q) || prodLower.includes(q) || urduLower.includes(q);
     return !starts && contains;
   });
 
   // Combine results so prefix matches appear on top
-  const suggestions = q ? [...prefixMatches, ...containsMatches] : priceItems;
+  const suggestions = q ? [...prefixMatches, ...containsMatches] : rawList;
 
-  // Reset highlighted index when query or priceItems change
+  // Reset highlighted index when query or items change
   useEffect(() => {
     setHighlightedIndex(suggestions.length > 0 ? 0 : -1);
-  }, [value, priceItems.length]);
+  }, [value, rawList.length]);
 
   // Click outside listener to close dropdown
   useEffect(() => {
@@ -93,7 +113,7 @@ export function ProductAutocomplete({
     }
   }, [highlightedIndex, isOpen]);
 
-  const handleSelect = (item: PriceItem) => {
+  const handleSelect = (item: any) => {
     onSelect(item);
     setIsOpen(false);
   };
@@ -182,9 +202,10 @@ export function ProductAutocomplete({
           {suggestions.length > 0 ? (
             suggestions.map((item, index) => {
               const isHighlighted = index === highlightedIndex;
+              const { itemName, urdu, unit, rate, productId } = getSearchFields(item);
               return (
                 <div
-                  key={item.productId || `${item.itemName}-${index}`}
+                  key={productId || `${itemName}-${index}`}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     handleSelect(item);
@@ -207,19 +228,21 @@ export function ProductAutocomplete({
                   }}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: 600, color: '#0F172A' }}>{item.itemName}</span>
-                    {item.product?.urduName && (
+                    <span style={{ fontWeight: 600, color: '#0F172A' }}>{itemName}</span>
+                    {urdu && (
                       <span style={{ fontSize: 11, color: '#64748B' }}>
-                        {item.product.urduName}
+                        {urdu}
                       </span>
                     )}
                   </div>
                   <div style={{ fontSize: 12, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <span className="mono" style={{ fontWeight: 700, color: '#166534' }}>
-                      Rs {item.sellRate?.toLocaleString()}
-                    </span>
-                    <span style={{ fontSize: 11, color: '#64748B', marginLeft: 3 }}>
-                      / {item.unit}
+                    {rate > 0 && (
+                      <span className="mono" style={{ fontWeight: 700, color: '#166534', marginRight: 3 }}>
+                        Rs {rate.toLocaleString()}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 11, color: '#64748B' }}>
+                      / {unit}
                     </span>
                   </div>
                 </div>
