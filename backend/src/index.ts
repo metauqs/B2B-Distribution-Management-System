@@ -29,6 +29,8 @@ import bankAccountsRouter from './routes/bankAccounts';
 
 // Import Middleware
 import { authMiddleware } from './middleware/auth';
+import { requestLogger } from './middleware/requestLogger';
+import prisma from './lib/prisma';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -40,13 +42,21 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(requestLogger);
 
 // Public routes
 app.use('/api/auth', authRouter);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ success: true, status: 'OK', timestamp: new Date() });
+// Health check with DB ping option to keep connection warm
+app.get('/api/health', async (req, res) => {
+  try {
+    if (req.query.pingDb === 'true') {
+      await prisma.$queryRaw`SELECT 1`;
+    }
+    return res.json({ success: true, status: 'OK', timestamp: new Date() });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, status: 'ERROR', error: err.message });
+  }
 });
 
 // Render routes (public to allow direct PDF/PNG downloads)

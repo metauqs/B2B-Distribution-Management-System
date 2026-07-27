@@ -7,9 +7,11 @@ if (!connectionString) throw new Error('DATABASE_URL is not set');
 
 const pool = new Pool({
   connectionString,
-  max: 10,
+  max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 15000,
+  keepAlive: true,
+  ssl: connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
 });
 const adapter = new PrismaPg(pool);
 

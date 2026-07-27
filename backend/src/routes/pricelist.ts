@@ -36,11 +36,7 @@ router.get('/active', async (req: Request, res: Response) => {
       },
       include: {
         items: {
-          where: {
-            productId: {
-              in: purchasedProductIds
-            }
-          },
+          ...(purchasedProductIds.length > 0 ? { where: { productId: { in: purchasedProductIds } } } : {}),
           include: {
             product: {
               select: { id: true, name: true, urduName: true, category: true }
