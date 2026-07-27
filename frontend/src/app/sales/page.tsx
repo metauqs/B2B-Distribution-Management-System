@@ -103,9 +103,25 @@ export default function SalesPage() {
   const [toast,    setToast]   = useState('');
 
   // ── List state ──────────────────────────────────────────────────────────────
-  const [sales,      setSales]      = useState<Sale[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [todayCollectionsAmt, setTodayCollectionsAmt] = useState(0);
+  const [sales,      setSales]      = useState<Sale[]>(() => {
+    const targetDate = todayInputDate();
+    const p = new URLSearchParams({ limit: '200', from: targetDate, to: targetDate + 'T23:59:59' });
+    return getCachedData<Sale[]>(`/api/sales?${p}`) || [];
+  });
+  const [loading,    setLoading]    = useState(() => {
+    const targetDate = todayInputDate();
+    const p = new URLSearchParams({ limit: '200', from: targetDate, to: targetDate + 'T23:59:59' });
+    return !getCachedData<Sale[]>(`/api/sales?${p}`);
+  });
+  const [todayCollectionsAmt, setTodayCollectionsAmt] = useState(() => {
+    const targetDate = todayInputDate();
+    const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=500`;
+    const cachedColls = getCachedData<any[]>(collKey);
+    if (cachedColls && Array.isArray(cachedColls)) {
+      return cachedColls.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+    }
+    return 0;
+  });
   const [srchInv,    setSrchInv]    = useState('');
   const [debouncedSrchInv, setDebouncedSrchInv] = useState('');
   const [filterSt,   setFilterSt]   = useState('all');
@@ -234,12 +250,41 @@ export default function SalesPage() {
 
   useEffect(() => { loadSales(); }, [loadSales]);
 
+  useEffect(() => {
+    const handleRevalidate = () => {
+      loadSales(true);
+      if (view === 'new') {
+        loadClients();
+        loadPrices();
+        loadEmployees();
+      }
+    };
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [loadSales, loadClients, loadPrices, loadEmployees, view]);
+
   // ── Start new invoice — switch view immediately, load data in background ─────
   const startNew = () => {
     setStep(1);
     setSelClient(null);
     setClientSrch('');
-    setClients([]);
+    
+    const cacheParams = new URLSearchParams({ status: 'ACTIVE', minimal: 'true' });
+    const cachedClients = getCachedData<Client[]>(`/api/clients?${cacheParams}`);
+    if (cachedClients) {
+      setClients(cachedClients);
+    } else {
+      setClients([]);
+    }
+
+    const today = todayInputDate();
+    const cachedPrices = getCachedData<any>(`/api/pricelist?date=${today}`);
+    if (cachedPrices?.items) {
+      setPriceItems(cachedPrices.items);
+    } else {
+      setPriceItems([]);
+    }
+
     setItems([blankItem()]);
     setDiscount(0);
     setDeliveryFee(0);

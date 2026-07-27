@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
@@ -103,15 +103,31 @@ const BLANK_FORM = {
 };
 
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [summary, setSummary] = useState<ExpenseSummary | null>(null);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [cashAccounts, setCashAccounts] = useState<CashAccount[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    return getCachedData<Expense[]>('/api/expenses?range=this_month') || [];
+  });
+  const [summary, setSummary] = useState<ExpenseSummary | null>(() => {
+    return getCachedData<ExpenseSummary>('/api/expenses/summary?range=this_month') || null;
+  });
+  const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
+    return getCachedData<Vehicle[]>('/api/vehicles') || [];
+  });
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    return getCachedData<Employee[]>('/api/employees?activeOnly=true') || [];
+  });
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
+    return getCachedData<Supplier[]>('/api/suppliers') || [];
+  });
+  const [cashAccounts, setCashAccounts] = useState<CashAccount[]>(() => {
+    return getCachedData<CashAccount[]>('/api/cash-accounts') || [];
+  });
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(() => {
+    return getCachedData<BankAccount[]>('/api/bank-accounts') || [];
+  });
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    return !getCachedData<Expense[]>('/api/expenses?range=this_month');
+  });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -207,6 +223,15 @@ export default function ExpensesPage() {
     loadMasterData();
     loadExpenses();
   }, [loadMasterData, loadExpenses]);
+
+  useEffect(() => {
+    const handleRevalidate = () => {
+      loadExpenses(true);
+      loadMasterData();
+    };
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [loadExpenses, loadMasterData]);
 
   // Set default cash/bank account when paidBy changes
   useEffect(() => {

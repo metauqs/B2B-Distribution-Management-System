@@ -159,9 +159,13 @@ function StatusBadge({ status }: { status: string }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ClientsPage() {
-  const [clients,  setClients]  = useState<Client[]>([]);
+  const [clients,  setClients]  = useState<Client[]>(() => {
+    return getCachedData<Client[]>('/api/clients?stats=true') || [];
+  });
   const [profile,  setProfile]  = useState<Profile | null>(null);
-  const [loading,  setLoading]  = useState(true);
+  const [loading,  setLoading]  = useState(() => {
+    return !getCachedData<Client[]>('/api/clients?stats=true');
+  });
   const [profLoad, setProfLoad] = useState(false);
   const [toast,    setToast]    = useState('');
   const [saving,   setSaving]   = useState(false);
@@ -254,6 +258,17 @@ export default function ClientsPage() {
   }, []);
 
   useEffect(() => { loadClients(); }, [loadClients]);
+
+  useEffect(() => {
+    const handleRevalidate = () => {
+      loadClients(true);
+      if (profile?.client?.id) {
+        loadProfile(profile.client.id, true);
+      }
+    };
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [loadClients, loadProfile, profile?.client?.id]);
 
   // ─── Client Actions ───────────────────────────────────────────────────────
 

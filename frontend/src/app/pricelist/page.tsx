@@ -6,7 +6,7 @@ import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatte
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, invalidateCache, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonTable } from '@/components/ui/Skeleton';
 import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
@@ -141,14 +141,27 @@ export default function PriceListPage() {
 
   // Today's snapshot state
   const [targetDate, setTargetDate] = useState(() => todayInputDate());
-  const [currentList, setCurrentList] = useState<PriceList | null>(null);
-  const [editItems, setEditItems] = useState<PriceItemRow[]>([]);
-  const [listNotes, setListNotes] = useState('');
+  const [currentList, setCurrentList] = useState<PriceList | null>(() => {
+    return getCachedData<PriceList>(`/api/pricelist?date=${todayInputDate()}`) || null;
+  });
+  const [editItems, setEditItems] = useState<PriceItemRow[]>(() => {
+    const cached = getCachedData<any>(`/api/pricelist?date=${todayInputDate()}`);
+    return cached?.items?.map((i: PriceItemRow) => ({ ...i, origBuyRate: i.buyRate, origSellRate: i.sellRate })) || [];
+  });
+  const [listNotes, setListNotes] = useState(() => {
+    const cached = getCachedData<any>(`/api/pricelist?date=${todayInputDate()}`);
+    return cached?.notes ?? '';
+  });
   const [isEditing, setIsEditing] = useState(false);
-  const [isDraft, setIsDraft] = useState(false);
+  const [isDraft, setIsDraft] = useState(() => {
+    const cached = getCachedData<any>(`/api/pricelist?date=${todayInputDate()}`);
+    return !!cached?.isDraft;
+  });
 
   // Lists & History state
-  const [lists, setLists] = useState<PriceList[]>([]);
+  const [lists, setLists] = useState<PriceList[]>(() => {
+    return getCachedData<PriceList[]>('/api/pricelist?limit=30') || [];
+  });
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyDays, setHistoryDays] = useState(30);
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
@@ -163,7 +176,9 @@ export default function PriceListPage() {
   const [catFilter, setCatFilter] = useState('all');
 
   // UI state
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    return !getCachedData<PriceList>(`/api/pricelist?date=${todayInputDate()}`);
+  });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -263,6 +278,17 @@ export default function PriceListPage() {
   useEffect(() => {
     loadDateList(targetDate);
   }, [loadDateList, targetDate]);
+
+  useEffect(() => {
+    const handleRevalidate = () => {
+      loadDateList(targetDate, true);
+      loadProducts();
+      loadLists();
+      if (tab === 'history') loadHistory();
+    };
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [loadDateList, targetDate, loadProducts, loadLists, tab, loadHistory]);
 
   useEffect(() => {
     if (tab === 'history') loadHistory();

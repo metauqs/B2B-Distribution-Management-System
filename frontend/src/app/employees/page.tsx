@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, invalidateCache, TTL_LONG, TTL_MEDIUM } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_LONG, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable, SkeletonProfile } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
@@ -71,9 +71,13 @@ const BLANK_PAYMENT = {
 };
 
 export default function EmployeesPage() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    return getCachedData<Employee[]>('/api/employees') || [];
+  });
   const [activeEmp, setActiveEmp] = useState<Employee | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    return !getCachedData<Employee[]>('/api/employees');
+  });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   
@@ -107,6 +111,14 @@ export default function EmployeesPage() {
   }, [employees.length]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const handleRevalidate = () => {
+      load(true);
+    };
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [load]);
 
   // Dynamically calculate unique 4-digit Employee ID based on phone/whatsapp ONLY when adding a new employee
   useEffect(() => {

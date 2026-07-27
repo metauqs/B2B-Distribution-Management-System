@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime, todayInputDate, todayInputDateTime } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
@@ -40,10 +40,18 @@ interface Client { id: string; clientId?: string | null; name: string; currentBa
 const BLANK_FORM = { clientId: '', saleId: '', amount: 0, date: '', method: 'CASH', reference: '', notes: '' };
 
 export default function CollectionsPage() {
-  const [sales,       setSales]       = useState<Sale[]>([]);
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [clients,     setClients]     = useState<Client[]>([]);
-  const [loading,     setLoading]     = useState(true);
+  const [sales,       setSales]       = useState<Sale[]>(() => {
+    return getCachedData<Sale[]>('/api/sales') || [];
+  });
+  const [collections, setCollections] = useState<Collection[]>(() => {
+    return getCachedData<Collection[]>('/api/collections') || [];
+  });
+  const [clients,     setClients]     = useState<Client[]>(() => {
+    return getCachedData<Client[]>('/api/clients?minimal=true') || [];
+  });
+  const [loading,     setLoading]     = useState(() => {
+    return !getCachedData<Collection[]>('/api/collections');
+  });
   const [saving,      setSaving]      = useState(false);
   const [toast,       setToast]       = useState('');
   const [view,        setView]        = useState<'list' | 'add' | 'registry'>('list');
@@ -146,6 +154,17 @@ export default function CollectionsPage() {
   }, [collections.length]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const handleRevalidate = () => {
+      load(true);
+      if (view === 'registry') {
+        loadRegistry(true);
+      }
+    };
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [load, view, loadRegistry]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();

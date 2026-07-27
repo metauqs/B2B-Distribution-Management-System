@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonTable } from '@/components/ui/Skeleton';
 import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
@@ -30,10 +30,18 @@ function Badge({ status, small, isMandi }: { status: string; small?: boolean; is
 }
 
 export default function PurchasesPage() {
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [products,  setProducts]  = useState<Product[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const [purchases, setPurchases] = useState<Purchase[]>(() => {
+    return getCachedData<Purchase[]>('/api/purchases') || [];
+  });
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
+    return getCachedData<Supplier[]>('/api/suppliers') || [];
+  });
+  const [products,  setProducts]  = useState<Product[]>(() => {
+    return getCachedData<Product[]>('/api/products') || [];
+  });
+  const [loading,    setLoading]    = useState(() => {
+    return !getCachedData<Purchase[]>('/api/purchases');
+  });
   const [saving,     setSaving]     = useState(false);
   const [toast,      setToast]      = useState('');
   const [formOpen,   setFormOpen]   = useState(false);
@@ -101,6 +109,14 @@ export default function PurchasesPage() {
   }, [purchases.length]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const handleRevalidate = () => {
+      load(true);
+    };
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [load]);
 
   const updateItem = (index: number, key: keyof PurchaseItem, val: string | number) => {
     setItems(prev => prev.map((item, i) => {

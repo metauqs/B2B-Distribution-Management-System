@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
@@ -64,10 +64,18 @@ function fmtQty(qty: number, unit = 'KG') {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
   const [view,      setView]      = useState<View>('list');
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [summary,   setSummary]   = useState<InventorySummary | null>(null);
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
+    const cached = getCachedData<any>('/api/inventory');
+    return cached?.data ?? cached ?? [];
+  });
+  const [summary,   setSummary]   = useState<InventorySummary | null>(() => {
+    const cached = getCachedData<any>('/api/inventory');
+    return cached?.summary ?? null;
+  });
   const [movements, setMovements] = useState<Movement[]>([]);
-  const [loading,   setLoading]   = useState(true);
+  const [loading,   setLoading]   = useState(() => {
+    return !getCachedData<any>('/api/inventory');
+  });
   const [movLoad,   setMovLoad]   = useState(false);
   const [saving,    setSaving]    = useState(false);
   const [toast,     setToast]     = useState('');
@@ -126,6 +134,17 @@ export default function InventoryPage() {
       console.error('loadMovements error:', err);
     } finally { setMovLoad(false); }
   }, [mProdId, mType, mFrom, mTo]);
+
+  useEffect(() => {
+    const handleRevalidate = () => {
+      load(true);
+      if (view === 'movements') {
+        loadMovements(true);
+      }
+    };
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [load, view, loadMovements]);
 
   // ── Wastage submit ──────────────────────────────────────────────────────────
   const handleWastage = async (e: React.FormEvent) => {

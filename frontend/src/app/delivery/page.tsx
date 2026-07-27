@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 
@@ -45,10 +45,18 @@ interface Employee { id: string; name: string; phone?: string | null; role: stri
 const STATUS_FLOW = ['PENDING', 'OUT', 'DELIVERED', 'FAILED', 'RETURNED'];
 
 export default function DeliveryPage() {
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [deliveries, setDeliveries] = useState<Delivery[]>(() => {
+    return getCachedData<Delivery[]>(`/api/delivery?date=${todayInputDate()}`) || [];
+  });
+  const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
+    return getCachedData<Vehicle[]>('/api/vehicles') || [];
+  });
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    return getCachedData<Employee[]>('/api/employees?activeOnly=true') || [];
+  });
+  const [loading, setLoading] = useState(() => {
+    return !getCachedData<Delivery[]>(`/api/delivery?date=${todayInputDate()}`);
+  });
   const [toast, setToast] = useState('');
   
   // Admin Filters
@@ -108,7 +116,27 @@ export default function DeliveryPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const handleRevalidate = () => {
+      load(true);
+    };
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [load]);
+
   const updateStatus = async (id: string, status: string) => {
+    const backup = [...deliveries];
+
+    // Optimistic UI update
+    setDeliveries(prev => prev.map(d => {
+      if (d.id === id) {
+        return { ...d, status: status as any };
+      }
+      return d;
+    }));
+
+    showToast(status === 'DELIVERED' ? '⏳ Updating delivery status...' : `⏳ Marking delivery as ${status}...`);
+
     try {
       const res = await apiFetch('/api/delivery', {
         method: 'PATCH',
@@ -121,9 +149,11 @@ export default function DeliveryPage() {
         showToast(status === 'DELIVERED' ? '✅ Delivery marked as Delivered' : `✅ Delivery marked ${status}`);
         await load(true);
       } else {
+        setDeliveries(backup);
         showToast('❌ Update failed');
       }
     } catch {
+      setDeliveries(backup);
       showToast('❌ Network error updating status');
     }
   };

@@ -89,16 +89,16 @@ export default function DashboardPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       load(false);
-    }, 15000);
+    }, 30000); // Check once every 30 seconds
 
-    const onFocus = () => {
+    const handleRevalidate = () => {
       load(false);
     };
 
-    window.addEventListener('focus', onFocus);
+    window.addEventListener('app-revalidate', handleRevalidate);
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app-revalidate', handleRevalidate);
     };
   }, [load]);
 
