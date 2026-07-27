@@ -154,7 +154,7 @@ router.post('/', async (req: Request, res: Response) => {
       await updateClientCreditRating(clientId, tx);
 
       return coll;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Collection', entityId: collection.id, newData: { clientId, amount } });
     return res.status(201).json({ success: true, data: collection });

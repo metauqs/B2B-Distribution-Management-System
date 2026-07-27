@@ -91,7 +91,7 @@ router.post('/deposit', async (req: Request, res: Response) => {
       });
 
       return updated;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     return res.status(200).json({
       success: true,
@@ -138,7 +138,7 @@ router.post('/', async (req: Request, res: Response) => {
       });
 
       return acc;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     return res.status(201).json({ success: true, data: newAcc });
   } catch (err: any) {

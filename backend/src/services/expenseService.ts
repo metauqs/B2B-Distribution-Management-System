@@ -151,7 +151,7 @@ export class ExpenseService {
       });
 
       return expense;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   /**
@@ -265,7 +265,7 @@ export class ExpenseService {
       });
 
       return updated;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   /**
@@ -323,7 +323,7 @@ export class ExpenseService {
       });
 
       return true;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   /**

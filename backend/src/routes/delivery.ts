@@ -68,7 +68,7 @@ router.get('/', async (req: Request, res: Response) => {
           where: { id: { in: salesToUpdate } },
           data: { deliveryStatus: 'OUT' },
         });
-      });
+      }, { maxWait: 10000, timeout: 30000 });
     }
 
     // Enforce role-scoped delivery filtering for DELIVERY_STAFF users

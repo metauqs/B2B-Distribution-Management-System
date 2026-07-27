@@ -171,20 +171,22 @@ router.post('/', async (req: Request, res: Response) => {
         }
       });
 
-      for (const item of items) {
-        if (item.productId) {
-          await stockOut(tx, {
-            productId: item.productId,
-            branchId,
-            qty: Number(item.qty),
-            unit: item.unit ?? 'KG',
-            refType: 'sale',
-            refId: s.id,
-            refNo: invoiceNo,
-            date: s.date,
-          });
-        }
-      }
+      await Promise.all(
+        items
+          .filter((item: any) => item.productId)
+          .map((item: any) =>
+            stockOut(tx, {
+              productId: item.productId,
+              branchId,
+              qty: Number(item.qty),
+              unit: item.unit ?? 'KG',
+              refType: 'sale',
+              refId: s.id,
+              refNo: invoiceNo,
+              date: s.date,
+            })
+          )
+      );
 
       await recordCustomerLedgerEntry(tx, {
         clientId,
@@ -233,7 +235,7 @@ router.post('/', async (req: Request, res: Response) => {
       await updateClientCreditRating(clientId, tx);
 
       return s;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Sale', entityId: sale.id, newData: { invoiceNo, total } });
     return res.status(201).json({ success: true, data: sale });
@@ -351,8 +353,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
       await updateClientCreditRating(sale.clientId, tx);
 
-      return updatedSale;
-    });
+      return { sale: updatedSale, collection: coll };
+    }, { maxWait: 10000, timeout: 30000 });
 
     await writeAuditLog({
       userId: userId ?? undefined,
@@ -360,7 +362,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       action: 'UPDATE',
       entity: 'Sale',
       entityId: id,
-      newData: { additionalPayment: amt, newBalance: result.balance }
+      newData: { additionalPayment: amt, newBalance: result.sale.balance }
     });
 
     return res.json({ success: true, data: result });

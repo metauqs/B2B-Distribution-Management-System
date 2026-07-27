@@ -96,7 +96,7 @@ router.post('/', async (req: Request, res: Response) => {
         reason: reason ?? undefined,
         date: date ? new Date(date) : new Date(),
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     return res.status(201).json({ success: true, data: result });
   } catch (err: any) {
@@ -133,7 +133,7 @@ router.post('/adjust', async (req: Request, res: Response) => {
         adjustedQty: Number(adjustedQty),
         reason: reason?.trim() || 'Physical count adjustment',
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     return res.status(201).json({ success: true, data: result });
   } catch (err: any) {

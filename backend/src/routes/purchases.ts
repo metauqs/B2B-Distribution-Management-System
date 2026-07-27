@@ -134,20 +134,22 @@ router.post('/', async (req: Request, res: Response) => {
         include: { items: true, supplier: { select: { id: true, name: true } } },
       });
 
-      for (const item of finalItems) {
-        if (item.productId) {
-          await stockIn(tx, {
-            productId: item.productId,
-            branchId,
-            qty: item.qty,
-            rate: item.rate,
-            unit: item.unit ?? 'KG',
-            refType: 'purchase',
-            refId: p.id,
-            date: pDate,
-          });
-        }
-      }
+      await Promise.all(
+        finalItems
+          .filter((item: any) => item.productId)
+          .map((item: any) =>
+            stockIn(tx, {
+              productId: item.productId,
+              branchId,
+              qty: item.qty,
+              rate: item.rate,
+              unit: item.unit ?? 'KG',
+              refType: 'purchase',
+              refId: p.id,
+              date: pDate,
+            })
+          )
+      );
 
       const syncItems: PurchaseItemForSync[] = finalItems.map((i: any) => ({
         productId: i.productId ?? null,
@@ -158,7 +160,7 @@ router.post('/', async (req: Request, res: Response) => {
       await syncPriceListFromPurchase(tx, branchId, userId, pDate, syncItems);
 
       return p;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Purchase', entityId: purchase.id, newData: { supplierId: finalSupplierId, total } });
     return res.status(201).json({ success: true, data: purchase });
