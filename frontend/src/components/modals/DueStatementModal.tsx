@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
-import { fmtMoney } from '@/utils/formatters';
-import { loadBrandConfig, loadBrandConfigWithLogo, generateOutstandingDueStatementHTML, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
+'use client';
 
-interface OutstandingInvoice {
+import React, { useState, useEffect, useRef } from 'react';
+import { fmtMoney } from '@/utils/formatters';
+import { loadBrandConfigWithLogo, generateOutstandingDueStatementHTML, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
+
+interface InvoiceItem {
   invoiceNo: string;
   date: string;
   total: number;
@@ -13,47 +15,35 @@ interface OutstandingInvoice {
 
 interface ClientInfo {
   id: string;
-  clientId?: string | null;
   name: string;
-  phone?: string | null;
-  whatsapp?: string | null;
+  clientId?: string;
+  phone?: string;
+  whatsapp?: string;
 }
 
 interface DueStatementModalProps {
   client: ClientInfo;
-  invoices: OutstandingInvoice[];
+  invoices: InvoiceItem[];
   mode: 'view' | 'share';
   onClose: () => void;
+  onToast?: (msg: string) => void;
 }
 
-export function DueStatementModal({ client, invoices, mode, onClose }: DueStatementModalProps) {
-  const statementRef = useRef<HTMLDivElement>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [rendering, setRendering] = useState(false);
+export function DueStatementModal({ client, invoices, mode, onClose, onToast }: DueStatementModalProps) {
   const [htmlContent, setHtmlContent] = useState<string>('');
+  const [imageUrl, setImageUrl] = useState<string>('');
+  const [downloading, setDownloading] = useState(false);
+  const statementRef = useRef<HTMLDivElement>(null);
 
-  const totalInvoiceAmt = invoices.reduce((sum, inv) => sum + inv.total, 0);
-  const totalPaidAmt = invoices.reduce((sum, inv) => sum + inv.paid, 0);
-  const totalOutstanding = invoices.reduce((sum, inv) => sum + inv.balance, 0);
+  const totalInvoiceAmt = invoices.reduce((sum, item) => sum + item.total, 0);
+  const totalPaidAmt = invoices.reduce((sum, item) => sum + item.paid, 0);
+  const totalOutstanding = invoices.reduce((sum, item) => sum + item.balance, 0);
 
   const cleanPhone = client.whatsapp || client.phone || '';
   const formattedPhone = cleanPhone.replace(/[^0-9]/g, '');
 
-  const statementDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const statementTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-  // Generate the high-quality JPG image using central Full HD utility
-  const generateStatementImage = async () => {
-    if (!htmlContent) return;
-    setRendering(true);
-    try {
-      const url = await generateTemplateJpgBase64(htmlContent);
-      setImageUrl(url);
-    } catch (err) {
-      console.error('Failed to generate statement image:', err);
-    } finally {
-      setRendering(false);
-    }
+  const showToast = (msg: string) => {
+    if (onToast) onToast(msg);
   };
 
   useEffect(() => {
@@ -76,29 +66,47 @@ export function DueStatementModal({ client, invoices, mode, onClose }: DueStatem
           totalBilled: totalInvoiceAmt,
           totalPaid: totalPaidAmt,
           totalOutstanding
-        }, brand, window.location.origin);
+        }, brand, typeof window !== 'undefined' ? window.location.origin : '');
         setHtmlContent(html);
       };
       prep();
     }
   }, [mode, client, invoices, totalInvoiceAmt, totalPaidAmt, totalOutstanding]);
 
+  // Non-blocking silent background image pre-rendering
   useEffect(() => {
-    if (htmlContent && mode === 'share') {
-      generateStatementImage();
+    if (htmlContent && mode === 'share' && !imageUrl) {
+      generateTemplateJpgBase64(htmlContent)
+        .then(url => { if (url) setImageUrl(url); })
+        .catch(() => {});
     }
-  }, [htmlContent, mode]);
+  }, [htmlContent, mode, imageUrl]);
 
   const handleDownload = async () => {
-    let url = imageUrl;
-    if (!url && htmlContent) {
-      url = await generateTemplateJpgBase64(htmlContent);
+    setDownloading(true);
+    showToast('⏳ Generating image...');
+    try {
+      let url = imageUrl;
+      if (!url && htmlContent) {
+        url = await generateTemplateJpgBase64(htmlContent);
+        if (url) setImageUrl(url);
+      }
+      if (!url) {
+        showToast('❌ Unable to generate the image. Please try again.');
+        return;
+      }
+      showToast('📦 Preparing download...');
+      downloadImage(url, `Due_Statement_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.jpg`);
+      showToast('✅ Statement JPG downloaded!');
+    } catch (err) {
+      console.error(err);
+      showToast('❌ Unable to generate the image. Please try again.');
+    } finally {
+      setDownloading(false);
     }
-    if (!url) return;
-    downloadImage(url, `Due_Statement_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.jpg`);
   };
 
-  const handleSendWhatsApp = () => {
+  const handleSendWhatsApp = async () => {
     const msg = encodeURIComponent(
       `Dear ${client.name},\n\nPlease find your latest Outstanding Due Statement from HALAL VEGG SUPPLIES.\n\nYour current total outstanding balance is:\n*Rs. ${totalOutstanding.toLocaleString()}*\n\nKindly clear your pending dues at your earliest convenience.\n\nThank you.\nHALAL VEGG SUPPLIES`
     );
@@ -107,11 +115,13 @@ export function DueStatementModal({ client, invoices, mode, onClose }: DueStatem
       ? `https://wa.me/${targetNo.startsWith('92') || targetNo.startsWith('0') ? '' : '92'}${targetNo.replace(/^0/, '')}?text=${msg}`
       : `https://wa.me/?text=${msg}`;
 
-    // 1. Download statement first so they can attach it easily
-    handleDownload();
+    // Download statement first so they can attach it easily
+    await handleDownload();
 
-    // 2. Open WhatsApp in new tab
-    window.open(waUrl, '_blank');
+    // Open WhatsApp in new tab
+    if (typeof window !== 'undefined') {
+      window.open(waUrl, '_blank');
+    }
   };
 
   return (
@@ -133,7 +143,7 @@ export function DueStatementModal({ client, invoices, mode, onClose }: DueStatem
         backgroundColor: '#ffffff',
         borderRadius: '16px',
         width: '100%',
-        maxWidth: mode === 'share' ? '480px' : '750px',
+        maxWidth: mode === 'share' ? '540px' : '750px',
         maxHeight: '90vh',
         display: 'flex',
         flexDirection: 'column',
@@ -228,42 +238,30 @@ export function DueStatementModal({ client, invoices, mode, onClose }: DueStatem
           )}
 
           {mode === 'share' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              {rendering && (
-                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--muted)' }}>
-                  ⏳ Rendering high-quality statement...
-                </div>
-              )}
-
-              {!rendering && imageUrl && (
-                <div style={{
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                  width: '100%',
-                  backgroundColor: '#ffffff'
-                }}>
-                  <img 
-                    src={imageUrl} 
-                    alt="Statement Preview" 
-                    style={{ width: '100%', display: 'block', height: 'auto' }} 
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+              <div style={{
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                width: '100%',
+                backgroundColor: '#ffffff',
+                maxHeight: '60vh',
+                overflowY: 'auto'
+              }}>
+                {imageUrl ? (
+                  <img src={imageUrl} alt="Statement Preview" style={{ width: '100%', display: 'block', height: 'auto' }} />
+                ) : htmlContent ? (
+                  <iframe
+                    srcDoc={htmlContent}
+                    title="Statement Preview"
+                    style={{ width: '100%', height: '480px', border: 'none', background: '#fff' }}
                   />
-                </div>
-              )}
-
-              {/* Hidden Element used for JPG Generation */}
-              <div 
-                ref={statementRef} 
-                style={{
-                  position: 'absolute',
-                  left: '-9999px',
-                  top: '-9999px',
-                  width: '780px',
-                  background: '#ffffff',
-                  boxSizing: 'border-box',
-                }}
-                dangerouslySetInnerHTML={{ __html: htmlContent }}
-              />
+                ) : (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--muted)' }}>
+                    ⏳ Preparing statement preview...
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -279,12 +277,12 @@ export function DueStatementModal({ client, invoices, mode, onClose }: DueStatem
         }}>
           <button className="va-btn secondary small" onClick={onClose}>Close</button>
           
-          {mode === 'share' && imageUrl && (
+          {mode === 'share' && (
             <>
-              <button className="va-btn secondary small" onClick={handleDownload}>
-                ⬇ Download JPG
+              <button className="va-btn secondary small" onClick={handleDownload} disabled={downloading}>
+                {downloading ? '⏳ Generating JPG...' : '⬇ Download JPG'}
               </button>
-              <button className="va-btn small" onClick={handleSendWhatsApp}>
+              <button className="va-btn small" onClick={handleSendWhatsApp} disabled={downloading}>
                 💬 Send via WhatsApp
               </button>
             </>
