@@ -67,9 +67,18 @@ export default function DashboardPage() {
         ttl: TTL_SHORT,
         forceRefresh: !showLoadingSpinner,
       });
-      if (result) setData(result);
-    } catch {
-      setError('Network error loading dashboard');
+      if (result) {
+        setData(result);
+        setError('');
+      }
+    } catch (err: any) {
+      if (err.message?.includes('UNAUTHORIZED')) {
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        return;
+      }
+      setError(err.message || 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }

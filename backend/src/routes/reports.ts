@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import prisma from '../lib/prisma';
 
 const router = Router();
 
 // GET /api/reports/dashboard
 router.get('/dashboard', async (req: Request, res: Response) => {
+  const start = Date.now();
+  const requestId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(7);
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const bWhere = branchId ? { branchId } : {};
@@ -14,6 +17,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const tWhere = { ...bWhere, date: { gte: todayStart, lte: todayEnd }, deletedAt: null };
     const l30Start = new Date(Date.now() - 30 * 86400000);
 
+    const dbStart = Date.now();
     const [
       todaySalesAgg,
       todayPurchasesAgg,
@@ -45,12 +49,13 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       prisma.delivery.count({ where: { ...bWhere, status: { not: 'DELIVERED' } } }),
       prisma.inventory.findMany({ where: bWhere, include: { product: { select: { minStock: true } } } }),
       prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
-      prisma.sale.findMany({ where: { ...bWhere, deletedAt: null }, include: { client: { select: { name: true } } }, orderBy: { date: 'asc' }, take: 5 }),
+      prisma.sale.findMany({ where: { ...bWhere, deletedAt: null }, include: { client: { select: { name: true } } }, orderBy: { date: 'desc' }, take: 5 }),
       prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
       prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
       prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
       prisma.client.findMany({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, select: { id: true, name: true, currentBalance: true }, orderBy: { currentBalance: 'desc' }, take: 5 }),
     ]);
+    const dbDuration = Date.now() - dbStart;
 
     const todaySales = todaySalesAgg._sum.total ?? 0;
     const todayPurchases = todayPurchasesAgg._sum.total ?? 0;
@@ -82,6 +87,11 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       balance: c.currentBalance,
     }));
 
+    const duration = Date.now() - start;
+    if (duration > 1500) {
+      console.warn(`⚠️ [SLOW DASHBOARD] ReqId: ${requestId} - DB: ${dbDuration}ms | Total: ${duration}ms`);
+    }
+
     return res.json({
       success: true,
       data: {
@@ -111,8 +121,14 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       }
     });
   } catch (err: any) {
-    console.error('[GET /api/reports/dashboard]', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load dashboard report' });
+    const duration = Date.now() - start;
+    const errType = err.constructor?.name || 'Error';
+    console.error(`❌ [DASHBOARD FAIL] ReqId: ${requestId} | HTTP 500 | Total: ${duration}ms | Error Type: ${errType} | Message: ${err.message}`, {
+      code: err.code,
+      meta: err.meta,
+      stack: err.stack,
+    });
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load dashboard report', code: err.code });
   }
 });
 
