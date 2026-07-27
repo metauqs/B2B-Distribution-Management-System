@@ -1,58 +1,194 @@
 import { Router } from 'express';
 import puppeteer from 'puppeteer';
+import crypto from 'crypto';
 
 const router = Router();
 
-// ── Shared Puppeteer helper ────────────────────────────────────────────────────
+// ── Shared Singleton Puppeteer Browser Instance ────────────────────────────────
+let sharedBrowser: any = null;
 
-async function renderPage(html: string, requestedWidth: number) {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-web-security',
-      '--font-render-hinting=none',
-      '--enable-font-antialiasing',
-      '--lang=en-GB',
-    ],
-  });
-
-  const page = await browser.newPage();
-
-  // A4 Standard Width = 794px. Renders at 3.5x scale (2779px Full HD) with zero extra side margins
-  const width = Number(requestedWidth) || 794;
-  await page.setViewport({ width, height: 1123, deviceScaleFactor: 3.5 });
-
-  // Inject HTML and wait for all network (fonts, images) to settle
-  await page.setContent(html, { waitUntil: 'networkidle0' as any, timeout: 45000 });
-
-  // Wait for web fonts (Noto Nastaliq Urdu, Inter, IBM Plex Mono) and images to fully load
-  await page.evaluate(async () => {
-    const d = (globalThis as any).document;
-    if (d?.fonts?.ready) await d.fonts.ready;
-
-    // Wait for all images inside document to complete decoding
-    const images = Array.from(d.querySelectorAll('img')) as any[];
-    await Promise.all(images.map((img) => (img.complete ? Promise.resolve() : new Promise((r) => { img.onload = r; img.onerror = r; }))));
-
-    // Extra tick for HarfBuzz text shaping to finalise RTL glyph runs
-    await new Promise((r) => setTimeout(r, 600));
-  });
-
-  return { browser, page, width };
+async function getSharedBrowser() {
+  if (!sharedBrowser || !sharedBrowser.isConnected()) {
+    sharedBrowser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--font-render-hinting=none',
+        '--enable-font-antialiasing',
+        '--lang=en-GB',
+      ],
+    });
+  }
+  return sharedBrowser;
 }
 
-// ── POST /api/render/pdf ── Returns raw PDF bytes ─────────────────────────────
-router.post('/pdf', async (req, res) => {
+// ── In-Memory Hash Cache for Rendered JPGs / PNGs ──────────────────────────────
+interface CachedImage {
+  buffer: Buffer;
+  contentType: string;
+  createdAt: number;
+}
+
+const imageCache = new Map<string, CachedImage>();
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
+
+function getCachedImage(html: string, optionsKey: string): Buffer | null {
+  const hash = crypto.createHash('md5').update(`${html}_${optionsKey}`).digest('hex');
+  const entry = imageCache.get(hash);
+  if (entry && Date.now() - entry.createdAt < CACHE_TTL_MS) {
+    return entry.buffer;
+  }
+  if (entry) imageCache.delete(hash);
+  return null;
+}
+
+function setCachedImage(html: string, optionsKey: string, buffer: Buffer, contentType: string) {
+  const hash = crypto.createHash('md5').update(`${html}_${optionsKey}`).digest('hex');
+  if (imageCache.size > 100) {
+    const firstKey = imageCache.keys().next().value;
+    if (firstKey) imageCache.delete(firstKey);
+  }
+  imageCache.set(hash, { buffer, contentType, createdAt: Date.now() });
+}
+
+// ── POST /api/render/jpeg ── Direct High-Speed JPEG Screenshot ───────────────
+router.post('/jpeg', async (req, res) => {
+  const startTime = Date.now();
+  const { html, width = 794, quality = 88 } = req.body;
+  if (!html) return res.status(400).json({ success: false, error: 'HTML is required' });
+
+  const optionsKey = `jpeg_${width}_${quality}`;
+  const cachedBuffer = getCachedImage(html, optionsKey);
+  if (cachedBuffer) {
+    const durationMs = Date.now() - startTime;
+    console.log(`⚡ [JPG Render Cache HIT] ${durationMs}ms`);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('X-Render-Cache', 'HIT');
+    return res.send(cachedBuffer);
+  }
+
+  let page: any = null;
+  try {
+    const bStart = Date.now();
+    const browser = await getSharedBrowser();
+    const browserTime = Date.now() - bStart;
+
+    const pageStart = Date.now();
+    page = await browser.newPage();
+    const requestedWidth = Number(width) || 794;
+    await page.setViewport({ width: requestedWidth, height: 1123, deviceScaleFactor: 2.5 });
+
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+    // Fast font & image readiness check with hard 400ms timeout
+    await page.evaluate(async () => {
+      const d = (globalThis as any).document;
+      if (d?.fonts?.ready) {
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 400))]);
+      }
+      const images = Array.from(d.querySelectorAll('img'));
+      await Promise.race([
+        Promise.all(images.map((img: any) => (img.complete ? Promise.resolve() : new Promise((r) => { img.onload = r; img.onerror = r; })))),
+        new Promise((r) => setTimeout(r, 400)),
+      ]);
+    });
+
+    const bodyHeight = await page.evaluate(() => {
+      const d = (globalThis as any).document;
+      return d?.body?.scrollHeight || 1123;
+    });
+    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 2.5 });
+
+    const genStart = Date.now();
+    const jpegBuffer = await page.screenshot({
+      type: 'jpeg',
+      quality: Math.min(100, Math.max(50, Number(quality) || 88)),
+      fullPage: true,
+    });
+    const genTime = Date.now() - genStart;
+
+    setCachedImage(html, optionsKey, jpegBuffer, 'image/jpeg');
+
+    const totalTime = Date.now() - startTime;
+    console.log(`📸 [JPG Render MISS] Total: ${totalTime}ms (Browser: ${browserTime}ms, Page/Render: ${Date.now() - pageStart}ms, Screenshot: ${genTime}ms)`);
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('X-Render-Cache', 'MISS');
+    return res.send(jpegBuffer);
+  } catch (err: any) {
+    console.error('JPEG render failed:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Image generation failed' });
+  } finally {
+    if (page) {
+      try { await page.close(); } catch {}
+    }
+  }
+});
+
+// ── POST /api/render/png ── Direct PNG Screenshot ───────────────────────────
+router.post('/png', async (req, res) => {
+  const startTime = Date.now();
   const { html, width = 794 } = req.body;
   if (!html) return res.status(400).json({ success: false, error: 'HTML is required' });
 
-  let browser;
+  const optionsKey = `png_${width}`;
+  const cachedBuffer = getCachedImage(html, optionsKey);
+  if (cachedBuffer) {
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('X-Render-Cache', 'HIT');
+    return res.send(cachedBuffer);
+  }
+
+  let page: any = null;
   try {
-    const result = await renderPage(html, Number(width));
-    browser = result.browser;
-    const page = result.page;
+    const browser = await getSharedBrowser();
+    page = await browser.newPage();
+    const requestedWidth = Number(width) || 794;
+    await page.setViewport({ width: requestedWidth, height: 1123, deviceScaleFactor: 2.5 });
+
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+    const bodyHeight = await page.evaluate(() => {
+      const d = (globalThis as any).document;
+      return d?.body?.scrollHeight || 1123;
+    });
+    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 2.5 });
+
+    const screenshot = await page.screenshot({ type: 'png', fullPage: true });
+    setCachedImage(html, optionsKey, screenshot, 'image/png');
+
+    console.log(`📸 [PNG Render] ${Date.now() - startTime}ms`);
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('X-Render-Cache', 'MISS');
+    return res.send(screenshot);
+  } catch (err: any) {
+    console.error('PNG render failed:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  } finally {
+    if (page) {
+      try { await page.close(); } catch {}
+    }
+  }
+});
+
+// ── POST /api/render/pdf ── PDF Output Route ──────────────────────────────────
+router.post('/pdf', async (req, res) => {
+  const startTime = Date.now();
+  const { html, width = 794 } = req.body;
+  if (!html) return res.status(400).json({ success: false, error: 'HTML is required' });
+
+  let page: any = null;
+  try {
+    const browser = await getSharedBrowser();
+    page = await browser.newPage();
+    const requestedWidth = Number(width) || 794;
+    await page.setViewport({ width: requestedWidth, height: 1123, deviceScaleFactor: 2 });
+
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
     const pdfBuffer = await page.pdf({
       format: 'A4' as any,
@@ -60,43 +196,16 @@ router.post('/pdf', async (req, res) => {
       margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
     });
 
+    console.log(`📄 [PDF Render] ${Date.now() - startTime}ms`);
     res.setHeader('Content-Type', 'application/pdf');
-    res.send(pdfBuffer);
+    return res.send(pdfBuffer);
   } catch (err: any) {
     console.error('PDF render failed:', err);
-    res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
   } finally {
-    if (browser) await browser.close();
-  }
-});
-
-// ── POST /api/render/png ── Returns high-res PNG screenshot ──────────────────
-router.post('/png', async (req, res) => {
-  const { html, width = 794 } = req.body;
-  if (!html) return res.status(400).json({ success: false, error: 'HTML is required' });
-
-  let browser;
-  try {
-    const result = await renderPage(html, Number(width));
-    browser = result.browser;
-    const page = result.page;
-
-    // Resize viewport to full content height so screenshot captures the whole page
-    const bodyHeight = await page.evaluate(() => {
-      const d = (globalThis as any).document;
-      return d?.body?.scrollHeight || 1123;
-    });
-    await page.setViewport({ width: result.width, height: bodyHeight + 10, deviceScaleFactor: 3.5 });
-
-    const screenshot = await page.screenshot({ type: 'png', fullPage: true });
-
-    res.setHeader('Content-Type', 'image/png');
-    res.send(screenshot);
-  } catch (err: any) {
-    console.error('PNG render failed:', err);
-    res.status(500).json({ success: false, error: err.message });
-  } finally {
-    if (browser) await browser.close();
+    if (page) {
+      try { await page.close(); } catch {}
+    }
   }
 });
 

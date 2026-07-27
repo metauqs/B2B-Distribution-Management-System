@@ -1537,22 +1537,68 @@ export async function convertDataUrlToHighResJpg(dataUrl: string, quality = 0.98
 }
 
 /**
- * Generates a True Full HD (3600px+ width) JPG image from an invoice/document HTML string.
- * Works identically across Desktop, Android, and iOS devices.
+/**
+ * Generates a True Full HD (2000px+ width) JPG image from an invoice/document HTML string.
+ * Uses a single-step, high-speed backend JPEG renderer with fallback to html2canvas.
  */
 export async function generateTemplateJpgBase64(html: string): Promise<string> {
-  const pngOrJpgBase64 = await generateTemplateImageBase64(html);
-  if (!pngOrJpgBase64) return '';
-  return await convertDataUrlToHighResJpg(pngOrJpgBase64, 0.98);
+  if (!html || typeof window === 'undefined') return '';
+
+  const TARGET_WIDTH = 794;
+
+  // ── Step 1: Direct High-Speed Backend JPEG Screenshot ─────────────────────
+  try {
+    const res = await fetch('/api/render/jpeg', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html, width: TARGET_WIDTH, quality: 88 }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (res.ok) {
+      const blob = await res.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch (err) {
+    console.warn('Direct JPEG render fallback:', err);
+  }
+
+  // ── Step 2: Direct PNG Fallback ───────────────────────────────────────────
+  try {
+    const pngRes = await fetch('/api/render/png', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html, width: TARGET_WIDTH }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (pngRes.ok) {
+      const blob = await pngRes.blob();
+      const pngBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      if (pngBase64) return await convertDataUrlToHighResJpg(pngBase64, 0.95);
+    }
+  } catch (pngErr) {
+    console.warn('Direct PNG fallback:', pngErr);
+  }
+
+  // ── Step 3: High-Definition Client-Side html2canvas Fallback ──────────────
+  const pngBase64 = await generateTemplateImageBase64(html);
+  if (!pngBase64) return '';
+  return await convertDataUrlToHighResJpg(pngBase64, 0.95);
 }
 
 /**
- * Generates a high-quality Full HD (3600px width) image from an invoice/document HTML string.
- *
- * Pipeline (in order of preference):
- *  1. Backend Puppeteer → PDF bytes → pdfjs-dist renders page 1 to canvas @ 3× scale
- *  2. Backend Puppeteer → direct PNG screenshot (1200px width @ 3× scale)
- *  3. Client-side html2canvas fixed 1200px desktop viewport fallback @ 3× scale
+ * Generates a high-quality Full HD image from an invoice/document HTML string using html2canvas.
  */
 export async function generateTemplateImageBase64(html: string): Promise<string> {
   if (typeof window === 'undefined') return '';

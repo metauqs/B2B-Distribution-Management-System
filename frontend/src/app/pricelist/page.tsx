@@ -440,30 +440,34 @@ export default function PriceListPage() {
   };
 
   const downloadPriceListJpg = async () => {
+    showToast('⏳ Generating image...');
     try {
       const base64Img = await generateBroadcastImageBase64();
       if (!base64Img) {
-        showToast('❌ Image generation failed');
+        showToast('❌ Unable to generate the image. Please try again.');
         return;
       }
+      showToast('📦 Preparing download...');
       downloadImage(base64Img, `HalalVeggRates_${targetDate}.jpg`);
       showToast('💾 Image downloaded successfully!');
     } catch (err: any) {
-      showToast('❌ ' + err.message);
+      showToast('❌ Unable to generate the image. Please try again.');
     }
   };
 
   const shareWhatsAppStatus = async () => {
+    showToast('⏳ Generating image...');
     try {
       const base64Img = await generateBroadcastImageBase64();
       if (!base64Img) {
-        showToast('❌ Image generation failed');
+        showToast('❌ Unable to generate the image. Please try again.');
         return;
       }
+      showToast('📦 Preparing download...');
       downloadImage(base64Img, `HalalVeggRatesStatus_${targetDate}.jpg`);
       showToast('📢 Status Image downloaded! You can now upload it as your WhatsApp Status.');
     } catch (err: any) {
-      showToast('❌ ' + err.message);
+      showToast('❌ Unable to generate the image. Please try again.');
     }
   };
 

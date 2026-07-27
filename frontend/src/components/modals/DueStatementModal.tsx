@@ -89,9 +89,13 @@ export function DueStatementModal({ client, invoices, mode, onClose }: DueStatem
     }
   }, [htmlContent, mode]);
 
-  const handleDownload = () => {
-    if (!imageUrl) return;
-    downloadImage(imageUrl, `Due_Statement_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.jpg`);
+  const handleDownload = async () => {
+    let url = imageUrl;
+    if (!url && htmlContent) {
+      url = await generateTemplateJpgBase64(htmlContent);
+    }
+    if (!url) return;
+    downloadImage(url, `Due_Statement_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.jpg`);
   };
 
   const handleSendWhatsApp = () => {

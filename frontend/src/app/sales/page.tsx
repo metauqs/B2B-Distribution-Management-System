@@ -557,6 +557,7 @@ export default function SalesPage() {
   // ── Download Invoice as JPG ───────────────────────────────────────────────────────
   const downloadInvoiceJPG = async (s: Sale) => {
     setSaving(true);
+    showToast('⏳ Generating image...');
     try {
       const brand = await loadBrandConfigWithLogo();
       const html = generateInvoiceHTML(
@@ -597,15 +598,16 @@ export default function SalesPage() {
       
       const imgBase64 = await generateTemplateJpgBase64(html);
       if (!imgBase64) {
-        showToast('❌ Failed to generate image');
+        showToast('❌ Unable to generate the image. Please try again.');
         return;
       }
       
+      showToast('📦 Preparing download...');
       downloadImage(imgBase64, `Invoice_${s.invoiceNo}.jpg`);
       showToast('✅ Invoice JPG downloaded');
     } catch (err) {
       console.error(err);
-      showToast('❌ Error generating JPG');
+      showToast('❌ Unable to generate the image. Please try again.');
     } finally {
       setSaving(false);
     }
