@@ -669,7 +669,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
       </div>
       <div class="doc-info-box">
         <div class="doc-info-label">Delivery <span class="urdu-inline-dark">(ترسیل)</span></div>
-        ${inv.employeeName ? `<div class="doc-info-value">👷 ${inv.employeeName}${inv.employeePhone ? ` (${inv.employeePhone})` : ''}</div>` : '<div class="doc-info-value" style="color:#aaa;">—</div>'}
+        ${inv.employeeName ? `<div class="doc-info-value">👷 ${inv.employeeName} (03061110041)</div>` : '<div class="doc-info-value" style="color:#aaa;">—</div>'}
         ${inv.deliveryDate ? `<div class="doc-info-value" style="font-size:12px;">📅 ${new Date(inv.deliveryDate).toLocaleDateString('en-GB')}${inv.deliveryTime ? ` · ${inv.deliveryTime}` : ''}</div>` : ''}
         <div class="doc-info-label" style="margin-top:8px;">Payment Mode <span class="urdu-inline-dark">(ادائیگی)</span></div>
         <div class="doc-info-value">${inv.paymentMode}</div>
