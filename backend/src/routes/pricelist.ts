@@ -36,7 +36,22 @@ router.get('/active', async (req: Request, res: Response) => {
       },
       include: {
         items: {
-          ...(purchasedProductIds.length > 0 ? { where: { productId: { in: purchasedProductIds } } } : {}),
+          ...(purchasedProductIds.length > 0 ? {
+            where: {
+              OR: [
+                { productId: { in: purchasedProductIds } },
+                { productId: null, buyRate: { gt: 0 } },
+                { sellRate: { gt: 0 } },
+              ]
+            }
+          } : {
+            where: {
+              OR: [
+                { buyRate: { gt: 0 } },
+                { sellRate: { gt: 0 } },
+              ]
+            }
+          }),
           include: {
             product: {
               select: { id: true, name: true, urduName: true, category: true }
@@ -250,11 +265,22 @@ router.get('/', async (req: Request, res: Response) => {
         },
         include: {
           items: {
-            where: {
-              productId: {
-                in: purchasedProductIds
+            ...(purchasedProductIds.length > 0 ? {
+              where: {
+                OR: [
+                  { productId: { in: purchasedProductIds } },
+                  { productId: null, buyRate: { gt: 0 } },
+                  { sellRate: { gt: 0 } },
+                ]
               }
-            },
+            } : {
+              where: {
+                OR: [
+                  { buyRate: { gt: 0 } },
+                  { sellRate: { gt: 0 } },
+                ]
+              }
+            }),
             include: {
               product: {
                 select: { id: true, name: true, urduName: true, category: true, availability: true }
