@@ -1003,25 +1003,61 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
   const col1 = data.items.slice(0, half);
   const col2 = data.items.slice(half);
 
+  const getProductEmoji = (name: string): string => {
+    const n = (name || '').toLowerCase();
+    if (n.includes('tomato')) return '🍅';
+    if (n.includes('potato') || n.includes('aloo')) return '🥔';
+    if (n.includes('onion') || n.includes('piaz')) return '🧅';
+    if (n.includes('garlic') || n.includes('lehsun')) return '🧄';
+    if (n.includes('ginger') || n.includes('adrak')) return '🫚';
+    if (n.includes('chilli') || n.includes('mirch')) return '🌶️';
+    if (n.includes('coriander') || n.includes('dhaniya')) return '🌿';
+    if (n.includes('cabbage') || n.includes('gobhi')) return '🥬';
+    if (n.includes('cauliflower')) return '🥦';
+    if (n.includes('carrot') || n.includes('gajar')) return '🥕';
+    if (n.includes('peas') || n.includes('matar')) return '🫛';
+    if (n.includes('spinach') || n.includes('palak')) return '🍃';
+    if (n.includes('cucumber') || n.includes('kheera')) return '🥒';
+    if (n.includes('brinjal') || n.includes('baingan')) return '🍆';
+    if (n.includes('lemon') || n.includes('limo')) return '🍋';
+    if (n.includes('apple') || n.includes('seeb')) return '🍎';
+    if (n.includes('banana') || n.includes('kela')) return '🍌';
+    if (n.includes('mango') || n.includes('aam')) return '🥭';
+    if (n.includes('orange') || n.includes('malta')) return '🍊';
+    if (n.includes('grapes') || n.includes('angoor')) return '🍇';
+    if (n.includes('watermelon') || n.includes('tarbooz')) return '🍉';
+    if (n.includes('melon') || n.includes('kharbooza')) return '🍈';
+    if (n.includes('peach') || n.includes('aaroo')) return '🍑';
+    if (n.includes('capsicum') || n.includes('shimla')) return '🫑';
+    if (n.includes('corn') || n.includes('makai')) return '🌽';
+    if (n.includes('mushroom')) return '🍄';
+    return '🥬';
+  };
+
   const buildPriceRows = (items: typeof data.items, startIdx: number) =>
-    items.map((item, i) => `
-      <tr>
-        <td class="center muted" style="font-size:10px;padding:4px 6px;">${startIdx + i + 1}</td>
-        <td style="font-size:10px;padding:4px 6px;"><strong>${item.itemName}</strong></td>
-        <td class="urdu" style="font-size:11px;padding:4px 6px;">${item.urduName || '—'}</td>
-        <td class="center muted" style="font-size:10px;padding:4px 6px;">${item.unit}</td>
-        <td class="right mono" style="font-size:11px;padding:4px 6px;color:${brand.primaryColor};font-weight:700;">Rs ${item.sellRate.toLocaleString()}</td>
-      </tr>
-    `).join('');
+    items.map((item, i) => {
+      const emoji = getProductEmoji(item.itemName);
+      return `
+        <tr>
+          <td class="center muted" style="font-size:11px;padding:6px 6px;vertical-align:middle;">${startIdx + i + 1}</td>
+          <td style="padding:6px 6px;vertical-align:middle;">
+            <span style="font-size:16px;margin-right:6px;vertical-align:middle;">${emoji}</span>
+            <span class="urdu-inline-dark" style="font-size:15px;font-weight:700;color:#000000;vertical-align:middle;margin-right:4px;">${item.urduName || item.itemName}</span>
+            <span style="font-size:11px;color:#555555;font-weight:500;vertical-align:middle;">(${item.itemName})</span>
+          </td>
+          <td class="center muted" style="font-size:11px;padding:6px 6px;vertical-align:middle;">${item.unit}</td>
+          <td class="right mono" style="font-size:13px;padding:6px 6px;color:#000000;font-weight:700;vertical-align:middle;">Rs ${item.sellRate.toLocaleString()}</td>
+        </tr>
+      `;
+    }).join('');
 
   const priceColHeader = `
     <thead>
       <tr>
-        <th class="center" style="font-size:9px;padding:5px 6px;">#</th>
-        <th style="font-size:9px;padding:5px 6px;">Product <span class="urdu-inline">(پروڈکٹ)</span></th>
-        <th class="right" style="font-size:9px;padding:5px 6px;"><span class="urdu-inline" style="color:#FFF;">اردو نام</span></th>
-        <th class="center" style="font-size:9px;padding:5px 6px;">Unit</th>
-        <th class="right" style="font-size:9px;padding:5px 6px;">Rate (Rs)</th>
+        <th class="center" style="font-size:10px;padding:6px 6px;width:30px;">#</th>
+        <th style="font-size:10px;padding:6px 6px;">Product / پروڈکٹ</th>
+        <th class="center" style="font-size:10px;padding:6px 6px;width:60px;">Unit</th>
+        <th class="right" style="font-size:10px;padding:6px 6px;width:90px;">Rate (Rs)</th>
       </tr>
     </thead>
   `;
@@ -1032,7 +1068,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
         <table class="doc-table" style="width:100%;">
           ${priceColHeader}
           <tbody>
-            ${col1.length > 0 ? buildPriceRows(col1, 0) : '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:20px;">No rates available</td></tr>'}
+            ${col1.length > 0 ? buildPriceRows(col1, 0) : '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:20px;">No rates available</td></tr>'}
           </tbody>
         </table>
       </div>
