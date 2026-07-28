@@ -109,7 +109,7 @@ function buildDocStyles(b: BrandConfig): string {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      font-family: 'Inter', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Segoe UI', system-ui, sans-serif;
       font-size: 13px;
       color: #1A1A1A;
       background: #FFFFFF;
@@ -249,8 +249,8 @@ function buildDocStyles(b: BrandConfig): string {
     }
     .doc-kpi-urdu {
       font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 11px;
-      color: #5A7A58;
+      font-size: 15px;
+      color: #000000;
       direction: rtl;
       unicode-bidi: isolate;
       display: block;
@@ -259,12 +259,12 @@ function buildDocStyles(b: BrandConfig): string {
       line-height: 1.3;
       letter-spacing: normal !important;
       text-transform: none !important;
-      font-weight: 500;
+      font-weight: 700;
     }
     .urdu-inline {
       font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.9);
+      font-size: 13px;
+      color: #FFFFFF;
       margin-left: 4px;
       direction: rtl;
       unicode-bidi: isolate;
@@ -273,12 +273,12 @@ function buildDocStyles(b: BrandConfig): string {
       line-height: 1.3;
       letter-spacing: normal !important;
       text-transform: none !important;
-      font-weight: 500;
+      font-weight: 700;
     }
     .urdu-inline-dark {
       font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 11px;
-      color: #5A7A58;
+      font-size: 14px;
+      color: #000000;
       margin-left: 4px;
       direction: rtl;
       unicode-bidi: isolate;
@@ -287,12 +287,12 @@ function buildDocStyles(b: BrandConfig): string {
       line-height: 1.3;
       letter-spacing: normal !important;
       text-transform: none !important;
-      font-weight: 500;
+      font-weight: 700;
     }
     .urdu-inline-val {
       font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 11px;
-      color: #5A7A58;
+      font-size: 14px;
+      color: #000000;
       margin-left: 4px;
       direction: rtl;
       unicode-bidi: isolate;
@@ -301,7 +301,7 @@ function buildDocStyles(b: BrandConfig): string {
       line-height: 1.3;
       letter-spacing: normal !important;
       text-transform: none !important;
-      font-weight: 500;
+      font-weight: 700;
     }
     .doc-kpi-value {
       font-family: 'IBM Plex Mono', monospace;
@@ -353,14 +353,14 @@ function buildDocStyles(b: BrandConfig): string {
       direction: rtl;
       unicode-bidi: isolate;
       text-align: right;
-      font-size: 12px;
-      color: #3D5C3B;
+      font-size: 15px;
+      color: #000000;
       line-height: 1.4;
-      padding-top: 5px;
-      padding-bottom: 5px;
+      padding-top: 4px;
+      padding-bottom: 4px;
       letter-spacing: normal !important;
       text-transform: none !important;
-      font-weight: 500;
+      font-weight: 700;
     }
     .doc-table tbody td.debit  { color: #B5533C; font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
     .doc-table tbody td.credit { color: #2D6A4F; font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
@@ -392,15 +392,15 @@ function buildDocStyles(b: BrandConfig): string {
     .doc-summary-row .label .urdu-sub {
       display: block;
       font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 11px;
-      color: #7A9C78;
+      font-size: 14px;
+      color: #000000;
       direction: rtl;
       unicode-bidi: isolate;
       margin-top: 2px;
       line-height: 1.3;
       letter-spacing: normal !important;
       text-transform: none !important;
-      font-weight: 500;
+      font-weight: 700;
     }
     .doc-summary-row .val {
       font-family: 'IBM Plex Mono', monospace;
@@ -1314,11 +1314,11 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
     <div class="doc-summary-wrap">
       <div class="doc-summary-box">
         <div class="doc-summary-row">
-          <span class="label">Total Billed / کل بل</span>
+          <span class="label">Total Billed / <span class="urdu-inline-dark" style="color: #000000; font-size: 14px; font-weight: 700; margin-left: 5px;">کل بل</span></span>
           <span class="val">Rs ${data.totalBilled.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row paid-row">
-          <span class="label">Total Paid / کل ادا شدہ</span>
+          <span class="label">Total Paid / <span class="urdu-inline-dark" style="color: #000000; font-size: 14px; font-weight: 700; margin-left: 5px;">کل ادا شدہ</span></span>
           <span class="val">- Rs ${data.totalPaid.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row grand-row">
