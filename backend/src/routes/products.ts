@@ -37,14 +37,19 @@ router.post('/', async (req: Request, res: Response) => {
   const { name, urduName, category, defaultUnit, availability, minStock, sortOrder } = req.body;
   if (!name?.trim()) return res.status(400).json({ success: false, error: 'Name required' });
 
+  // Normalize enum values — accept both 'vegetable' and 'VEGETABLE'
+  const normalizedCategory = (category ?? 'VEGETABLE').toString().toUpperCase();
+  const normalizedUnit = (defaultUnit ?? 'KG').toString().toUpperCase();
+  const normalizedAvail = (availability ?? 'AVAILABLE').toString().toUpperCase();
+
   try {
     const product = await prisma.product.create({
       data: {
         name: name.trim(),
         urduName: urduName?.trim() || undefined,
-        category: category ?? 'vegetable',
-        defaultUnit: defaultUnit ?? 'KG',
-        availability: availability ?? 'AVAILABLE',
+        category: normalizedCategory as any,
+        defaultUnit: normalizedUnit as any,
+        availability: normalizedAvail as any,
         minStock: minStock ?? 0,
         sortOrder: sortOrder ?? 0,
         isActive: true,
@@ -52,37 +57,46 @@ router.post('/', async (req: Request, res: Response) => {
     });
     return res.status(201).json({ success: true, data: product });
   } catch (e: any) {
-    if (e.code === 'P2002') return res.status(409).json({ success: false, error: 'Product already exists' });
-    return res.status(500).json({ success: false, error: 'Failed to create product' });
+    console.error('Error creating product:', e);
+    if (e.code === 'P2002') return res.status(409).json({ success: false, error: 'A product with this name already exists' });
+    return res.status(500).json({ success: false, error: e.message ?? 'Failed to create product' });
   }
 });
 
-// PUT /api/products/:id (Update product)
-router.put('/:id', async (req: Request, res: Response) => {
+// PUT /api/products/:id (Update product) — also accepts PATCH
+const updateProduct = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { name, urduName, category, defaultUnit, availability, minStock, sortOrder, isActive } = req.body;
-  if (!name?.trim()) return res.status(400).json({ success: false, error: 'Name required' });
+  if (name !== undefined && !name?.trim()) return res.status(400).json({ success: false, error: 'Name required' });
+
+  // Normalize enum values
+  const normalizedCategory = category ? category.toString().toUpperCase() : undefined;
+  const normalizedUnit = defaultUnit ? defaultUnit.toString().toUpperCase() : undefined;
+  const normalizedAvail = availability ? availability.toString().toUpperCase() : undefined;
 
   try {
     const product = await prisma.product.update({
       where: { id },
       data: {
-        name: name.trim(),
-        urduName: urduName?.trim() || null,
-        category: category ?? undefined,
-        defaultUnit: defaultUnit ?? undefined,
-        availability: availability ?? undefined,
-        minStock: minStock !== undefined ? Number(minStock) : undefined,
-        sortOrder: sortOrder !== undefined ? Number(sortOrder) : undefined,
-        isActive: isActive !== undefined ? Boolean(isActive) : undefined,
+        ...(name !== undefined && { name: name.trim() }),
+        ...(urduName !== undefined && { urduName: urduName?.trim() || null }),
+        ...(normalizedCategory && { category: normalizedCategory as any }),
+        ...(normalizedUnit && { defaultUnit: normalizedUnit as any }),
+        ...(normalizedAvail && { availability: normalizedAvail as any }),
+        ...(minStock !== undefined && { minStock: Number(minStock) }),
+        ...(sortOrder !== undefined && { sortOrder: Number(sortOrder) }),
+        ...(isActive !== undefined && { isActive: Boolean(isActive) }),
       },
     });
     return res.json({ success: true, data: product });
   } catch (e: any) {
     console.error('Error updating product:', e);
-    return res.status(500).json({ success: false, error: 'Failed to update product' });
+    return res.status(500).json({ success: false, error: e.message ?? 'Failed to update product' });
   }
-});
+};
+
+router.put('/:id', updateProduct);
+router.patch('/:id', updateProduct);
 
 // DELETE /api/products/:id (Deactivate / Delete product)
 router.delete('/:id', async (req: Request, res: Response) => {
