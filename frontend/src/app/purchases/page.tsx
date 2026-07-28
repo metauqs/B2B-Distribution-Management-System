@@ -17,9 +17,58 @@ interface Purchase {
   items?: PurchaseItem[];
 }
 interface Supplier { id: string; name: string; currentBalance: number; }
-interface Product  { id: string; name: string; }
+interface Product  { id: string; name: string; urduName?: string | null; defaultUnit?: string; category?: string; }
 
 const blankItem = (): PurchaseItem => ({ itemName: '', qty: 1, unit: 'KG', rate: 0, amount: 0 });
+
+const UNITS = ['KG','G','DOZEN','PIECE','BOX','CRATE'];
+
+function getProductEmoji(name: string): string {
+  const n = (name || '').toLowerCase();
+  if (n.includes('tomato')) return '🍅';
+  if (n.includes('potato') || n.includes('aloo')) return '🥔';
+  if (n.includes('onion') || n.includes('piaz')) return '🧅';
+  if (n.includes('garlic') || n.includes('lehsun')) return '🧄';
+  if (n.includes('ginger') || n.includes('adrak')) return '🫚';
+  if (n.includes('chilli') || n.includes('mirch')) return '🌶️';
+  if (n.includes('coriander') || n.includes('dhaniya') || n.includes('pudina') || n.includes('mint')) return '🌿';
+  if (n.includes('cabbage') || n.includes('gobhi')) return '🥬';
+  if (n.includes('cauliflower')) return '🥦';
+  if (n.includes('carrot') || n.includes('gajar')) return '🥕';
+  if (n.includes('peas') || n.includes('matar')) return '🫛';
+  if (n.includes('spinach') || n.includes('palak')) return '🍃';
+  if (n.includes('cucumber') || n.includes('kheera')) return '🥒';
+  if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) return '🍆';
+  if (n.includes('lemon') || n.includes('limo')) return '🍋';
+  if (n.includes('apple') || n.includes('seeb')) return '🍎';
+  if (n.includes('banana') || n.includes('kela')) return '🍌';
+  if (n.includes('mango') || n.includes('aam')) return '🥭';
+  if (n.includes('orange') || n.includes('malta') || n.includes('kinnow') || n.includes('mosambi')) return '🍊';
+  if (n.includes('grapes') || n.includes('angoor')) return '🍇';
+  if (n.includes('watermelon') || n.includes('tarbooz')) return '🍉';
+  if (n.includes('melon') || n.includes('kharbooza') || n.includes('sarda') || n.includes('garma')) return '🍈';
+  if (n.includes('peach') || n.includes('aaroo')) return '🍑';
+  if (n.includes('capsicum') || n.includes('shimla')) return '🫑';
+  if (n.includes('corn') || n.includes('makai')) return '🌽';
+  if (n.includes('mushroom')) return '🍄';
+  if (n.includes('pear') || n.includes('nashpati')) return '🍐';
+  if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) return '🍑';
+  if (n.includes('beans') || n.includes('phaliyan') || n.includes('phali') || n.includes('okra') || n.includes('bhindi') || n.includes('ladyfinger')) return '🫛';
+  if (n.includes('karela') || n.includes('bitter')) return '🥒';
+  if (n.includes('lauki') || n.includes('ghia') || n.includes('tinda') || n.includes('gourd')) return '🥒';
+  if (n.includes('pumpkin') || n.includes('kaddu')) return '🎃';
+  if (n.includes('radish') || n.includes('mooli')) return '🥕';
+  if (n.includes('turnip') || n.includes('shalgam')) return '🧅';
+  if (n.includes('sweet potato') || n.includes('shakarkandi')) return '🍠';
+  if (n.includes('apricot') || n.includes('khubani')) return '🍑';
+  if (n.includes('pomegranate') || n.includes('anar')) return '🍎';
+  if (n.includes('guava') || n.includes('amrood')) return '🍏';
+  if (n.includes('strawberry')) return '🍓';
+  if (n.includes('cherry')) return '🍒';
+  if (n.includes('pineapple')) return '🍍';
+  if (n.includes('coconut') || n.includes('nariyal')) return '🥥';
+  return '🥬';
+}
 
 function Badge({ status, small, isMandi }: { status: string; small?: boolean; isMandi?: boolean }) {
   if (isMandi) {
@@ -51,7 +100,8 @@ export default function PurchasesPage() {
   const [source,     setSource]     = useState<'SUPPLIER' | 'MANDI'>('SUPPLIER');
   const [supplierId, setSupplierId] = useState('');
   const [date,       setDate]       = useState(() => todayInputDate());
-  const [items,      setItems]      = useState<PurchaseItem[]>([blankItem()]);
+  const [items,      setItems]      = useState<PurchaseItem[]>([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
   const [paid,         setPaid]         = useState(0);
   const [transportCost, setTransportCost] = useState(0);
   const [notes,        setNotes]        = useState('');
@@ -121,17 +171,28 @@ export default function PurchasesPage() {
   const updateItem = (index: number, key: keyof PurchaseItem, val: string | number) => {
     setItems(prev => prev.map((item, i) => {
       if (i !== index) return item;
-      
-      let productId = item.productId;
-      if (key === 'itemName') {
-        const prod = products.find(p => p.name === val);
-        productId = prod ? prod.id : undefined;
-      }
-      
-      const updated = { ...item, [key]: val, productId };
+      const updated = { ...item, [key]: val };
       updated.amount = updated.qty * updated.rate;
       return updated;
     }));
+  };
+
+  // Toggle a product in/out of current purchase catalog
+  const toggleProduct = (prod: Product) => {
+    setItems(prev => {
+      const exists = prev.findIndex(it => it.productId === prod.id);
+      if (exists >= 0) {
+        return prev.filter((_, i) => i !== exists);
+      }
+      return [...prev, {
+        itemName: prod.name,
+        productId: prod.id,
+        qty: 1,
+        unit: prod.defaultUnit || 'KG',
+        rate: 0,
+        amount: 0,
+      }];
+    });
   };
 
   const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
@@ -181,7 +242,7 @@ export default function PurchasesPage() {
       unit: i.unit,
       rate: i.rate,
       amount: i.qty * i.rate
-    })) : [blankItem()]);
+    })) : []);
     setPaid(p.paid);
     setTransportCost(p.transportCost);
     setNotes(p.notes ?? '');
@@ -500,6 +561,22 @@ export default function PurchasesPage() {
     document.body.removeChild(link);
   };
 
+  // ─── Catalog filtered products ───────────────────────────────────────────
+  const catalogFiltered = products.filter(p => {
+    if (!catalogSearch) return true;
+    const s = catalogSearch.toLowerCase();
+    return p.name.toLowerCase().includes(s) || (p.urduName || '').toLowerCase().includes(s);
+  });
+
+  // Group by category
+  const catOrder = ['VEGETABLE', 'FRUIT', 'OTHER'];
+  const grouped = catOrder.reduce((acc, cat) => {
+    const list = catalogFiltered.filter(p => (p.category || 'OTHER').toUpperCase() === cat);
+    if (list.length) acc[cat] = list;
+    return acc;
+  }, {} as Record<string, Product[]>);
+  const catLabels: Record<string, string> = { VEGETABLE: '🥦 Vegetables / سبزیاں', FRUIT: '🍎 Fruits / پھل', OTHER: '📦 Other / دیگر' };
+
   return (
     <DashboardLayout>
       {toast && <div className="va-toast">{toast}</div>}
@@ -514,120 +591,203 @@ export default function PurchasesPage() {
 
         {formOpen && (
           <form onSubmit={handleSubmit}>
-            <div className="va-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            {/* ── Header Fields ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 16 }}>
               <div className="va-field">
                 <label>Purchase Source *</label>
-                <div style={{ display: 'flex', gap: 20, marginTop: 8 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                    <input type="radio" checked={source === 'SUPPLIER'} onChange={() => { setSource('SUPPLIER'); setSupplierId(''); }} />
-                    Supplier
+                <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: source === 'SUPPLIER' ? 700 : 400 }}>
+                    <input type="radio" checked={source === 'SUPPLIER'} onChange={() => { setSource('SUPPLIER'); setSupplierId(''); }} /> Supplier
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                    <input type="radio" checked={source === 'MANDI'} onChange={() => { setSource('MANDI'); setSupplierId('mandi'); }} />
-                    Mandi
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: source === 'MANDI' ? 700 : 400 }}>
+                    <input type="radio" checked={source === 'MANDI'} onChange={() => { setSource('MANDI'); setSupplierId('mandi'); }} /> Mandi
                   </label>
                 </div>
               </div>
-
               {source === 'SUPPLIER' && (
                 <div className="va-field">
                   <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     Supplier *
-                    <button type="button" className="va-btn link small p-0" style={{ fontSize: 11 }} onClick={() => setShowAddSupplierModal(true)}>+ New Supplier</button>
+                    <button type="button" className="va-btn link small p-0" style={{ fontSize: 11 }} onClick={() => setShowAddSupplierModal(true)}>+ New</button>
                   </label>
                   <select value={supplierId} onChange={e => setSupplierId(e.target.value)} required={source === 'SUPPLIER'}>
-                    <option value="">— Select supplier —</option>
+                    <option value="">— Select —</option>
                     {suppliers.filter(s => s.name !== 'Mandi').map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
               )}
-
               <div className="va-field">
                 <label>Purchase Date *</label>
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} required style={{ background: 'var(--paper)', color: 'var(--ink)' }} />
               </div>
             </div>
 
-            <div className="card-divider" style={{ margin: '16px 0' }} />
+            <div className="card-divider" style={{ margin: '4px 0 16px' }} />
 
-            {items.map((item, i) => (
-              <div key={i} className="va-item-row">
-                <div className="va-field" style={{ flex: 3 }}>
-                  {i === 0 && <label>Item</label>}
-                  <ProductAutocomplete
-                    value={item.itemName}
-                    onChange={val => updateItem(i, 'itemName', val)}
-                    onSelect={selectedProd => {
-                      const selName = selectedProd.name || selectedProd.itemName || '';
-                      const selId = selectedProd.id || selectedProd.productId || undefined;
-                      const selUnit = selectedProd.defaultUnit || selectedProd.unit;
-                      setItems(prev => prev.map((it, idx) => {
-                        if (idx !== i) return it;
-                        const updated = {
-                          ...it,
-                          itemName: selName,
-                          productId: selId,
-                          unit: selUnit || it.unit,
-                        };
-                        updated.amount = updated.qty * updated.rate;
-                        return updated;
-                      }));
-                    }}
-                    products={products}
-                    placeholder="Product name"
-                    required
-                  />
+            {/* ── Product Catalog ── */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--forest)' }}>
+                  🛒 Select Products &amp; Enter Rates
+                  {items.length > 0 && <span style={{ marginLeft: 10, background: 'var(--forest)', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{items.length} selected</span>}
                 </div>
-                <div className="va-field" style={{ flex: 1 }}>
-                  {i === 0 && <label>Qty</label>}
-                  <input type="number" value={item.qty} min="0.01" step="0.01" onChange={e => updateItem(i, 'qty', +e.target.value)} required />
-                </div>
-                <div className="va-field" style={{ flex: 1 }}>
-                  {i === 0 && <label>Unit</label>}
-                  <select value={item.unit} onChange={e => updateItem(i, 'unit', e.target.value)}>
-                    {['KG','G','DOZEN','PIECE','BOX','CRATE'].map(u => <option key={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div className="va-field" style={{ flex: 1 }}>
-                  {i === 0 && <label>Buy Rate (Rs)</label>}
-                  <input type="number" value={item.rate} min="0.01" step="0.01" onChange={e => updateItem(i, 'rate', +e.target.value)} required />
-                </div>
-                <div className="va-field" style={{ flex: 1 }}>
-                  {i === 0 && <label>Amount</label>}
-                  <input readOnly value={fmtMoney(item.amount)} className="mono" style={{ background: 'var(--line-soft)' }} />
-                </div>
-                {items.length > 1 && (
-                  <button type="button" onClick={() => setItems(p => p.filter((_, j) => j !== i))}
-                    style={{ alignSelf: 'flex-end', padding: '6px 10px', background: 'none', border: '1px solid var(--line)', borderRadius: 4, cursor: 'pointer', color: 'var(--danger)', marginBottom: 6 }}>✕</button>
-                )}
+                <input
+                  value={catalogSearch}
+                  onChange={e => setCatalogSearch(e.target.value)}
+                  placeholder="🔍 Search product..."
+                  style={{ padding: '6px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--paper)', color: 'var(--ink)', fontSize: 13, width: 200 }}
+                />
               </div>
-            ))}
 
-            <button type="button" className="va-btn secondary small" onClick={() => setItems(p => [...p, blankItem()])} style={{ marginBottom: 12 }}>+ Add Item</button>
+              {Object.entries(grouped).map(([cat, prods]) => (
+                <div key={cat} style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid var(--line-soft)' }}>
+                    {catLabels[cat] || cat}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))', gap: 8 }}>
+                    {prods.map(prod => {
+                      const itemIdx = items.findIndex(it => it.productId === prod.id);
+                      const isSelected = itemIdx >= 0;
+                      const item = isSelected ? items[itemIdx] : null;
+                      return (
+                        <div
+                          key={prod.id}
+                          style={{
+                            border: isSelected ? '2px solid var(--forest)' : '1.5px solid var(--line)',
+                            borderRadius: 10,
+                            background: isSelected ? 'rgba(31,61,43,0.06)' : 'var(--paper)',
+                            padding: '10px 10px 8px',
+                            transition: 'all 0.15s ease',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {/* Product header — click to toggle */}
+                          <div
+                            onClick={() => toggleProduct(prod)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: isSelected ? 10 : 0 }}
+                          >
+                            <span style={{ fontSize: 22, lineHeight: 1 }}>{getProductEmoji(prod.name)}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {prod.urduName && (
+                                <div style={{
+                                  fontFamily: "'Jameel Khushkhat L','Noto Nastaliq Urdu',serif",
+                                  fontSize: 15,
+                                  fontWeight: 700,
+                                  color: 'var(--ink)',
+                                  lineHeight: 1.3,
+                                  direction: 'rtl',
+                                  textAlign: 'right',
+                                }}>{prod.urduName}</div>
+                              )}
+                              <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500, lineHeight: 1.2 }}>{prod.name}</div>
+                            </div>
+                            <div style={{
+                              width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                              border: isSelected ? 'none' : '2px solid var(--line)',
+                              background: isSelected ? 'var(--forest)' : 'transparent',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: '#fff', fontSize: 13, fontWeight: 700,
+                              transition: 'all 0.15s'
+                            }}>
+                              {isSelected ? '✓' : ''}
+                            </div>
+                          </div>
 
-            <div className="va-form-row">
-              <div className="va-field"><label>Transport Cost (Rs)</label><input type="number" value={transportCost} min="0" onChange={e => setTransportCost(+e.target.value)} /></div>
-              <div className="va-field">
-                <label>Amount Paid (Rs)</label>
-                <input type="number" value={paid} min="0" onChange={e => setPaid(+e.target.value)} />
-                {source !== 'MANDI' && paid > total && (
-                  <span style={{ color: '#B5533C', fontSize: 11, fontWeight: 700, marginTop: 4, display: 'block' }}>
-                    ⚠️ Amount paid (Rs {paid.toLocaleString()}) exceeds total (Rs {total.toLocaleString()})
-                  </span>
-                )}
-              </div>
-              <div className="va-field"><label>Notes</label><input value={notes} onChange={e => setNotes(e.target.value)} /></div>
+                          {/* Qty / Unit / Rate fields — shown when selected */}
+                          {isSelected && item && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }} onClick={e => e.stopPropagation()}>
+                              <div>
+                                <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>QTY</div>
+                                <input
+                                  type="number"
+                                  value={item.qty}
+                                  min="0.01"
+                                  step="0.01"
+                                  onChange={e => updateItem(itemIdx, 'qty', +e.target.value)}
+                                  onClick={e => (e.target as HTMLInputElement).select()}
+                                  style={{ width: '100%', padding: '5px 6px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', color: 'var(--ink)', fontSize: 13, fontWeight: 700 }}
+                                />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>UNIT</div>
+                                <select
+                                  value={item.unit}
+                                  onChange={e => updateItem(itemIdx, 'unit', e.target.value)}
+                                  style={{ width: '100%', padding: '5px 4px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', color: 'var(--ink)', fontSize: 12 }}
+                                >
+                                  {UNITS.map(u => <option key={u}>{u}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>RATE (Rs)</div>
+                                <input
+                                  type="number"
+                                  value={item.rate || ''}
+                                  min="0"
+                                  step="0.01"
+                                  placeholder="0"
+                                  onChange={e => updateItem(itemIdx, 'rate', +e.target.value)}
+                                  onClick={e => (e.target as HTMLInputElement).select()}
+                                  style={{ width: '100%', padding: '5px 6px', border: '1.5px solid var(--mustard)', borderRadius: 6, background: 'var(--paper)', color: 'var(--forest)', fontSize: 13, fontWeight: 700 }}
+                                />
+                              </div>
+                              {item.rate > 0 && (
+                                <div style={{ gridColumn: '1 / -1', textAlign: 'right', fontSize: 12, color: 'var(--forest)', fontWeight: 700, marginTop: 2 }}>
+                                  = Rs {(item.qty * item.rate).toLocaleString()}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
 
-            <div style={{ background: 'var(--line-soft)', padding: '12px 14px', borderRadius: 6, marginBottom: 14, display: 'flex', gap: 24, fontSize: 13, fontWeight: 600 }}>
-              <span>Subtotal: <span className="mono">{fmtMoney(subtotal)}</span></span>
-              {transportCost > 0 && <span>Transport: <span className="mono">+{fmtMoney(transportCost)}</span></span>}
-              <span>Total: <span className="mono" style={{ color: 'var(--forest)', fontSize: 15 }}>{fmtMoney(total)}</span></span>
-              <span>Balance: <span className="mono" style={{ color: balance > 0 ? 'var(--clay)' : 'var(--ok)' }}>{fmtMoney(balance)}</span></span>
-            </div>
+            {/* ── Totals & Extra Fields ── */}
+            {items.length > 0 && (
+              <>
+                <div className="card-divider" style={{ margin: '0 0 14px' }} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
+                  <div className="va-field">
+                    <label>Transport Cost (Rs)</label>
+                    <input type="number" value={transportCost} min="0" onChange={e => setTransportCost(+e.target.value)} />
+                  </div>
+                  <div className="va-field">
+                    <label>Amount Paid (Rs)</label>
+                    <input type="number" value={paid} min="0" onChange={e => setPaid(+e.target.value)} />
+                    {source !== 'MANDI' && paid > total && (
+                      <span style={{ color: '#B5533C', fontSize: 11, fontWeight: 700, marginTop: 4, display: 'block' }}>
+                        ⚠️ Paid exceeds total
+                      </span>
+                    )}
+                  </div>
+                  <div className="va-field">
+                    <label>Notes</label>
+                    <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional note" />
+                  </div>
+                </div>
 
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="submit" className="va-btn" disabled={saving}>{saving ? 'Saving…' : purchaseId ? '✓ Update Purchase' : '✓ Save Purchase'}</button>
+                <div style={{
+                  background: 'var(--forest)', color: '#fff', padding: '12px 16px',
+                  borderRadius: 10, marginBottom: 14,
+                  display: 'flex', flexWrap: 'wrap', gap: 20, fontSize: 13, fontWeight: 600
+                }}>
+                  <span>Items: <strong>{items.length}</strong></span>
+                  <span>Subtotal: <span className="mono">{fmtMoney(subtotal)}</span></span>
+                  {transportCost > 0 && <span>Transport: <span className="mono">+{fmtMoney(transportCost)}</span></span>}
+                  <span style={{ fontSize: 16 }}>Total: <strong className="mono">{fmtMoney(total)}</strong></span>
+                  <span style={{ color: balance > 0 ? '#FFD580' : '#A7F3D0' }}>Balance: <strong className="mono">{fmtMoney(balance)}</strong></span>
+                </div>
+              </>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button type="submit" className="va-btn" disabled={saving || items.length === 0}>
+                {saving ? 'Saving…' : purchaseId ? '✓ Update Purchase' : `✓ Save Purchase (${items.length} items)`}
+              </button>
               {purchaseId && <button type="button" className="va-btn secondary" onClick={handleCancelForm}>Cancel Edit</button>}
             </div>
           </form>
