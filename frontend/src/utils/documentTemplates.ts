@@ -106,10 +106,18 @@ function buildDocStyles(b: BrandConfig): string {
   return `
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap');
 
+    @font-face {
+      font-family: 'Jameel Khushkhat L';
+      src: url('https://dashboard.urdufonts.com/storage/fonts/previews/GEdzNGZsOebPn6FOhNwfFKcy7j6TAV3vrHm2M5Jf.woff2') format('woff2');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      font-family: 'Inter', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Segoe UI', system-ui, sans-serif;
+      font-family: 'Inter', 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Segoe UI', system-ui, sans-serif;
       font-size: 13px;
       color: #1A1A1A;
       background: #FFFFFF;
@@ -248,7 +256,7 @@ function buildDocStyles(b: BrandConfig): string {
       line-height: 1.4;
     }
     .doc-kpi-urdu {
-      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 15px;
       color: #000000;
       direction: rtl;
@@ -262,7 +270,7 @@ function buildDocStyles(b: BrandConfig): string {
       font-weight: 700;
     }
     .urdu-inline {
-      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 13px;
       color: #FFFFFF;
       margin-left: 4px;
@@ -276,7 +284,7 @@ function buildDocStyles(b: BrandConfig): string {
       font-weight: 700;
     }
     .urdu-inline-dark {
-      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 14px;
       color: #000000;
       margin-left: 4px;
@@ -290,7 +298,7 @@ function buildDocStyles(b: BrandConfig): string {
       font-weight: 700;
     }
     .urdu-inline-val {
-      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 14px;
       color: #000000;
       margin-left: 4px;
@@ -349,7 +357,7 @@ function buildDocStyles(b: BrandConfig): string {
     .doc-table tbody td.mono   { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
     .doc-table tbody td.muted  { color: #7A8C79; }
     .doc-table tbody td.urdu   {
-      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       direction: rtl;
       unicode-bidi: isolate;
       text-align: right;
@@ -391,7 +399,7 @@ function buildDocStyles(b: BrandConfig): string {
     .doc-summary-row .label { color: #4A5C49; }
     .doc-summary-row .label .urdu-sub {
       display: block;
-      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 14px;
       color: #000000;
       direction: rtl;

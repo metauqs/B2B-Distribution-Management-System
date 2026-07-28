@@ -1761,7 +1761,7 @@ export default function PriceListPage() {
                                 <td style={{ padding: 4, fontWeight: 600 }}>
                                   <span>{it.itemName}</span>
                                   {it.product?.urduName && (
-                                    <span style={{ fontSize: 10, color: '#4B5563', fontFamily: '"Noto Nastaliq Urdu", "Noto Sans Arabic", "Urdu Typesetting", serif', marginLeft: 4 }}>
+                                    <span style={{ fontSize: 10, color: '#4B5563', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", "Noto Sans Arabic", "Urdu Typesetting", serif', marginLeft: 4 }}>
                                       ({it.product.urduName})
                                     </span>
                                   )}

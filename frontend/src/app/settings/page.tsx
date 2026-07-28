@@ -204,7 +204,7 @@ export default function SettingsPage() {
             <form onSubmit={addProduct}>
               <div className="va-form-row">
                 <div className="va-field"><label>Name (English)</label><input value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Tomato" required /></div>
-                <div className="va-field"><label>Name (Urdu)</label><input value={newProduct.urduName} onChange={e => setNewProduct(p => ({ ...p, urduName: e.target.value }))} placeholder="ٹماٹر" style={{ fontFamily: 'Noto Nastaliq Urdu', direction: 'rtl' }} /></div>
+                <div className="va-field"><label>Name (Urdu)</label><input value={newProduct.urduName} onChange={e => setNewProduct(p => ({ ...p, urduName: e.target.value }))} placeholder="ٹماٹر" style={{ fontFamily: "'Jameel Khushkhat L', 'Noto Nastaliq Urdu'", direction: 'rtl' }} /></div>
                 <div className="va-field"><label>Category</label>
                   <select value={newProduct.category} onChange={e => setNewProduct(p => ({ ...p, category: e.target.value }))}>
                     <option value="vegetable">Vegetable</option>
@@ -237,7 +237,7 @@ export default function SettingsPage() {
                   {products.map(p => (
                     <tr key={p.id}>
                       <td style={{ fontWeight: 600 }}>{p.name}</td>
-                      <td style={{ fontFamily: 'Noto Nastaliq Urdu', direction: 'rtl', fontSize: 15 }}>{p.urduName || '—'}</td>
+                      <td style={{ fontFamily: "'Jameel Khushkhat L', 'Noto Nastaliq Urdu'", direction: 'rtl', fontSize: 15 }}>{p.urduName || '—'}</td>
                       <td style={{ color: 'var(--muted)' }}>{p.category}</td>
                       <td style={{ color: 'var(--muted)' }}>{p.defaultUnit}</td>
                       <td className="mono">{p.minStock}</td>

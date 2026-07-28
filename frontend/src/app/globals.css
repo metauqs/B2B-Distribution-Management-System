@@ -1,6 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap');
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Jameel Khushkhat L';
+  src: url('https://dashboard.urdufonts.com/storage/fonts/previews/GEdzNGZsOebPn6FOhNwfFKcy7j6TAV3vrHm2M5Jf.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ─── Design Tokens ───────────────────────────────────────────────────────── */
 :root {
   --cream:     #FAF6EC;
@@ -695,7 +703,7 @@ button.va-icon:hover { color: var(--danger); }
   letter-spacing: 0.05em;
 }
 .va-bill-bakaya .lbl .urdu-tag {
-  font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
+  font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
   font-weight: 600;
   font-size: 13px;
   text-transform: none !important;
@@ -719,7 +727,7 @@ button.va-icon:hover { color: var(--danger); }
 
 /* ─── Urdu font for bills ─────────────────────────────────────────────────── */
 .va-urdu {
-  font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
+  font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
   font-weight: 600;
   direction: rtl;
   unicode-bidi: isolate;

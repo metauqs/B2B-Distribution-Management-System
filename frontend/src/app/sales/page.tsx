@@ -1592,7 +1592,7 @@ export default function SalesPage() {
                   <td style={{ padding: '10px 12px', fontSize: '13px', color: '#111827' }}>
                     <strong style={{ fontWeight: '600' }}>{item.itemName}</strong>
                     {item.product?.urduName && (
-                      <span style={{ color: '#6B7280', fontSize: '12px', marginLeft: '6px', fontFamily: '"Noto Nastaliq Urdu", serif' }}>
+                      <span style={{ color: '#6B7280', fontSize: '12px', marginLeft: '6px', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif' }}>
                         ({item.product.urduName})
                       </span>
                     )}
