@@ -160,7 +160,7 @@ router.post('/', async (req: Request, res: Response) => {
       await syncPriceListFromPurchase(tx, branchId, userId, pDate, syncItems);
 
       return p;
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 15000, timeout: 600000 });
 
     await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Purchase', entityId: purchase.id, newData: { supplierId: finalSupplierId, total } });
     return res.status(201).json({ success: true, data: purchase });

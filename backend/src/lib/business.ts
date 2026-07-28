@@ -356,6 +356,7 @@ export async function syncPriceListFromPurchase(
         availability: { in: ['AVAILABLE', 'SEASONAL'] },
         isActive: true,
       },
+      select: { id: true, name: true, defaultUnit: true },
     });
 
     priceList = await tx.priceList.create({
@@ -380,62 +381,69 @@ export async function syncPriceListFromPurchase(
 
   const priceListId = priceList.id;
 
-  // 2. For each purchased item, upsert the corresponding PriceItem
+  // 2. Batch-fetch ALL existing price items for this list in ONE query
+  const productIds  = items.filter(i => i.productId).map(i => i.productId as string);
+  const itemNames   = items.filter(i => !i.productId).map(i => i.itemName);
+
+  const existingItems = await tx.priceItem.findMany({
+    where: {
+      priceListId,
+      OR: [
+        ...(productIds.length > 0  ? [{ productId: { in: productIds } }]  : []),
+        ...(itemNames.length  > 0  ? [{ itemName:  { in: itemNames  } }]  : []),
+      ],
+    },
+    select: { id: true, productId: true, itemName: true },
+  });
+
+  // Build lookup maps for O(1) access
+  const existingByProductId = new Map<string, string>(); // productId -> priceItem.id
+  const existingByName      = new Map<string, string>(); // itemName  -> priceItem.id
+  for (const ei of existingItems) {
+    if (ei.productId) existingByProductId.set(ei.productId, ei.id);
+    else              existingByName.set(ei.itemName, ei.id);
+  }
+
+  // 3. Split items into "needs update" and "needs create"
+  const toCreate: any[] = [];
+  const toUpdate: { id: string; buyRate: number }[] = [];
+
   for (const item of items) {
-    if (item.productId) {
-      // ── Path A: productId exists — use FK-based lookup (preferred) ──────────
-      const existing = await tx.priceItem.findFirst({
-        where: { priceListId, productId: item.productId },
-        select: { id: true, sellRate: true },
-      });
+    const existingId = item.productId
+      ? existingByProductId.get(item.productId)
+      : existingByName.get(item.itemName);
 
-      if (existing) {
-        // Update buyRate with the newly purchased item's rate
-        await tx.priceItem.update({
-          where: { id: existing.id },
-          data:  { buyRate: item.rate },
-        });
-      } else {
-        // New product in today's list — create with buyRate
-        await tx.priceItem.create({
-          data: {
-            priceListId,
-            productId: item.productId,
-            itemName:  item.itemName,
-            unit:      item.unit as any,
-            buyRate:   item.rate,
-            sellRate:  0,
-          },
-        });
-      }
+    if (existingId) {
+      toUpdate.push({ id: existingId, buyRate: item.rate });
     } else {
-      // ── Path B: no productId — fall back to name-based lookup ────────────────
-      const existing = await tx.priceItem.findFirst({
-        where: { priceListId, itemName: item.itemName },
-        select: { id: true, sellRate: true },
+      toCreate.push({
+        priceListId,
+        productId: item.productId ?? undefined,
+        itemName:  item.itemName,
+        unit:      item.unit as any,
+        buyRate:   item.rate,
+        sellRate:  0,
       });
-
-      if (existing) {
-        await tx.priceItem.update({
-          where: { id: existing.id },
-          data:  { buyRate: item.rate },
-        });
-      } else {
-        await tx.priceItem.create({
-          data: {
-            priceListId,
-            itemName: item.itemName,
-            unit:     item.unit as any,
-            buyRate:  item.rate,
-            sellRate: 0,
-          },
-        });
-      }
     }
+  }
+
+  // 4. Batch create new items (one query for all new items)
+  if (toCreate.length > 0) {
+    await tx.priceItem.createMany({ data: toCreate, skipDuplicates: true });
+  }
+
+  // 5. Update existing items in parallel (not sequential)
+  if (toUpdate.length > 0) {
+    await Promise.all(
+      toUpdate.map(({ id, buyRate }) =>
+        tx.priceItem.update({ where: { id }, data: { buyRate } })
+      )
+    );
   }
 
   return priceListId;
 }
+
 
 // ─── Sync Price List from Sales Invoice ────────────────────────────────────────
 
