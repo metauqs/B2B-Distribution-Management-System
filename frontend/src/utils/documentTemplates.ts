@@ -248,7 +248,7 @@ function buildDocStyles(b: BrandConfig): string {
       line-height: 1.4;
     }
     .doc-kpi-urdu {
-      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 11px;
       color: #5A7A58;
       direction: rtl;
@@ -262,7 +262,7 @@ function buildDocStyles(b: BrandConfig): string {
       font-weight: 500;
     }
     .urdu-inline {
-      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 11px;
       color: rgba(255, 255, 255, 0.9);
       margin-left: 4px;
@@ -276,7 +276,7 @@ function buildDocStyles(b: BrandConfig): string {
       font-weight: 500;
     }
     .urdu-inline-dark {
-      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 11px;
       color: #5A7A58;
       margin-left: 4px;
@@ -290,7 +290,7 @@ function buildDocStyles(b: BrandConfig): string {
       font-weight: 500;
     }
     .urdu-inline-val {
-      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 11px;
       color: #5A7A58;
       margin-left: 4px;
@@ -349,7 +349,7 @@ function buildDocStyles(b: BrandConfig): string {
     .doc-table tbody td.mono   { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
     .doc-table tbody td.muted  { color: #7A8C79; }
     .doc-table tbody td.urdu   {
-      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       direction: rtl;
       unicode-bidi: isolate;
       text-align: right;
@@ -391,7 +391,7 @@ function buildDocStyles(b: BrandConfig): string {
     .doc-summary-row .label { color: #4A5C49; }
     .doc-summary-row .label .urdu-sub {
       display: block;
-      font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
       font-size: 11px;
       color: #7A9C78;
       direction: rtl;

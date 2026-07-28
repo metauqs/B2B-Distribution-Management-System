@@ -695,7 +695,7 @@ button.va-icon:hover { color: var(--danger); }
   letter-spacing: 0.05em;
 }
 .va-bill-bakaya .lbl .urdu-tag {
-  font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
+  font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
   font-weight: 600;
   font-size: 13px;
   text-transform: none !important;
@@ -719,7 +719,7 @@ button.va-icon:hover { color: var(--danger); }
 
 /* ─── Urdu font for bills ─────────────────────────────────────────────────── */
 .va-urdu {
-  font-family: 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
+  font-family: 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
   font-weight: 600;
   direction: rtl;
   unicode-bidi: isolate;
