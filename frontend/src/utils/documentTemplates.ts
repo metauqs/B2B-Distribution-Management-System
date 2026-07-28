@@ -22,7 +22,7 @@ import { DEFAULT_LOGO_BASE64 } from './logoBase64';
 
 export interface BrandConfig {
   companyName: string;    // "HALAL VEGG SUPPLIES"
-  tagline: string;        // "Fresh Produce Supply Management"
+  tagline: string;        // "FRESH FROM MANDI . DAILY DELIVERY"
   logoUrl: string;        // "/logo-transparent.png"  (relative or absolute)
   primaryColor: string;   // "#1A3C28"  (dark forest green)
   accentColor: string;    // "#2D6A4F"  (medium green)
@@ -34,7 +34,7 @@ export interface BrandConfig {
 
 export const DEFAULT_BRAND: BrandConfig = {
   companyName:   'HALAL VEGG SUPPLIES',
-  tagline:       'Fresh Produce Supply Management',
+  tagline:       'FRESH FROM MANDI . DAILY DELIVERY',
   logoUrl:       DEFAULT_LOGO_BASE64,
   primaryColor:  '#1A3C28',
   accentColor:   '#2D6A4F',
@@ -161,12 +161,14 @@ function buildDocStyles(b: BrandConfig): string {
       line-height: 1.2;
     }
     .doc-header-tagline {
-      font-size: 10px;
-      color: #6B7C6A;
-      margin-top: 2px;
-      font-weight: 500;
-      letter-spacing: 0.06em;
+      font-size: 9px;
+      color: #2D6A4F;
+      margin-top: 4px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
+      text-align: center;
+      white-space: nowrap;
     }
     .doc-header-meta {
       text-align: right;
@@ -551,8 +553,8 @@ function buildHeader(
   return `
     <div class="doc-header">
       <div class="doc-header-brand">
-        <img class="doc-header-logo" src="${logoSrc}" alt="${b.companyName}">
-        <div>
+        <div style="display:flex; flex-direction:column; align-items:center;">
+          <img class="doc-header-logo" src="${logoSrc}" alt="${b.companyName}">
           <div class="doc-header-tagline">${b.tagline}</div>
         </div>
       </div>
