@@ -70,8 +70,8 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     if (!matchedEmployee) {
-      console.warn(`[AUTH FAILURE] Invalid Employee ID: "${trimmedId}"`);
-      return res.status(401).json({ success: false, error: 'Invalid Employee ID' });
+      console.warn(`[AUTH FAILURE] Employee not found for ID: "${trimmedId}"`);
+      return res.status(404).json({ success: false, error: 'Employee not found' });
     }
 
     // Check if account is active
@@ -204,7 +204,7 @@ router.post('/login', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[AUTH LOGIN ERROR]', error);
-    return res.status(500).json({ success: false, error: error.message ?? 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Employee not found or server connection issue. Please try again.' });
   }
 });
 
