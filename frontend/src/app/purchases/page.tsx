@@ -23,52 +23,7 @@ const blankItem = (): PurchaseItem => ({ itemName: '', qty: 1, unit: 'KG', rate:
 
 const UNITS = ['KG','G','DOZEN','PIECE','BOX','CRATE'];
 
-function getProductEmoji(name: string): string {
-  const n = (name || '').toLowerCase();
-  if (n.includes('tomato')) return '🍅';
-  if (n.includes('potato') || n.includes('aloo')) return '🥔';
-  if (n.includes('onion') || n.includes('piaz')) return '🧅';
-  if (n.includes('garlic') || n.includes('lehsun')) return '🧄';
-  if (n.includes('ginger') || n.includes('adrak')) return '🫚';
-  if (n.includes('chilli') || n.includes('mirch')) return '🌶️';
-  if (n.includes('coriander') || n.includes('dhaniya') || n.includes('pudina') || n.includes('mint')) return '🌿';
-  if (n.includes('cabbage') || n.includes('gobhi')) return '🥬';
-  if (n.includes('cauliflower')) return '🥦';
-  if (n.includes('carrot') || n.includes('gajar')) return '🥕';
-  if (n.includes('peas') || n.includes('matar')) return '🫛';
-  if (n.includes('spinach') || n.includes('palak')) return '🍃';
-  if (n.includes('cucumber') || n.includes('kheera')) return '🥒';
-  if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) return '🍆';
-  if (n.includes('lemon') || n.includes('limo')) return '🍋';
-  if (n.includes('apple') || n.includes('seeb')) return '🍎';
-  if (n.includes('banana') || n.includes('kela')) return '🍌';
-  if (n.includes('mango') || n.includes('aam')) return '🥭';
-  if (n.includes('orange') || n.includes('malta') || n.includes('kinnow') || n.includes('mosambi')) return '🍊';
-  if (n.includes('grapes') || n.includes('angoor')) return '🍇';
-  if (n.includes('watermelon') || n.includes('tarbooz')) return '🍉';
-  if (n.includes('melon') || n.includes('kharbooza') || n.includes('sarda') || n.includes('garma')) return '🍈';
-  if (n.includes('peach') || n.includes('aaroo')) return '🍑';
-  if (n.includes('capsicum') || n.includes('shimla')) return '🫑';
-  if (n.includes('corn') || n.includes('makai')) return '🌽';
-  if (n.includes('mushroom')) return '🍄';
-  if (n.includes('pear') || n.includes('nashpati')) return '🍐';
-  if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) return '🍑';
-  if (n.includes('beans') || n.includes('phaliyan') || n.includes('phali') || n.includes('okra') || n.includes('bhindi') || n.includes('ladyfinger')) return '🫛';
-  if (n.includes('karela') || n.includes('bitter')) return '🥒';
-  if (n.includes('lauki') || n.includes('ghia') || n.includes('tinda') || n.includes('gourd')) return '🥒';
-  if (n.includes('pumpkin') || n.includes('kaddu')) return '🎃';
-  if (n.includes('radish') || n.includes('mooli')) return '🥕';
-  if (n.includes('turnip') || n.includes('shalgam')) return '🧅';
-  if (n.includes('sweet potato') || n.includes('shakarkandi')) return '🍠';
-  if (n.includes('apricot') || n.includes('khubani')) return '🍑';
-  if (n.includes('pomegranate') || n.includes('anar')) return '🍎';
-  if (n.includes('guava') || n.includes('amrood')) return '🍏';
-  if (n.includes('strawberry')) return '🍓';
-  if (n.includes('cherry')) return '🍒';
-  if (n.includes('pineapple')) return '🍍';
-  if (n.includes('coconut') || n.includes('nariyal')) return '🥥';
-  return '🥬';
-}
+import { ProductVisual } from '@/components/ui/ProductVisual';
 
 function Badge({ status, small, isMandi }: { status: string; small?: boolean; isMandi?: boolean }) {
   if (isMandi) {
@@ -666,7 +621,7 @@ export default function PurchasesPage() {
                             onClick={() => toggleProduct(prod)}
                             style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: isSelected ? 10 : 0 }}
                           >
-                            <span style={{ fontSize: 22, lineHeight: 1 }}>{getProductEmoji(prod.name)}</span>
+                            <ProductVisual name={prod.name} size={22} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               {prod.urduName && (
                                 <div style={{
