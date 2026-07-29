@@ -47,16 +47,39 @@ app.use(requestLogger);
 // Public routes
 app.use('/api/auth', authRouter);
 
-// Health check with DB ping option to keep connection warm
+// Health check with DB ping option to keep Render + Neon connections warm
 app.get('/api/health', async (req, res) => {
-  try {
-    if (req.query.pingDb === 'true') {
+  const pingDb = req.query.pingDb === 'true';
+  const now = new Date().toISOString();
+
+  if (pingDb) {
+    try {
       await prisma.$queryRaw`SELECT 1`;
+      console.log('[HEALTH] Database ping successful');
+      return res.status(200).json({
+        status: 'ok',
+        service: 'backend',
+        database: 'connected',
+        timestamp: now,
+      });
+    } catch (err: any) {
+      console.error('[HEALTH] Database ping failed');
+      return res.status(503).json({
+        status: 'error',
+        service: 'backend',
+        database: 'disconnected',
+        error: 'Database connection check failed',
+        timestamp: now,
+      });
     }
-    return res.json({ success: true, status: 'OK', timestamp: new Date() });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, status: 'ERROR', error: err.message });
   }
+
+  console.log('[HEALTH] Backend health check successful');
+  return res.status(200).json({
+    status: 'ok',
+    service: 'backend',
+    timestamp: now,
+  });
 });
 
 // Render routes (public to allow direct PDF/PNG downloads)

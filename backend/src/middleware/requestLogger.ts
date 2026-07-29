@@ -5,7 +5,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
   const { method, originalUrl } = req;
 
   // Skip logging health checks to avoid noise
-  if (originalUrl === '/api/health') {
+  if (originalUrl.startsWith('/api/health')) {
     return next();
   }
 
