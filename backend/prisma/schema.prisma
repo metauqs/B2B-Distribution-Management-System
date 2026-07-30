@@ -168,6 +168,7 @@ model Sale {
   status              TransactionStatus @default(PENDING)
   deliveryStatus      DeliveryStatus    @default(PENDING)
   notes               String?
+  failureReason       String?
   branchId            String
   userId              String?
   createdAt           DateTime @db.Timestamptz(3)          @default(now())
@@ -203,6 +204,8 @@ model SaleItem {
   unit      Unit     @default(KG)
   rate      Float
   amount    Float
+  returnedQty Float   @default(0)
+  returnReason String?
   product   Product? @relation(fields: [productId], references: [id])
   sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
@@ -450,7 +453,9 @@ model Delivery {
   zone        String?
   status      DeliveryStatus @default(PENDING)
   notes       String?
+  failureReason String?
   deliveredAt DateTime? @db.Timestamptz(3)
+  returnedAt  DateTime? @db.Timestamptz(3)
   date        DateTime @db.Timestamptz(3)       @default(now())
   branchId    String
   createdAt   DateTime @db.Timestamptz(3)       @default(now())

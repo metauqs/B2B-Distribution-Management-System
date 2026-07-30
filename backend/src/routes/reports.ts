@@ -29,6 +29,8 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       supplierPaymentsArr,
       allSuppliers,
       pendingDeliveries,
+      failedDeliveriesCount,
+      todayReturnedItemsArr,
       lowStockItems,
       atRiskClients,
       recentSales,
@@ -37,7 +39,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       l30Expenses,
       attentionRaw
     ] = await Promise.all([
-      prisma.sale.aggregate({ where: tWhere, _sum: { total: true }, _count: true }),
+      prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' } }, _sum: { total: true }, _count: true }),
       prisma.purchase.aggregate({ where: tWhere, _sum: { total: true } }),
       prisma.expense.aggregate({ where: { ...tWhere, deletedAt: undefined }, _sum: { amount: true } }),
       prisma.collection.aggregate({ where: { ...tWhere, deletedAt: undefined }, _sum: { amount: true } }),
@@ -46,11 +48,13 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
       prisma.supplierPayment.groupBy({ by: ['supplierId'], where: branchId ? { branchId } : {}, _sum: { amount: true } }),
       prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } }),
-      prisma.delivery.count({ where: { ...bWhere, status: { not: 'DELIVERED' } } }),
+      prisma.delivery.count({ where: { ...bWhere, status: { notIn: ['DELIVERED', 'FAILED'] } } }),
+      prisma.delivery.count({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd }, status: 'FAILED' } }),
+      prisma.saleItem.findMany({ where: { sale: tWhere, returnedQty: { gt: 0 } }, select: { returnedQty: true, rate: true } }),
       prisma.inventory.findMany({ where: bWhere, include: { product: { select: { minStock: true } } } }),
       prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
       prisma.sale.findMany({ where: { ...bWhere, deletedAt: null }, include: { client: { select: { name: true } } }, orderBy: { date: 'desc' }, take: 5 }),
-      prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
+      prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, status: { not: 'CANCELLED' }, deletedAt: null }, _sum: { total: true } }),
       prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
       prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
       prisma.client.findMany({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, select: { id: true, name: true, currentBalance: true }, orderBy: { currentBalance: 'desc' }, take: 5 }),
@@ -64,6 +68,10 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const todayProfit = todaySales - todayPurchases - todayExpenses;
     const cashPosition = todayCollections - todayExpenses - todayPurchases;
     const totalReceivables = totalReceivablesAgg._sum.currentBalance ?? 0;
+
+    const returnedProductsToday = todayReturnedItemsArr.reduce((sum, i) => sum + (i.returnedQty || 0), 0);
+    const returnValueToday = todayReturnedItemsArr.reduce((sum, i) => sum + ((i.returnedQty || 0) * i.rate), 0);
+    const netSalesToday = todaySales;
 
     const suppPurchMap = Object.fromEntries(supplierPurchasesArr.map(x => [x.supplierId, x._sum.total ?? 0]));
     const suppPayMap = Object.fromEntries(supplierPaymentsArr.map(x => [x.supplierId, x._sum.amount ?? 0]));
@@ -99,6 +107,10 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           sales: todaySales, salesCount: todaySalesAgg._count,
           purchases: todayPurchases, expenses: todayExpenses,
           collections: todayCollections, profit: todayProfit, cashPosition,
+          failedDeliveries: failedDeliveriesCount,
+          returnedProducts: returnedProductsToday,
+          returnValue: returnValueToday,
+          netSales: netSalesToday,
         },
         totals: {
           receivables:       totalReceivables,

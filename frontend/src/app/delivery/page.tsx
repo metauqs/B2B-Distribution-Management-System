@@ -15,6 +15,8 @@ interface DeliveryItem {
   unit: string;
   rate: number;
   amount: number;
+  returnedQty?: number;
+  returnReason?: string | null;
 }
 
 interface Delivery {
@@ -72,6 +74,87 @@ export default function DeliveryPage() {
   const [loggedInUser, setLoggedInUser] = useState<any>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
+
+  // Failed & Return Modals State
+  const [failedModalDelivery, setFailedModalDelivery] = useState<Delivery | null>(null);
+  const [failureReasonInput, setFailureReasonInput] = useState<string>('Customer Refused');
+
+  const [returnModalDelivery, setReturnModalDelivery] = useState<Delivery | null>(null);
+  const [returnInputs, setReturnInputs] = useState<Record<string, { returnedQty: number; reason: string }>>({});
+
+  const openReturnModal = (d: Delivery) => {
+    setReturnModalDelivery(d);
+    const initial: Record<string, { returnedQty: number; reason: string }> = {};
+    d.sale?.items?.forEach(item => {
+      initial[item.id] = { returnedQty: item.returnedQty || 0, reason: item.returnReason || '' };
+    });
+    setReturnInputs(initial);
+  };
+
+  const submitFailedDelivery = async () => {
+    if (!failedModalDelivery) return;
+    const id = failedModalDelivery.id;
+    const reason = failureReasonInput || 'Delivery Failed';
+
+    setFailedModalDelivery(null);
+    showToast('⏳ Marking delivery as Failed...');
+
+    try {
+      const res = await apiFetch('/api/delivery', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status: 'FAILED', failureReason: reason }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        invalidateCache('/api/delivery');
+        showToast('❌ Delivery marked as Failed & Stock Restored');
+        await load(true);
+      } else {
+        showToast(`❌ Failed: ${data.error || 'Update failed'}`);
+      }
+    } catch {
+      showToast('❌ Network error marking delivery failed');
+    }
+  };
+
+  const submitReturnDelivery = async () => {
+    if (!returnModalDelivery) return;
+    const deliveryId = returnModalDelivery.id;
+    const returnsPayload = Object.entries(returnInputs)
+      .filter(([_, val]) => val.returnedQty > 0)
+      .map(([itemId, val]) => ({
+        itemId,
+        returnedQty: val.returnedQty,
+        reason: val.reason || 'Customer Return',
+      }));
+
+    if (returnsPayload.length === 0) {
+      showToast('⚠️ No returned quantities entered');
+      return;
+    }
+
+    setReturnModalDelivery(null);
+    showToast('⏳ Processing returned products...');
+
+    try {
+      const res = await apiFetch('/api/delivery/return', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deliveryId, returns: returnsPayload }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        invalidateCache('/api/delivery');
+        showToast('✅ Returns processed, invoice recalculated & stock restored');
+        await load(true);
+      } else {
+        showToast(`❌ Error: ${data.error || 'Failed to process returns'}`);
+      }
+    } catch {
+      showToast('❌ Network error processing returns');
+    }
+  };
 
   // Detect logged-in user role & auto-select delivery staff
   useEffect(() => {
@@ -498,9 +581,14 @@ export default function DeliveryPage() {
                                 <button className="va-btn small" style={{ background: '#16A34A', color: '#FFF', fontWeight: 700, padding: '4px 10px', borderRadius: '6px' }} onClick={() => updateStatus(d.id, 'DELIVERED')}>
                                   Delivered ✓
                                 </button>
-                                <button className="va-btn secondary small" style={{ color: '#DC2626', borderColor: '#FCA5A5', fontWeight: 600, padding: '4px 8px', borderRadius: '6px' }} onClick={() => updateStatus(d.id, 'FAILED')}>
+                                <button className="va-btn secondary small" style={{ color: '#DC2626', borderColor: '#FCA5A5', fontWeight: 600, padding: '4px 8px', borderRadius: '6px' }} onClick={() => setFailedModalDelivery(d)}>
                                   Failed
                                 </button>
+                                {d.sale?.items && d.sale.items.length > 0 && (
+                                  <button className="va-btn secondary small" style={{ color: '#D97706', borderColor: '#FDE68A', fontWeight: 600, padding: '4px 8px', borderRadius: '6px' }} onClick={() => openReturnModal(d)}>
+                                    ↩️ Return
+                                  </button>
+                                )}
                               </>
                             )}
                             {d.status === 'FAILED' && (
@@ -592,9 +680,14 @@ export default function DeliveryPage() {
                               <button className="va-btn small" style={{ background: '#16A34A', color: '#FFF', fontWeight: 700, flex: 1 }} onClick={() => updateStatus(d.id, 'DELIVERED')}>
                                 ✅ Delivered
                               </button>
-                              <button className="va-btn secondary small" style={{ color: '#DC2626', borderColor: '#FCA5A5', fontWeight: 700, flex: 1 }} onClick={() => updateStatus(d.id, 'FAILED')}>
+                              <button className="va-btn secondary small" style={{ color: '#DC2626', borderColor: '#FCA5A5', fontWeight: 700, flex: 1 }} onClick={() => setFailedModalDelivery(d)}>
                                 ❌ Failed
                               </button>
+                              {d.sale?.items && d.sale.items.length > 0 && (
+                                <button className="va-btn secondary small" style={{ color: '#D97706', borderColor: '#FDE68A', fontWeight: 700, flex: 1 }} onClick={() => openReturnModal(d)}>
+                                  ↩️ Return Items
+                                </button>
+                              )}
                             </>
                           )}
                           {d.status === 'FAILED' && (
@@ -684,6 +777,160 @@ export default function DeliveryPage() {
           </div>
         )}
       </div>
+
+      {/* ── Failed Delivery Reason Modal ── */}
+      {failedModalDelivery && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#FFFFFF', borderRadius: 14, width: '100%', maxWidth: 440, padding: 24, boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: 0, fontSize: 18, color: '#991B1B', fontWeight: 800 }}>❌ Mark Delivery as Failed</h3>
+            <p style={{ fontSize: 13, color: '#4B5563', margin: '8px 0 16px' }}>
+              Invoice <strong>{failedModalDelivery.sale?.invoiceNo}</strong> ({failedModalDelivery.client?.name}). Marking as failed will cancel the invoice, zero customer dues, and restore stock.
+            </p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>Failure Reason:</label>
+              <select
+                value={failureReasonInput}
+                onChange={e => setFailureReasonInput(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', border: '1px solid #D1D5DB', borderRadius: 8, fontSize: 13, background: '#F9FAFB' }}
+              >
+                <option value="Customer Refused">Customer Refused Delivery</option>
+                <option value="Customer Unavailable">Customer Unavailable / Closed</option>
+                <option value="Wrong Items or Quality Issue">Wrong Items / Quality Issue</option>
+                <option value="Address Not Found">Address / Contact Not Found</option>
+                <option value="Other">Other Reason</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                className="va-btn secondary"
+                onClick={() => setFailedModalDelivery(null)}
+                style={{ borderRadius: 8 }}
+              >
+                Cancel
+              </button>
+              <button
+                className="va-btn"
+                onClick={submitFailedDelivery}
+                style={{ background: '#DC2626', color: '#FFF', borderRadius: 8, fontWeight: 700 }}
+              >
+                Confirm Failed Delivery
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Record Partial Returns Modal ── */}
+      {returnModalDelivery && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#FFFFFF', borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, color: '#D97706', fontWeight: 800 }}>↩️ Record Returned Products</h3>
+                <span style={{ fontSize: 12, color: '#6B7280' }}>Invoice #{returnModalDelivery.sale?.invoiceNo} · {returnModalDelivery.client?.name}</span>
+              </div>
+              <button onClick={() => setReturnModalDelivery(null)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: '#9CA3AF' }}>✕</button>
+            </div>
+
+            <p style={{ fontSize: 12, color: '#4B5563', marginBottom: 16 }}>
+              Enter the quantity returned by the customer for each product. Inventory will automatically increase and invoice dues will recalculate.
+            </p>
+
+            <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#F3F4F6', textTransform: 'uppercase', fontSize: 11, color: '#4B5563' }}>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>Product</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Ordered</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Rate</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', width: 100 }}>Returned Qty</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {returnModalDelivery.sale?.items?.map(item => {
+                    const currentInput = returnInputs[item.id] || { returnedQty: item.returnedQty || 0, reason: '' };
+                    return (
+                      <tr key={item.id} style={{ borderBottom: '1px solid #E5E7EB' }}>
+                        <td style={{ padding: '10px 10px', fontWeight: 600, color: '#1F2937' }}>
+                          {item.itemName}
+                        </td>
+                        <td style={{ padding: '10px 10px', textAlign: 'center', color: '#6B7280' }}>
+                          {item.qty} {item.unit}
+                        </td>
+                        <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 600 }}>
+                          Rs {item.rate}
+                        </td>
+                        <td style={{ padding: '10px 10px', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min={0}
+                            max={item.qty}
+                            step="0.1"
+                            value={currentInput.returnedQty || ''}
+                            onChange={e => {
+                              const val = Math.min(item.qty, Math.max(0, parseFloat(e.target.value) || 0));
+                              setReturnInputs(prev => ({
+                                ...prev,
+                                [item.id]: { ...prev[item.id], returnedQty: val }
+                              }));
+                            }}
+                            style={{ width: 80, padding: '6px', textAlign: 'center', border: '1px solid #D1D5DB', borderRadius: 6, fontWeight: 700, color: '#D97706' }}
+                          />
+                        </td>
+                        <td style={{ padding: '10px 10px' }}>
+                          <input
+                            type="text"
+                            placeholder="Reason (optional)"
+                            value={currentInput.reason}
+                            onChange={e => {
+                              const r = e.target.value;
+                              setReturnInputs(prev => ({
+                                ...prev,
+                                [item.id]: { ...prev[item.id], reason: r }
+                              }));
+                            }}
+                            style={{ width: '100%', padding: '6px 8px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 12 }}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ background: '#FEF3C7', padding: '12px 16px', borderRadius: 8, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: '#92400E', fontWeight: 600 }}>Return Impact:</span>
+              <span style={{ fontSize: 14, color: '#B45309', fontWeight: 800 }}>
+                Return Total: Rs {Object.entries(returnInputs).reduce((sum, [itemId, val]) => {
+                  const item = returnModalDelivery.sale?.items?.find(i => i.id === itemId);
+                  return sum + ((val.returnedQty || 0) * (item?.rate || 0));
+                }, 0).toLocaleString()}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                className="va-btn secondary"
+                onClick={() => setReturnModalDelivery(null)}
+                style={{ borderRadius: 8 }}
+              >
+                Cancel
+              </button>
+              <button
+                className="va-btn"
+                onClick={submitReturnDelivery}
+                style={{ background: '#D97706', color: '#FFF', borderRadius: 8, fontWeight: 700 }}
+              >
+                Save & Recalculate Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

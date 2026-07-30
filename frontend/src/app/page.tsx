@@ -15,6 +15,10 @@ interface DashboardData {
     collections: number;
     profit:      number;
     cashPosition: number;
+    failedDeliveries?: number;
+    returnedProducts?: number;
+    returnValue?: number;
+    netSales?: number;
   };
   totals: {
     receivables:       number;
@@ -135,6 +139,22 @@ export default function DashboardPage() {
           <div className="label">Today&apos;s Sales</div>
           <div className="value">{fmtMoney(today.sales)}</div>
           <div className="foot">{today.salesCount} order{today.salesCount !== 1 ? 's' : ''}</div>
+        </div>
+
+        <div className="va-card" style={{ borderLeft: (today.failedDeliveries || 0) > 0 ? '3px solid #DC2626' : undefined }}>
+          <div className="label">Failed Deliveries</div>
+          <div className="value" style={{ color: (today.failedDeliveries || 0) > 0 ? '#DC2626' : undefined }}>
+            {today.failedDeliveries || 0}
+          </div>
+          <div className="foot">failed today</div>
+        </div>
+
+        <div className="va-card" style={{ borderLeft: (today.returnValue || 0) > 0 ? '3px solid #D97706' : undefined }}>
+          <div className="label">Returned Value</div>
+          <div className="value" style={{ color: (today.returnValue || 0) > 0 ? '#D97706' : undefined }}>
+            {fmtMoney(today.returnValue || 0)}
+          </div>
+          <div className="foot">{today.returnedProducts || 0} items returned today</div>
         </div>
 
         <div className="va-card">

@@ -233,3 +233,51 @@ export async function manualAdjust(tx: any, p: AdjustParams): Promise<AdjustResu
 
   return { refNo, delta, previousQty: p.systemQty, newQty: p.adjustedQty };
 }
+
+// ── stockReturn — called from Delivery Failures & Partial Customer Returns ────
+
+export interface StockReturnParams {
+  productId: string;
+  branchId: string;
+  qty: number;
+  unit?: string;
+  refType?: string;
+  refId?: string;
+  refNo?: string;
+  reason?: string;
+  date?: Date;
+  note?: string;
+}
+
+export async function stockReturn(tx: any, p: StockReturnParams): Promise<void> {
+  const db = tx || prisma;
+  const existing = await db.inventory.findUnique({
+    where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
+    select: { qty: true },
+  });
+
+  const currentQty = existing?.qty ?? 0;
+  const newQty = currentQty + p.qty;
+
+  await Promise.all([
+    db.inventory.upsert({
+      where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
+      update: { qty: newQty },
+      create: { productId: p.productId, branchId: p.branchId, qty: p.qty, avgCost: 0 },
+    }),
+    db.stockMovement.create({
+      data: {
+        productId: p.productId,
+        branchId:  p.branchId,
+        type:      'ADJUSTMENT',
+        qty:       p.qty,
+        refType:   p.refType ?? 'return',
+        refId:     p.refId   ?? undefined,
+        date:      p.date    ?? new Date(),
+        note:      p.note    ?? (p.refNo
+          ? `Stock Return — ${p.refNo} | Qty: +${p.qty} ${p.unit ?? 'KG'}${p.reason ? ` | ${p.reason}` : ''}`
+          : `Stock Return | Qty: +${p.qty} ${p.unit ?? 'KG'}${p.reason ? ` | ${p.reason}` : ''}`),
+      },
+    }),
+  ]);
+}

@@ -35,9 +35,10 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
   const [downloading, setDownloading] = useState(false);
   const statementRef = useRef<HTMLDivElement>(null);
 
-  const totalInvoiceAmt = invoices.reduce((sum, item) => sum + item.total, 0);
-  const totalPaidAmt = invoices.reduce((sum, item) => sum + item.paid, 0);
-  const totalOutstanding = invoices.reduce((sum, item) => sum + item.balance, 0);
+  const activeInvoices = invoices.filter(inv => inv.status !== 'CANCELLED');
+  const totalInvoiceAmt = activeInvoices.reduce((sum, item) => sum + item.total, 0);
+  const totalPaidAmt = activeInvoices.reduce((sum, item) => sum + item.paid, 0);
+  const totalOutstanding = activeInvoices.reduce((sum, item) => sum + item.balance, 0);
 
   const cleanPhone = client.whatsapp || client.phone || '';
   const formattedPhone = cleanPhone.replace(/[^0-9]/g, '');
