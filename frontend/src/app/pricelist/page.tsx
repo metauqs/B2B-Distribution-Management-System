@@ -338,49 +338,56 @@ export default function PriceListPage() {
 
   // ─── Helper: Get Fruit/Veggie Emoji ───────────────────────────────────────
   const getItemEmoji = (name: string): string => {
-    const n = (name || '').toLowerCase();
-    if (n.includes('tomato')) return '🍅';
-    if (n.includes('potato') || n.includes('aloo')) return '🥔';
-    if (n.includes('onion') || n.includes('piaz')) return '🧅';
-    if (n.includes('garlic') || n.includes('lehsun')) return '🧄';
-    if (n.includes('ginger') || n.includes('adrak')) return '🫚';
-    if (n.includes('chilli') || n.includes('mirch')) return '🌶️';
-    if (n.includes('coriander') || n.includes('dhaniya') || n.includes('pudina') || n.includes('mint')) return '🌿';
-    if (n.includes('cabbage') || n.includes('gobhi')) return '🥬';
-    if (n.includes('cauliflower')) return '🥦';
-    if (n.includes('carrot') || n.includes('gajar')) return '🥕';
-    if (n.includes('peas') || n.includes('matar')) return '🫛';
-    if (n.includes('spinach') || n.includes('palak')) return '🍃';
-    if (n.includes('cucumber') || n.includes('kheera')) return '🥒';
+    const n = (name || '').toLowerCase().trim();
+
+    // 1. Emojis for products (standardized list)
+    if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') return '🫛';
+    if (n.includes('guava') || n.includes('amrood')) return '🍏';
+    if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) return '🍈';
+    if (n.includes('pomegranate') || n.includes('anar')) return '🍎';
+    if (n.includes('turnip') || n.includes('shalgam')) return '🫜';
+    if (n.includes('radish') || n.includes('mooli')) return '🫜';
+    if (n.includes('beetroot') || n.includes('chukandar')) return '🫜';
+    if (n.includes('plum') || n.includes('alobukhara')) return '🍑';
+
+    if (n.includes('beans') || n.includes('phali')) return '🫘';
+    if (n.includes('bitter') || n.includes('karela')) return '🥒';
+    if (n.includes('bottle') || n.includes('lauki') || n.includes('ghia') || n.includes('gourd')) return '🥒';
     if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) return '🍆';
-    if (n.includes('lemon') || n.includes('limo')) return '🍋';
+    if (n.includes('broccoli')) return '🥦';
+    if (n.includes('cabbage') || n.includes('gobhi') || n.includes('gobi')) return '🥬';
+    if (n.includes('capsicum') || n.includes('shimla')) return '🫑';
+    if (n.includes('carrot') || n.includes('gajar')) return '🥕';
+    if (n.includes('cauliflower')) return '🥦';
+    if (n.includes('coriander') || n.includes('dhaniya')) return '🌿';
+    if (n.includes('corn') || n.includes('makai') || n.includes('bhutta')) return '🌽';
+    if (n.includes('cucumber') || n.includes('kheera')) return '🥒';
+    if (n.includes('garlic') || n.includes('lehsun')) return '🧄';
+    if (n.includes('ginger') || n.includes('adrak')) return '𫚚';
+    if (n.includes('green chilli') || n.includes('green chili') || n.includes('hari mirch')) return '🌶️';
+    if (n.includes('chilli') || n.includes('chili') || n.includes('mirch')) return '🌶️';
+    if (n.includes('iceberg')) return '🥬';
+    if (n.includes('lemon') || n.includes('limo') || n.includes('nimbu')) return '🍋';
+    if (n.includes('lettuce')) return '🥬';
+    if (n.includes('mint') || n.includes('pudina')) return '🌿';
+    if (n.includes('mushroom')) return '🍄';
+    if (n.includes('onion') || n.includes('piaz') || n.includes('pyaz')) return '🧅';
+    if (n.includes('peas') || n.includes('matar')) return '🫛';
+    if (n.includes('potato') || n.includes('aloo')) return '🥔';
+    if (n.includes('pumpkin') || n.includes('kaddu')) return '🎃';
+    if (n.includes('spinach') || n.includes('palak')) return '🥬';
+    if (n.includes('sweet potato') || n.includes('shakarkandi')) return '🍠';
+    if (n.includes('tomato') || n.includes('tamatar')) return '🍅';
     if (n.includes('apple') || n.includes('seeb')) return '🍎';
     if (n.includes('banana') || n.includes('kela')) return '🍌';
-    if (n.includes('mango') || n.includes('aam')) return '🥭';
-    if (n.includes('orange') || n.includes('malta') || n.includes('kinnow') || n.includes('mosambi')) return '🍊';
     if (n.includes('grapes') || n.includes('angoor')) return '🍇';
-    if (n.includes('watermelon') || n.includes('tarbooz')) return '🍉';
-    if (n.includes('melon') || n.includes('kharbooza') || n.includes('sarda') || n.includes('garma')) return '🍈';
+    if (n.includes('mango') || n.includes('aam')) return '🥭';
+    if (n.includes('melon') || n.includes('kharbooza')) return '🍈';
+    if (n.includes('orange') || n.includes('malta') || n.includes('kinnow')) return '🍊';
     if (n.includes('peach') || n.includes('aaroo')) return '🍑';
-    if (n.includes('capsicum') || n.includes('shimla')) return '🫑';
-    if (n.includes('corn') || n.includes('makai')) return '🌽';
-    if (n.includes('mushroom')) return '🍄';
     if (n.includes('pear') || n.includes('nashpati')) return '🍐';
-    if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) return '🍑';
-    if (n.includes('beans') || n.includes('phaliyan') || n.includes('phali') || n.includes('okra') || n.includes('bhindi') || n.includes('ladyfinger')) return '🫛';
-    if (n.includes('karela') || n.includes('bitter')) return '🥒';
-    if (n.includes('lauki') || n.includes('ghia') || n.includes('tinda') || n.includes('gourd')) return '🥒';
-    if (n.includes('pumpkin') || n.includes('kaddu')) return '🎃';
-    if (n.includes('radish') || n.includes('mooli')) return '🥕';
-    if (n.includes('turnip') || n.includes('shalgam')) return '🧅';
-    if (n.includes('sweet potato') || n.includes('shakarkandi')) return '🍠';
-    if (n.includes('apricot') || n.includes('khubani')) return '🍑';
-    if (n.includes('pomegranate') || n.includes('anar')) return '🍎';
-    if (n.includes('guava') || n.includes('amrood')) return '🍏';
-    if (n.includes('strawberry')) return '🍓';
-    if (n.includes('cherry')) return '🍒';
-    if (n.includes('pineapple')) return '🍍';
-    if (n.includes('coconut') || n.includes('nariyal')) return '🥥';
+    if (n.includes('watermelon') || n.includes('tarbooz')) return '🍉';
+
     return '🥬';
   };
 

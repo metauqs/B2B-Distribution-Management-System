@@ -22,7 +22,7 @@ import { DEFAULT_LOGO_BASE64 } from './logoBase64';
 
 export interface BrandConfig {
   companyName: string;    // "HALAL VEGG SUPPLIES"
-  tagline: string;        // "Fresh Produce Supply Management"
+  tagline: string;        // "FRESH FROM MANDI . DAILY DELIVERY"
   logoUrl: string;        // "/logo-transparent.png"  (relative or absolute)
   primaryColor: string;   // "#1A3C28"  (dark forest green)
   accentColor: string;    // "#2D6A4F"  (medium green)
@@ -34,7 +34,7 @@ export interface BrandConfig {
 
 export const DEFAULT_BRAND: BrandConfig = {
   companyName:   'HALAL VEGG SUPPLIES',
-  tagline:       'Fresh Produce Supply Management',
+  tagline:       'FRESH FROM MANDI . DAILY DELIVERY',
   logoUrl:       DEFAULT_LOGO_BASE64,
   primaryColor:  '#1A3C28',
   accentColor:   '#2D6A4F',
@@ -161,12 +161,14 @@ function buildDocStyles(b: BrandConfig): string {
       line-height: 1.2;
     }
     .doc-header-tagline {
-      font-size: 10px;
-      color: #6B7C6A;
-      margin-top: 2px;
-      font-weight: 500;
-      letter-spacing: 0.06em;
+      font-size: 9px;
+      color: #2D6A4F;
+      margin-top: 4px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
+      text-align: center;
+      white-space: nowrap;
     }
     .doc-header-meta {
       text-align: right;
@@ -551,8 +553,8 @@ function buildHeader(
   return `
     <div class="doc-header">
       <div class="doc-header-brand">
-        <img class="doc-header-logo" src="${logoSrc}" alt="${b.companyName}">
-        <div>
+        <div style="display:flex; flex-direction:column; align-items:center;">
+          <img class="doc-header-logo" src="${logoSrc}" alt="${b.companyName}">
           <div class="doc-header-tagline">${b.tagline}</div>
         </div>
       </div>
@@ -1003,61 +1005,86 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
   const col1 = data.items.slice(0, half);
   const col2 = data.items.slice(half);
 
-  const getProductEmoji = (name: string): string => {
-    const n = (name || '').toLowerCase();
-    if (n.includes('tomato')) return '🍅';
-    if (n.includes('potato') || n.includes('aloo')) return '🥔';
-    if (n.includes('onion') || n.includes('piaz')) return '🧅';
-    if (n.includes('garlic') || n.includes('lehsun')) return '🧄';
-    if (n.includes('ginger') || n.includes('adrak')) return '🫚';
-    if (n.includes('chilli') || n.includes('mirch')) return '🌶️';
-    if (n.includes('coriander') || n.includes('dhaniya') || n.includes('pudina') || n.includes('mint')) return '🌿';
-    if (n.includes('cabbage') || n.includes('gobhi')) return '🥬';
-    if (n.includes('cauliflower')) return '🥦';
-    if (n.includes('carrot') || n.includes('gajar')) return '🥕';
-    if (n.includes('peas') || n.includes('matar')) return '🫛';
-    if (n.includes('spinach') || n.includes('palak')) return '🍃';
-    if (n.includes('cucumber') || n.includes('kheera')) return '🥒';
-    if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) return '🍆';
-    if (n.includes('lemon') || n.includes('limo')) return '🍋';
-    if (n.includes('apple') || n.includes('seeb')) return '🍎';
-    if (n.includes('banana') || n.includes('kela')) return '🍌';
-    if (n.includes('mango') || n.includes('aam')) return '🥭';
-    if (n.includes('orange') || n.includes('malta') || n.includes('kinnow') || n.includes('mosambi')) return '🍊';
-    if (n.includes('grapes') || n.includes('angoor')) return '🍇';
-    if (n.includes('watermelon') || n.includes('tarbooz')) return '🍉';
-    if (n.includes('melon') || n.includes('kharbooza') || n.includes('sarda') || n.includes('garma')) return '🍈';
-    if (n.includes('peach') || n.includes('aaroo')) return '🍑';
-    if (n.includes('capsicum') || n.includes('shimla')) return '🫑';
-    if (n.includes('corn') || n.includes('makai')) return '🌽';
-    if (n.includes('mushroom')) return '🍄';
-    if (n.includes('pear') || n.includes('nashpati')) return '🍐';
-    if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) return '🍑';
-    if (n.includes('beans') || n.includes('phaliyan') || n.includes('phali') || n.includes('okra') || n.includes('bhindi') || n.includes('ladyfinger')) return '🫛';
-    if (n.includes('karela') || n.includes('bitter')) return '🥒';
-    if (n.includes('lauki') || n.includes('ghia') || n.includes('tinda') || n.includes('gourd')) return '🥒';
-    if (n.includes('pumpkin') || n.includes('kaddu')) return '🎃';
-    if (n.includes('radish') || n.includes('mooli')) return '🥕';
-    if (n.includes('turnip') || n.includes('shalgam')) return '🧅';
-    if (n.includes('sweet potato') || n.includes('shakarkandi')) return '🍠';
-    if (n.includes('apricot') || n.includes('khubani')) return '🍑';
-    if (n.includes('pomegranate') || n.includes('anar')) return '🍎';
-    if (n.includes('guava') || n.includes('amrood')) return '🍏';
-    if (n.includes('strawberry')) return '🍓';
-    if (n.includes('cherry')) return '🍒';
-    if (n.includes('pineapple')) return '🍍';
-    if (n.includes('coconut') || n.includes('nariyal')) return '🥥';
-    return '🥬';
+  const getProductHtmlVisual = (name: string): string => {
+    const n = (name || '').toLowerCase().trim();
+
+    // 1. Image Mappings (exact sequence matched from user prompt)
+    if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') {
+      return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🫛</span>`;
+    }
+    if (n.includes('guava') || n.includes('amrood')) {
+      return `<img src="${origin}/guava.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🍏</span>`;
+    }
+    if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) {
+      return `<img src="${origin}/papaya.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🍈</span>`;
+    }
+    if (n.includes('pomegranate') || n.includes('anar')) {
+      return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🍎</span>`;
+    }
+    if (n.includes('turnip') || n.includes('shalgam')) {
+      return `<img src="${origin}/turnip.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🫜</span>`;
+    }
+    if (n.includes('radish') || n.includes('mooli')) {
+      return `<img src="${origin}/radish.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🫜</span>`;
+    }
+    if (n.includes('beetroot') || n.includes('chukandar')) {
+      return `<img src="${origin}/beetroot.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🫜</span>`;
+    }
+    if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) {
+      return `<img src="${origin}/plum.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🍑</span>`;
+    }
+
+    // 2. Standardized Emojis according to the user's list
+    let emoji = '🥬';
+    if (n.includes('beans') || n.includes('phali')) emoji = '🫘';
+    else if (n.includes('bitter') || n.includes('karela')) emoji = '🥒';
+    else if (n.includes('bottle') || n.includes('lauki') || n.includes('ghia') || n.includes('gourd')) emoji = '🥒';
+    else if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) emoji = '🍆';
+    else if (n.includes('broccoli')) emoji = '🥦';
+    else if (n.includes('cabbage') || n.includes('gobhi') || n.includes('gobi')) emoji = '🥬';
+    else if (n.includes('capsicum') || n.includes('shimla')) emoji = '🫑';
+    else if (n.includes('carrot') || n.includes('gajar')) emoji = '🥕';
+    else if (n.includes('cauliflower')) emoji = '🥦';
+    else if (n.includes('coriander') || n.includes('dhaniya')) emoji = '🌿';
+    else if (n.includes('corn') || n.includes('makai') || n.includes('bhutta')) emoji = '🌽';
+    else if (n.includes('cucumber') || n.includes('kheera')) emoji = '🥒';
+    else if (n.includes('garlic') || n.includes('lehsun')) emoji = '🧄';
+    else if (n.includes('ginger') || n.includes('adrak')) emoji = '𫚚';
+    else if (n.includes('green chilli') || n.includes('green chili') || n.includes('hari mirch')) emoji = '🌶️';
+    else if (n.includes('chilli') || n.includes('chili') || n.includes('mirch')) emoji = '🌶️';
+    else if (n.includes('iceberg')) emoji = '🥬';
+    else if (n.includes('lemon') || n.includes('limo') || n.includes('nimbu')) emoji = '🍋';
+    else if (n.includes('lettuce')) emoji = '🥬';
+    else if (n.includes('mint') || n.includes('pudina')) emoji = '🌿';
+    else if (n.includes('mushroom')) emoji = '🍄';
+    else if (n.includes('onion') || n.includes('piaz') || n.includes('pyaz')) emoji = '🧅';
+    else if (n.includes('peas') || n.includes('matar')) emoji = '🫛';
+    else if (n.includes('potato') || n.includes('aloo')) emoji = '🥔';
+    else if (n.includes('pumpkin') || n.includes('kaddu')) emoji = '🎃';
+    else if (n.includes('spinach') || n.includes('palak')) emoji = '🥬';
+    else if (n.includes('sweet potato') || n.includes('shakarkandi')) emoji = '🍠';
+    else if (n.includes('tomato') || n.includes('tamatar')) emoji = '🍅';
+    else if (n.includes('apple') || n.includes('seeb')) emoji = '🍎';
+    else if (n.includes('banana') || n.includes('kela')) emoji = '🍌';
+    else if (n.includes('grapes') || n.includes('angoor')) emoji = '🍇';
+    else if (n.includes('mango') || n.includes('aam')) emoji = '🥭';
+    else if (n.includes('melon') || n.includes('kharbooza')) emoji = '🍈';
+    else if (n.includes('orange') || n.includes('malta') || n.includes('kinnow')) emoji = '🍊';
+    else if (n.includes('peach') || n.includes('aaroo')) emoji = '🍑';
+    else if (n.includes('pear') || n.includes('nashpati')) emoji = '🍐';
+    else if (n.includes('watermelon') || n.includes('tarbooz')) emoji = '🍉';
+
+    return `<span style="font-size:16px;margin-right:6px;vertical-align:middle;">${emoji}</span>`;
   };
 
   const buildPriceRows = (items: typeof data.items, startIdx: number) =>
     items.map((item, i) => {
-      const emoji = getProductEmoji(item.itemName);
+      const htmlVisual = getProductHtmlVisual(item.itemName);
       return `
         <tr>
           <td class="center muted" style="font-size:11px;padding:6px 6px;vertical-align:middle;">${startIdx + i + 1}</td>
           <td style="padding:6px 6px;vertical-align:middle;">
-            <span style="font-size:16px;margin-right:6px;vertical-align:middle;">${emoji}</span>
+            ${htmlVisual}
             <span class="urdu-inline-dark" style="font-size:15px;font-weight:700;color:#000000;vertical-align:middle;margin-right:4px;">${item.urduName || item.itemName}</span>
             <span style="font-size:11px;color:#555555;font-weight:500;vertical-align:middle;">(${item.itemName})</span>
           </td>

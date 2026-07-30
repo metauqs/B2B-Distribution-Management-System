@@ -80,7 +80,11 @@ export default function LoginPage() {
       }
 
       if (!res.ok || !data.success) {
-        setError(data.error || 'Invalid Employee ID or password');
+        let errMessage = data.error || 'Employee not found';
+        if (typeof errMessage === 'string' && (errMessage.toLowerCase().includes('prisma') || errMessage.toLowerCase().includes('invocation') || errMessage.toLowerCase().includes('table'))) {
+          errMessage = 'Employee not found';
+        }
+        setError(errMessage);
         setLoading(false);
         return;
       }
@@ -97,7 +101,7 @@ export default function LoginPage() {
       window.location.href = '/';
     } catch (err: any) {
       console.error('[LOGIN SUBMIT ERROR]', err);
-      setError(err?.message || 'Login failed. Please try again.');
+      setError('Employee not found or network error. Please try again.');
       setLoading(false);
     }
   };
