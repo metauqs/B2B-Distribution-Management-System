@@ -195,7 +195,7 @@ async function main() {
         credit: 2000
       });
       // Settle sales FIFO
-      const sale = await tx.sale.findUnique({ where: { invoiceNo: 'VERIFY-INV-1' } });
+      const sale = await tx.sale.findFirst({ where: { invoiceNo: 'VERIFY-INV-1' } });
       if (sale) {
         await tx.sale.update({
           where: { id: sale.id },
@@ -257,8 +257,8 @@ async function main() {
         credit: 5000
       });
       // Settle sales FIFO (VERIFY-INV-1: needs 3000, VERIFY-INV-2: needs 4000)
-      const sale1 = await tx.sale.findUnique({ where: { invoiceNo: 'VERIFY-INV-1' } });
-      const sale2 = await tx.sale.findUnique({ where: { invoiceNo: 'VERIFY-INV-2' } });
+      const sale1 = await tx.sale.findFirst({ where: { invoiceNo: 'VERIFY-INV-1' } });
+      const sale2 = await tx.sale.findFirst({ where: { invoiceNo: 'VERIFY-INV-2' } });
       if (sale1) {
         await tx.sale.update({
           where: { id: sale1.id },
