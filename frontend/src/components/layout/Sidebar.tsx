@@ -3,21 +3,20 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { 
+import {
   Home,
   Settings,
-  BillList,
-  Delivery,
-  WalletMoney,
+  ReceiptText,
+  Truck,
+  WalletCards,
   ClipboardList,
-  InboxIn,
-  BoxMinimalistic,
-  UsersGroupTwoRounded,
-  UsersGroupRounded,
-  CardSend,
-  GraphNew,
-  Tuning
-} from '@solar-icons/react';
+  Inbox,
+  Package,
+  Users,
+  Send,
+  BarChart3,
+  SlidersHorizontal,
+} from 'lucide-react';
 
 interface SubItem {
   label: string;
@@ -39,30 +38,30 @@ const NAV_ITEMS: NavItemConfig[] = [
   { label: 'Dashboard', href: '/', icon: Home, isGroup: false },
   {
     label: 'Operations',
-    icon: Tuning,
+    icon: SlidersHorizontal,
     isGroup: true,
     title: 'OPERATIONS',
     items: [
-      { label: 'Sales & Billing', num: '', href: '/sales', icon: BillList },
-      { label: 'Delivery',        num: '', href: '/delivery', icon: Delivery },
-      { label: 'Collections',     num: '', href: '/collections', icon: WalletMoney }
+      { label: 'Sales & Billing', num: '', href: '/sales', icon: ReceiptText },
+      { label: 'Delivery',        num: '', href: '/delivery', icon: Truck },
+      { label: 'Collections',     num: '', href: '/collections', icon: WalletCards }
     ]
   },
   {
     label: 'Supply Chain',
-    icon: BoxMinimalistic,
+    icon: Package,
     isGroup: true,
     title: 'SUPPLY CHAIN',
     items: [
       { label: 'Price List',      num: '', href: '/pricelist', icon: ClipboardList },
-      { label: 'Purchases',       num: '', href: '/purchases', icon: InboxIn },
-      { label: 'Inventory',       num: '', href: '/inventory', icon: BoxMinimalistic }
+      { label: 'Purchases',       num: '', href: '/purchases', icon: Inbox },
+      { label: 'Inventory',       num: '', href: '/inventory', icon: Package }
     ]
   },
-  { label: 'Clients',   href: '/clients',   icon: UsersGroupRounded, isGroup: false },
-  { label: 'Expenses',  href: '/expenses',  icon: CardSend, isGroup: false },
-  { label: 'Employees', href: '/employees', icon: UsersGroupTwoRounded, isGroup: false },
-  { label: 'Reports',   href: '/reports',   icon: GraphNew, isGroup: false },
+  { label: 'Clients',   href: '/clients',   icon: Users, isGroup: false },
+  { label: 'Expenses',  href: '/expenses',  icon: Send, isGroup: false },
+  { label: 'Employees', href: '/employees', icon: Users, isGroup: false },
+  { label: 'Reports',   href: '/reports',   icon: BarChart3, isGroup: false },
   { label: 'Setting',   href: '/settings',  icon: Settings, isGroup: false }
 ];
 

@@ -70,6 +70,34 @@ async function main() {
   });
   console.log('✅ Users created (owner, manager, cashier)');
 
+  const aliPassword = await bcrypt.hash('1234', 10);
+
+  await prisma.employee.upsert({
+    where: { employeeId: 'EMP-001' },
+    update: {
+      password: aliPassword,
+    },
+    create: {
+      employeeId: 'EMP-001',
+      name: 'Ali Khan',
+      role: 'DELIVERY_STAFF' as any,
+      phone: '0300-1234567',
+      salary: 35000,
+      joiningDate: new Date(),
+      isActive: true,
+      branchId: branch.id,
+      fatherName: 'Khan Bacha',
+      cnic: '42101-1234567-8',
+      address: 'Gulshan-e-Iqbal, Karachi',
+      whatsapp: '0300-1234567',
+      email: 'ali.khan@example.com',
+      paymentStructure: 'Monthly',
+      notes: 'Seeded employee',
+      password: aliPassword,
+    },
+  });
+  console.log('✅ Employee created: Ali Khan');
+
   // ─── Products ────────────────────────────────────────────────────────────────
   const products = [
     // Vegetables
@@ -157,7 +185,7 @@ async function main() {
   };
 
   const allProducts = await prisma.product.findMany();
-  const productMap = Object.fromEntries(allProducts.map(p => [p.name, p]));
+  const productMap = Object.fromEntries(allProducts.map((p: { name: string; id: string }) => [p.name, p]));
 
   // Check if today's price list already exists
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -171,7 +199,7 @@ async function main() {
         branchId: branch.id,
         notes:    'Seeded sample rates',
         items: {
-          create: allProducts.map(p => {
+          create: allProducts.map((p: { id: string; name: string; defaultUnit: Unit }) => {
             const r = sampleRates[p.name] ?? { buy: 45, sell: 65 }; // Default rate for items not in sample
             return {
               productId: p.id,
@@ -293,19 +321,21 @@ async function main() {
   }
 
   // Day -1: two sales
-  const sale1 = await prisma.sale.create({
-    data: {
-      invoiceNo:     'SL-001',
-      clientId:      clients[0].id,
-      date:          new Date(Date.now() - 1 * 86400000),
-      subtotal:      8000,
-      total:         8000,
-      paid:          5000,
-      balance:       3000,
-      status:        TransactionStatus.PARTIAL,
+  const sale1 = await prisma.sale.upsert({
+    where: { clientId_invoiceNo: { clientId: clients[0].id, invoiceNo: 'SL-001' } },
+    update: {},
+    create: {
+      invoiceNo: 'SL-001',
+      clientId: clients[0].id,
+      date: new Date(Date.now() - 1 * 86400000),
+      subtotal: 8000,
+      total: 8000,
+      paid: 5000,
+      balance: 3000,
+      status: TransactionStatus.PARTIAL,
       deliveryStatus: DeliveryStatus.DELIVERED,
-      branchId:      branch.id,
-      userId:        owner.id,
+      branchId: branch.id,
+      userId: owner.id,
       items: {
         create: [
           { productId: productMap['Tomato']?.id, itemName: 'Tomato', qty: 50, unit: Unit.KG, rate: 80, amount: 4000 },
@@ -317,19 +347,21 @@ async function main() {
   });
 
   // Today's sale
-  await prisma.sale.create({
-    data: {
-      invoiceNo:     'SL-002',
-      clientId:      clients[1].id,
-      date:          new Date(),
-      subtotal:      5600,
-      total:         5600,
-      paid:          0,
-      balance:       5600,
-      status:        TransactionStatus.PENDING,
+  await prisma.sale.upsert({
+    where: { clientId_invoiceNo: { clientId: clients[1].id, invoiceNo: 'SL-002' } },
+    update: {},
+    create: {
+      invoiceNo: 'SL-002',
+      clientId: clients[1].id,
+      date: new Date(),
+      subtotal: 5600,
+      total: 5600,
+      paid: 0,
+      balance: 5600,
+      status: TransactionStatus.PENDING,
       deliveryStatus: DeliveryStatus.OUT,
-      branchId:      branch.id,
-      userId:        owner.id,
+      branchId: branch.id,
+      userId: owner.id,
       items: {
         create: [
           { productId: productMap['Tomato']?.id, itemName: 'Tomato', qty: 20, unit: Unit.KG, rate: 80, amount: 1600 },
