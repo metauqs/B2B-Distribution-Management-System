@@ -1010,28 +1010,28 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
 
     // 1. Image Mappings (exact sequence matched from user prompt)
     if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') {
-      return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🫛</span>`;
+      return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫛</span>`;
     }
     if (n.includes('guava') || n.includes('amrood')) {
-      return `<img src="${origin}/guava.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🍏</span>`;
+      return `<img src="${origin}/guava.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍏</span>`;
     }
     if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) {
-      return `<img src="${origin}/papaya.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🍈</span>`;
+      return `<img src="${origin}/papaya.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍈</span>`;
     }
     if (n.includes('pomegranate') || n.includes('anar')) {
-      return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🍎</span>`;
+      return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍎</span>`;
     }
     if (n.includes('turnip') || n.includes('shalgam')) {
-      return `<img src="${origin}/turnip.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🫜</span>`;
+      return `<img src="${origin}/turnip.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
     }
     if (n.includes('radish') || n.includes('mooli')) {
-      return `<img src="${origin}/radish.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🫜</span>`;
+      return `<img src="${origin}/radish.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
     }
     if (n.includes('beetroot') || n.includes('chukandar')) {
-      return `<img src="${origin}/beetroot.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🫜</span>`;
+      return `<img src="${origin}/beetroot.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
     }
     if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) {
-      return `<img src="${origin}/plum.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-right:6px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-right:6px;vertical-align:middle;">🍑</span>`;
+      return `<img src="${origin}/plum.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍑</span>`;
     }
 
     // 2. Standardized Emojis according to the user's list
@@ -1074,7 +1074,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
     else if (n.includes('pear') || n.includes('nashpati')) emoji = '🍐';
     else if (n.includes('watermelon') || n.includes('tarbooz')) emoji = '🍉';
 
-    return `<span style="font-size:16px;margin-right:6px;vertical-align:middle;">${emoji}</span>`;
+    return `<span style="font-size:16px;margin-left:4px;vertical-align:middle;">${emoji}</span>`;
   };
 
   const buildPriceRows = (items: typeof data.items, startIdx: number) =>
@@ -1082,14 +1082,18 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
       const htmlVisual = getProductHtmlVisual(item.itemName);
       return `
         <tr>
-          <td class="center muted" style="font-size:11px;padding:6px 6px;vertical-align:middle;">${startIdx + i + 1}</td>
-          <td style="padding:6px 6px;vertical-align:middle;">
-            ${htmlVisual}
-            <span class="urdu-inline-dark" style="font-size:15px;font-weight:700;color:#000000;vertical-align:middle;margin-right:4px;">${item.urduName || item.itemName}</span>
-            <span style="font-size:11px;color:#555555;font-weight:500;vertical-align:middle;">(${item.itemName})</span>
+          <td class="left mono" style="font-size:13px;padding:6px 8px;color:#000000;font-weight:700;vertical-align:middle;text-align:left;white-space:nowrap;">Rs ${item.sellRate.toLocaleString()}</td>
+          <td class="center muted" style="font-size:11px;padding:6px 8px;vertical-align:middle;text-align:center;text-transform:uppercase;color:#555555;">${item.unit}</td>
+          <td style="padding:6px 8px;vertical-align:middle;">
+            <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+              <span style="font-size:13px;color:#222222;font-weight:500;">${item.itemName}</span>
+              <div style="display:flex;align-items:center;gap:4px;">
+                <span class="urdu-inline-dark" style="font-size:15px;font-weight:700;color:#000000;">${item.urduName || ''}</span>
+                ${htmlVisual}
+              </div>
+            </div>
           </td>
-          <td class="center muted" style="font-size:11px;padding:6px 6px;vertical-align:middle;">${item.unit}</td>
-          <td class="right mono" style="font-size:13px;padding:6px 6px;color:#000000;font-weight:700;vertical-align:middle;">Rs ${item.sellRate.toLocaleString()}</td>
+          <td class="right muted" style="font-size:11px;padding:6px 8px;vertical-align:middle;text-align:right;color:#777777;">${startIdx + i + 1}</td>
         </tr>
       `;
     }).join('');
@@ -1097,10 +1101,10 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
   const priceColHeader = `
     <thead>
       <tr>
-        <th class="center" style="font-size:10px;padding:6px 6px;width:30px;">#</th>
-        <th style="font-size:10px;padding:6px 6px;">Product / پروڈکٹ</th>
-        <th class="center" style="font-size:10px;padding:6px 6px;width:60px;">Unit</th>
-        <th class="right" style="font-size:10px;padding:6px 6px;width:90px;">Rate (Rs)</th>
+        <th class="left" style="font-size:10px;padding:6px 8px;width:80px;text-align:left;font-weight:700;">RATE (RS)</th>
+        <th class="center" style="font-size:10px;padding:6px 8px;width:55px;text-align:center;font-weight:700;">UNIT</th>
+        <th class="left" style="font-size:10px;padding:6px 8px;font-weight:700;">PRODUCT / پروڈکٹ</th>
+        <th class="right" style="font-size:10px;padding:6px 8px;width:25px;text-align:right;font-weight:700;">#</th>
       </tr>
     </thead>
   `;
