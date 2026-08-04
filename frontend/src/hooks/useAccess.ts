@@ -30,7 +30,7 @@ export function useAccess(): UseAccessResult {
     return hasModuleAccess(role, module);
   };
 
-  const accessibleModules = role ? getAccessibleModules(role) : new Set();
+  const accessibleModules = role ? getAccessibleModules(role) : new Set<string>();
   
   const accessLevel = role ? roleToAccessLevel(role) : null;
 
