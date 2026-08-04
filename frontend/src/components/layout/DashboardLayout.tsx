@@ -5,13 +5,21 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ToastContainer } from '@/components/ui/Toast';
 import { apiFetch } from '@/utils/apiFetch';
+import { useAppDispatch } from '@/store';
+import { fetchCurrentUser } from '@/store/slices/authSlice';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
+  const dispatch = useAppDispatch();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Fetch current user on mount to restore user from session
+  useEffect(() => {
+    dispatch(fetchCurrentUser());
+  }, [dispatch]);
 
   useEffect(() => {
     let lastChecked = 0;

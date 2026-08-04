@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { StoreProvider } from '@/store/providers/StoreProvider';
 
 export const metadata: Metadata = {
   title: 'HALAL VEGG SUPPLIES',
@@ -17,7 +18,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <StoreProvider>{children}</StoreProvider>
+      </body>
     </html>
   );
 }

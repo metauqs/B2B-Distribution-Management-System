@@ -96,7 +96,7 @@ router.post('/login', async (req: Request, res: Response) => {
     if (matchedEmployee.role === 'ADMIN') userRole = 'OWNER';
     else if (matchedEmployee.role === 'SUPERVISOR') userRole = 'MANAGER';
     else if (matchedEmployee.role === 'BILLING_STAFF') userRole = 'CASHIER';
-    else if (matchedEmployee.role === 'PURCHASE_STAFF') userRole = 'MANAGER';
+    else if (matchedEmployee.role === 'PURCHASE_STAFF') userRole = 'ACCOUNTANT';
     else if (matchedEmployee.role === 'DELIVERY_STAFF') userRole = 'DELIVERY';
 
     // Ensure valid branchId reference before User creation/update

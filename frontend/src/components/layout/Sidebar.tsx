@@ -17,12 +17,15 @@ import {
   BarChart3,
   SlidersHorizontal,
 } from 'lucide-react';
+import { useAppSelector } from '@/store';
+import { hasModuleAccess } from '@/utils/rbac';
 
 interface SubItem {
   label: string;
   num: string;
   href: string;
   icon: any;
+  module: string; // Track module for access control
 }
 
 interface NavItemConfig {
@@ -32,19 +35,20 @@ interface NavItemConfig {
   isGroup: boolean;
   title?: string;
   items?: SubItem[];
+  module?: string; // Track module for access control
 }
 
 const NAV_ITEMS: NavItemConfig[] = [
-  { label: 'Dashboard', href: '/', icon: Home, isGroup: false },
+  { label: 'Dashboard', href: '/', icon: Home, isGroup: false, module: 'dashboard' },
   {
     label: 'Operations',
     icon: SlidersHorizontal,
     isGroup: true,
     title: 'OPERATIONS',
     items: [
-      { label: 'Sales & Billing', num: '', href: '/sales', icon: ReceiptText },
-      { label: 'Delivery',        num: '', href: '/delivery', icon: Truck },
-      { label: 'Collections',     num: '', href: '/collections', icon: WalletCards }
+      { label: 'Sales & Billing', num: '', href: '/sales', icon: ReceiptText, module: 'sales' },
+      { label: 'Delivery',        num: '', href: '/delivery', icon: Truck, module: 'delivery' },
+      { label: 'Collections',     num: '', href: '/collections', icon: WalletCards, module: 'collections' }
     ]
   },
   {
@@ -53,16 +57,16 @@ const NAV_ITEMS: NavItemConfig[] = [
     isGroup: true,
     title: 'SUPPLY CHAIN',
     items: [
-      { label: 'Price List',      num: '', href: '/pricelist', icon: ClipboardList },
-      { label: 'Purchases',       num: '', href: '/purchases', icon: Inbox },
-      { label: 'Inventory',       num: '', href: '/inventory', icon: Package }
+      { label: 'Price List',      num: '', href: '/pricelist', icon: ClipboardList, module: 'pricelist' },
+      { label: 'Purchases',       num: '', href: '/purchases', icon: Inbox, module: 'purchases' },
+      { label: 'Inventory',       num: '', href: '/inventory', icon: Package, module: 'inventory' }
     ]
   },
-  { label: 'Clients',   href: '/clients',   icon: Users, isGroup: false },
-  { label: 'Expenses',  href: '/expenses',  icon: Send, isGroup: false },
-  { label: 'Employees', href: '/employees', icon: Users, isGroup: false },
-  { label: 'Reports',   href: '/reports',   icon: BarChart3, isGroup: false },
-  { label: 'Setting',   href: '/settings',  icon: Settings, isGroup: false }
+  { label: 'Clients',   href: '/clients',   icon: Users, isGroup: false, module: 'clients' },
+  { label: 'Expenses',  href: '/expenses',  icon: Send, isGroup: false, module: 'expenses' },
+  { label: 'Employees', href: '/employees', icon: Users, isGroup: false, module: 'employees' },
+  { label: 'Reports',   href: '/reports',   icon: BarChart3, isGroup: false, module: 'reports' },
+  { label: 'Setting',   href: '/settings',  icon: Settings, isGroup: false, module: 'settings' }
 ];
 
 interface SidebarProps {
@@ -74,6 +78,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname  = usePathname();
   const router    = useRouter();
   const [loading, setLoading] = useState(false);
+  const user = useAppSelector(state => state.auth.user);
+  const isLoadingUser = useAppSelector(state => state.auth.isLoading);
   
   // Track hovered and clicked/locked groups for desktop hover/click behavior
   const [hoveredGroups, setHoveredGroups] = useState<Record<string, boolean>>({});
@@ -84,6 +90,36 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   
   // Collapsed mobile popup menu trigger index
   const [activePopupIdx, setActivePopupIdx] = useState<number | null>(null);
+
+  /**
+   * Filter NAV_ITEMS based on user role
+   */
+  const getAccessibleNavItems = (): NavItemConfig[] => {
+    // Only filter if user is loaded (not loading and user exists)
+    if (!user || isLoadingUser) return [];
+    
+    return NAV_ITEMS.filter(item => {
+      if (!item.module) return true; // Allow items without explicit module
+      return hasModuleAccess(user.role, item.module);
+    }).map(item => {
+      // If it's a group with sub-items, filter those too
+      if (item.isGroup && item.items) {
+        return {
+          ...item,
+          items: item.items.filter(sub => hasModuleAccess(user.role, sub.module))
+        };
+      }
+      return item;
+    }).filter(item => {
+      // Don't show group headers that have no accessible sub-items
+      if (item.isGroup && item.items) {
+        return item.items.length > 0;
+      }
+      return true;
+    });
+  };
+
+  const accessibleNavItems = getAccessibleNavItems();
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -184,7 +220,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       {/* Nav List - Expanded (visible on desktop view) */}
       <nav className="va-nav hide-collapsed" aria-label="Main navigation" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        {NAV_ITEMS.map((item, idx) => {
+        {isLoadingUser ? (
+          <div style={{ padding: '16px 12px', color: 'rgba(250, 246, 236, 0.6)', fontSize: '13px', textAlign: 'center' }}>
+            Loading navigation...
+          </div>
+        ) : (
+          <>
+            {accessibleNavItems.map((item, idx) => {
           if (!item.isGroup) {
             const href = item.href ?? '/';
             const active = isActive(href);
@@ -289,11 +331,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             );
           }
         })}
+          </>
+        )}
       </nav>
 
       {/* Nav List - Collapsed/Slim (visible on mobile view) */}
       <nav className="va-nav show-collapsed" aria-label="Collapsed navigation" style={{ display: 'flex', flexDirection: 'column', gap: '14px', alignItems: 'center', padding: '10px 0' }}>
-        {NAV_ITEMS.map((item, idx) => {
+        {isLoadingUser ? (
+          <div style={{ padding: '16px 12px', color: 'rgba(250, 246, 236, 0.6)', fontSize: '13px', textAlign: 'center' }}>
+            Loading...
+          </div>
+        ) : (
+          <>
+            {accessibleNavItems.map((item, idx) => {
           if (!item.isGroup) {
             const href = item.href ?? '/';
             const active = isActive(href);
@@ -448,6 +498,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             );
           }
         })}
+          </>
+        )}
       </nav>
 
       {/* Logout */}
