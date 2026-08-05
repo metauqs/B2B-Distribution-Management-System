@@ -30,10 +30,10 @@ export const login = createAsyncThunk<User, LoginCredentials>(
   'auth/login',
   async (credentials, { rejectWithValue }) => {
     try {
-      const res  = await fetch('/api/auth/login', {
-        method:  'POST',
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(credentials),
+        body: JSON.stringify(credentials),
       });
       const data = await res.json();
       if (!res.ok || !data.success) return rejectWithValue(data.error ?? 'Login failed');
@@ -48,6 +48,11 @@ export const login = createAsyncThunk<User, LoginCredentials>(
 
 export const logout = createAsyncThunk('auth/logout', async () => {
   setCachedUser(null);
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('sabzi_token');
+    localStorage.removeItem('sabzi_refresh_token');
+    sessionStorage.clear();
+  }
   await fetch('/api/auth/logout', { method: 'POST' });
 });
 
@@ -55,30 +60,34 @@ export const fetchCurrentUser = createAsyncThunk(
   'auth/fetchCurrentUser',
   async (_, { rejectWithValue }) => {
     try {
-      const res  = await fetch('/api/auth/me');
+      const res = await fetch('/api/auth/me', {
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       const data = await res.json();
       if (!res.ok || !data.success) {
         setCachedUser(null);
-        return rejectWithValue('Session expired');
+        return rejectWithValue('Session expired or invalid');
       }
       const user = (data.data ?? data.user) as User;
       setCachedUser(user);
       return user;
     } catch {
-      return rejectWithValue('Network error');
+      setCachedUser(null);
+      return rejectWithValue('Network connection failure');
     }
   }
 );
 
-// ─── Initial State (Hydrates instantly from localStorage) ─────────────────────
-
-const initialCachedUser = loadCachedUser();
+// ─── Initial State (Requires server session validation before granting access) ───
 
 const initialState: AuthState = {
-  user:            initialCachedUser,
-  isAuthenticated: !!initialCachedUser,
-  isLoading:       false,
-  error:           null,
+  user:              null,
+  isAuthenticated:   false,
+  isLoading:         false,
+  isCheckingSession: true,
+  error:             null,
 };
 
 // ─── Slice ────────────────────────────────────────────────────────────────────
@@ -89,48 +98,53 @@ const authSlice = createSlice({
   reducers: {
     clearError(state) { state.error = null; },
     setUser(state, action: PayloadAction<User>) {
-      state.user            = action.payload;
-      state.isAuthenticated = true;
+      state.user              = action.payload;
+      state.isAuthenticated   = true;
+      state.isCheckingSession = false;
       setCachedUser(action.payload);
     },
   },
   extraReducers: builder => {
     builder
-      .addCase(login.pending,   state => { state.isLoading = true; state.error = null; })
-      .addCase(login.fulfilled, (state, action) => {
-        state.isLoading       = false;
-        state.isAuthenticated = true;
-        state.user            = action.payload;
-        state.error           = null;
+      .addCase(login.pending, state => {
+        state.isLoading = true;
+        state.error = null;
       })
-      .addCase(login.rejected,  (state, action) => {
-        state.isLoading       = false;
-        state.isAuthenticated = false;
-        state.error           = action.payload as string;
+      .addCase(login.fulfilled, (state, action) => {
+        state.isLoading         = false;
+        state.isAuthenticated   = true;
+        state.isCheckingSession = false;
+        state.user              = action.payload;
+        state.error             = null;
+      })
+      .addCase(login.rejected, (state, action) => {
+        state.isLoading         = false;
+        state.isAuthenticated   = false;
+        state.isCheckingSession = false;
+        state.error             = action.payload as string;
       })
       .addCase(logout.fulfilled, state => {
-        state.user            = null;
-        state.isAuthenticated = false;
-        state.error           = null;
+        state.user              = null;
+        state.isAuthenticated   = false;
+        state.isCheckingSession = false;
+        state.error             = null;
       })
-      .addCase(fetchCurrentUser.pending,   state => {
-        if (!state.user) state.isLoading = true;
+      .addCase(fetchCurrentUser.pending, state => {
+        state.isCheckingSession = true;
+        state.isLoading = true;
       })
       .addCase(fetchCurrentUser.fulfilled, (state, action) => {
-        state.isLoading       = false;
-        state.isAuthenticated = true;
-        state.user            = action.payload as User;
+        state.isLoading         = false;
+        state.isAuthenticated   = true;
+        state.isCheckingSession = false;
+        state.user              = action.payload as User;
       })
       .addCase(fetchCurrentUser.rejected, (state, action) => {
-        state.isLoading = false;
-        const cached = loadCachedUser();
-        if (cached) {
-          state.user = cached;
-          state.isAuthenticated = true;
-        } else {
-          state.isAuthenticated = false;
-          state.user = null;
-        }
+        state.isLoading         = false;
+        state.isAuthenticated   = false;
+        state.isCheckingSession = false;
+        state.user              = null;
+        state.error             = action.payload as string;
       });
   },
 });

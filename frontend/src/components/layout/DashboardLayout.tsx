@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ToastContainer } from '@/components/ui/Toast';
 import { apiFetch } from '@/utils/apiFetch';
-import { useAppDispatch } from '@/store';
+import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchCurrentUser } from '@/store/slices/authSlice';
 
 interface DashboardLayoutProps {
@@ -14,41 +15,49 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const dispatch = useAppDispatch();
+  const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Fetch current user on mount to restore user from session
+  const { user, isAuthenticated, isCheckingSession } = useAppSelector(state => state.auth);
+
+  // Perform session verification with HttpOnly cookie on initial mount
   useEffect(() => {
     dispatch(fetchCurrentUser());
   }, [dispatch]);
 
+  // Auth Guard redirect if session is unauthenticated after verification check
+  useEffect(() => {
+    if (!isCheckingSession && (!isAuthenticated || !user)) {
+      console.warn('🔒 Unauthenticated or expired session. Redirecting to login...');
+      router.replace('/login?expired=true');
+    }
+  }, [isCheckingSession, isAuthenticated, user, router]);
+
+  // Periodic heartbeat & window focus revalidation
   useEffect(() => {
     let lastChecked = 0;
-    const CHECK_THROTTLE_MS = 10000; // Max once per 10 seconds
+    const CHECK_THROTTLE_MS = 15000;
 
     const handleResume = async () => {
       const now = Date.now();
       if (now - lastChecked < CHECK_THROTTLE_MS) return;
       lastChecked = now;
 
-      console.log('🔄 Tab resume/focus or online event. Verifying session...');
-
       try {
         const res = await apiFetch('/api/health');
         if (res.status === 401) {
-          window.location.href = '/login';
+          router.replace('/login?expired=true');
           return;
         }
         window.dispatchEvent(new Event('app-revalidate'));
       } catch (err) {
-        console.warn('⚠️ Network or backend unreachable:', err);
+        console.warn('⚠️ Network check error:', err);
       }
     };
 
     window.addEventListener('focus', handleResume);
     const handleVis = () => {
-      if (document.visibilityState === 'visible') {
-        handleResume();
-      }
+      if (document.visibilityState === 'visible') handleResume();
     };
     document.addEventListener('visibilitychange', handleVis);
     window.addEventListener('pageshow', handleResume);
@@ -60,7 +69,59 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       window.removeEventListener('pageshow', handleResume);
       window.removeEventListener('online', handleResume);
     };
-  }, []);
+  }, [router]);
+
+  // Render Session Verification Loader while checking authentication with server
+  if (isCheckingSession) {
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'radial-gradient(circle at 50% 30%, #1F3D2B 0%, #152A1D 60%, #0D1B13 100%)',
+        color: '#FAF6EC',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 99999,
+        fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif"
+      }}>
+        <div style={{ fontSize: 44, marginBottom: 14 }}>🥬</div>
+        <div style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#D99B26', fontWeight: 700, marginBottom: 4 }}>
+          DAILY REGISTER
+        </div>
+        <h1 style={{ margin: 0, fontSize: 24, color: '#FFFFFF', fontWeight: 800 }}>Halal Vegg Supplies</h1>
+        
+        <div style={{
+          marginTop: 28,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          background: 'rgba(255,255,255,0.07)',
+          padding: '9px 20px',
+          borderRadius: 30,
+          border: '1px solid rgba(255,255,255,0.12)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+        }}>
+          <div style={{
+            width: 15,
+            height: 15,
+            border: '2.5px solid #6FD89A',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 0.7s linear infinite'
+          }} />
+          <span style={{ fontSize: 13, color: 'rgba(250,246,236,0.9)', fontWeight: 600 }}>Verifying Authentication Session…</span>
+        </div>
+        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // Render null while redirecting unauthenticated users to /login
+  if (!isAuthenticated || !user) {
+    return null;
+  }
 
   return (
     <div className="va-app">

@@ -1,4 +1,4 @@
-// ─── Auth Types — aligned with new Prisma schema ─────────────────────────────
+// ─── Auth Types — aligned with Prisma schema ─────────────────────────────
 
 export type UserRole =
   | 'OWNER'
@@ -21,10 +21,11 @@ export interface User {
 }
 
 export interface AuthState {
-  user:            User | null;
-  isAuthenticated: boolean;
-  isLoading:       boolean;
-  error:           string | null;
+  user:              User | null;
+  isAuthenticated:   boolean;
+  isLoading:         boolean;
+  isCheckingSession: boolean;
+  error:             string | null;
 }
 
 export interface LoginCredentials {

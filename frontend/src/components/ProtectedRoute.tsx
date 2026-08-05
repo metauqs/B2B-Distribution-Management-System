@@ -1,5 +1,3 @@
-// ─── Protected Route Component (for page-level access control) ────────────────
-
 'use client';
 
 import { useRouter } from 'next/navigation';
@@ -9,46 +7,34 @@ import { hasModuleAccess, getDefaultRouteForRole } from '@/utils/rbac';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  module: string; // Module name to check access for
+  module: string;
   fallback?: React.ReactNode;
 }
 
-/**
- * Wrapper component to protect pages based on user role
- * Usage:
- * <ProtectedRoute module="reports">
- *   <ReportsPage />
- * </ProtectedRoute>
- */
 export function ProtectedRoute({ children, module, fallback }: ProtectedRouteProps) {
   const router = useRouter();
-  const user = useAppSelector(state => state.auth.user);
-  const isAuthenticated = useAppSelector(state => state.auth.isAuthenticated);
+  const { user, isAuthenticated, isCheckingSession } = useAppSelector(state => state.auth);
 
   useEffect(() => {
-    if (!isAuthenticated || !user) {
-      router.push('/login');
-      return;
-    }
+    if (!isCheckingSession) {
+      if (!isAuthenticated || !user) {
+        router.replace('/login?expired=true');
+        return;
+      }
 
-    if (!hasModuleAccess(user.role, module)) {
-      // User doesn't have access, redirect to default landing page for role
-      router.push(getDefaultRouteForRole(user.role));
-      return;
+      if (!hasModuleAccess(user.role, module)) {
+        router.replace(getDefaultRouteForRole(user.role));
+        return;
+      }
     }
-  }, [isAuthenticated, user, module, router]);
+  }, [isCheckingSession, isAuthenticated, user, module, router]);
 
-  if (!user || !hasModuleAccess(user.role, module)) {
-    return fallback ? (
-      <>
-        {fallback}
-      </>
-    ) : (
-      <div style={{ padding: '24px', textAlign: 'center' }}>
-        <h2>Access Denied</h2>
-        <p>You don't have permission to access this page.</p>
-      </div>
-    );
+  if (isCheckingSession) {
+    return null;
+  }
+
+  if (!user || !isAuthenticated || !hasModuleAccess(user.role, module)) {
+    return fallback ? <>{fallback}</> : null;
   }
 
   return <>{children}</>;
