@@ -212,25 +212,16 @@ export default function LoginPage() {
           </div>
 
           <span style={{
-            fontSize: '11px',
-            letterSpacing: '0.18em',
+            fontSize: '11.5px',
+            letterSpacing: '0.14em',
             textTransform: 'uppercase',
             color: '#B87333',
             fontWeight: 700,
             display: 'block',
-            marginBottom: '2px',
+            marginTop: '2px',
           }}>
-            DAILY REGISTER
+            FRESH FROM MANDI • DAILY DELIVERY
           </span>
-
-          <p style={{
-            fontSize: '13px',
-            color: '#4A6B56',
-            margin: '2px 0 0 0',
-            fontWeight: 600,
-          }}>
-            B2B Produce Distribution Management System
-          </p>
         </div>
 
         {/* Glassmorphism Login Card */}

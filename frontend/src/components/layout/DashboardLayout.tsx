@@ -106,8 +106,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             }}
           />
         </div>
-        <div style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#D99B26', fontWeight: 700, marginBottom: 4 }}>
-          DAILY REGISTER
+        <div style={{ fontSize: 11.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#D99B26', fontWeight: 700, marginTop: 2 }}>
+          FRESH FROM MANDI • DAILY DELIVERY
         </div>
         
         <div style={{
