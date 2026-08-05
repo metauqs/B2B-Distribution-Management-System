@@ -7,6 +7,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
+import { usePreservedState } from '@/hooks/usePreservedState';
 
 interface DeliveryItem {
   id: string;
@@ -47,8 +48,32 @@ interface Employee { id: string; name: string; phone?: string | null; role: stri
 const STATUS_FLOW = ['PENDING', 'OUT', 'DELIVERED', 'FAILED', 'RETURNED'];
 
 export default function DeliveryPage() {
+  const [dState, setDState] = usePreservedState('delivery', {
+    view: 'table' as 'table' | 'grid',
+    filterStatus: 'ALL',
+    filterEmployee: 'ALL',
+    filterDate: todayInputDate(),
+    searchQuery: '',
+  });
+
+  const filterStatus = dState.filterStatus;
+  const setFilterStatus = (st: string) => setDState({ filterStatus: st });
+
+  const filterEmployee = dState.filterEmployee;
+  const setFilterEmployee = (emp: string) => setDState({ filterEmployee: emp });
+
+  const filterDate = dState.filterDate;
+  const setFilterDate = (dt: string) => setDState({ filterDate: dt });
+
+  const searchQuery = dState.searchQuery;
+  const setSearchQuery = (sq: string) => setDState({ searchQuery: sq });
+
+  const adminViewMode = dState.view;
+  const setAdminViewMode = (vm: any) => setDState({ view: vm });
+
   const [deliveries, setDeliveries] = useState<Delivery[]>(() => {
-    return getCachedData<Delivery[]>(`/api/delivery?date=${todayInputDate()}`) || [];
+    const d = filterDate || todayInputDate();
+    return getCachedData<Delivery[]>(`/api/delivery?date=${d}`) || [];
   });
   const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
     return getCachedData<Vehicle[]>('/api/vehicles') || [];
@@ -57,16 +82,10 @@ export default function DeliveryPage() {
     return getCachedData<Employee[]>('/api/employees?activeOnly=true') || [];
   });
   const [loading, setLoading] = useState(() => {
-    return !getCachedData<Delivery[]>(`/api/delivery?date=${todayInputDate()}`);
+    const d = filterDate || todayInputDate();
+    return !getCachedData<Delivery[]>(`/api/delivery?date=${d}`);
   });
   const [toast, setToast] = useState('');
-  
-  // Admin Filters
-  const [filterStatus, setFilterStatus] = useState<string>('ALL');
-  const [filterEmployee, setFilterEmployee] = useState<string>('ALL');
-  const [filterDate, setFilterDate] = useState<string>(() => todayInputDate());
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [adminViewMode, setAdminViewMode] = useState<'table' | 'grid'>('table');
 
   // Mode state
   const [isEmployeeMode, setIsEmployeeMode] = useState<boolean>(false);

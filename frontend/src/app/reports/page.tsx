@@ -7,6 +7,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonChart, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
+import { usePreservedState } from '@/hooks/usePreservedState';
 
 type Tab = 'Overview' | 'Sales' | 'Purchases' | 'Collections' | 'Inventory' | 'Expenses' | 'Aging' | 'Cash Flow';
 
@@ -53,9 +54,20 @@ interface AgingReport {
 }
 
 export default function ReportsPage() {
-  const [tab, setTab] = useState<Tab>('Overview');
-  const [from, setFrom] = useState(() => dateOffset(-30));
-  const [to, setTo]     = useState(() => todayInputDate());
+  const [rState, setRState] = usePreservedState('reports', {
+    tab: 'Overview' as Tab,
+    from: dateOffset(-30),
+    to: todayInputDate(),
+  });
+
+  const tab = rState.tab;
+  const setTab = (t: Tab) => setRState({ tab: t });
+
+  const from = rState.from;
+  const setFrom = (f: string) => setRState({ from: f });
+
+  const to = rState.to;
+  const setTo = (t: string) => setRState({ to: t });
 
   const [pnl,      setPnl]      = useState<PnlReport | null>(null);
   const [cashFlow, setCashFlow] = useState<CashFlowReport | null>(null);

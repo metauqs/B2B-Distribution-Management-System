@@ -8,6 +8,7 @@ import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonTable } from '@/components/ui/Skeleton';
+import { usePreservedState } from '@/hooks/usePreservedState';
 import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
 
@@ -117,7 +118,13 @@ function MarginBar({ pct }: { pct: number }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PriceListPage() {
-  const [tab, setTab] = useState<'today' | 'history' | 'lists' | 'catalog'>('today');
+  const [plState, setPlState] = usePreservedState('pricelist', {
+    tab: 'today' as 'today' | 'history' | 'lists' | 'catalog',
+    search: '',
+  });
+
+  const tab = plState.tab;
+  const setTab = (t: any) => setPlState({ tab: t });
 
   // WhatsApp Broadcast States
   const [showShareOptionsModal, setShowShareOptionsModal] = useState(false);

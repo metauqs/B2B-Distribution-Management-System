@@ -9,6 +9,7 @@ import { SkeletonTable } from '@/components/ui/Skeleton';
 import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
+import { usePreservedState } from '@/hooks/usePreservedState';
 
 interface PurchaseItem { id?: string; itemName: string; qty: number; unit: string; rate: number; amount: number; productId?: string; }
 interface Purchase {
@@ -34,6 +35,18 @@ function Badge({ status, small, isMandi }: { status: string; small?: boolean; is
 }
 
 export default function PurchasesPage() {
+  const [pState, setPState] = usePreservedState('purchases', {
+    view: 'list' as 'list' | 'create',
+    formOpen: false,
+    catalogSearch: '',
+  });
+
+  const formOpen = pState.formOpen || pState.view === 'create';
+  const setFormOpen = (open: boolean) => setPState({ formOpen: open, view: open ? 'create' : 'list' });
+
+  const catalogSearch = pState.catalogSearch;
+  const setCatalogSearch = (s: string) => setPState({ catalogSearch: s });
+
   const [purchases, setPurchases] = useState<Purchase[]>(() => {
     return getCachedData<Purchase[]>('/api/purchases') || [];
   });
@@ -48,7 +61,6 @@ export default function PurchasesPage() {
   });
   const [saving,     setSaving]     = useState(false);
   const [toast,      setToast]      = useState('');
-  const [formOpen,   setFormOpen]   = useState(false);
 
   // Form State
   const [purchaseId, setPurchaseId] = useState<string | null>(null);
@@ -56,7 +68,6 @@ export default function PurchasesPage() {
   const [supplierId, setSupplierId] = useState('');
   const [date,       setDate]       = useState(() => todayInputDate());
   const [items,      setItems]      = useState<PurchaseItem[]>([]);
-  const [catalogSearch, setCatalogSearch] = useState('');
   const [paid,         setPaid]         = useState(0);
   const [transportCost, setTransportCost] = useState(0);
   const [notes,        setNotes]        = useState('');
@@ -539,7 +550,7 @@ export default function PurchasesPage() {
       <div className="va-panel">
         <div className="va-panel-head">
           <h3>{purchaseId ? '✏️ Edit Purchase' : 'Record Purchase'}</h3>
-          <button className="va-btn secondary small" onClick={purchaseId ? handleCancelForm : () => setFormOpen(f => !f)}>
+          <button className="va-btn secondary small" onClick={purchaseId ? handleCancelForm : () => setFormOpen(!formOpen)}>
             {formOpen ? '✕ Cancel' : '+ New Purchase'}
           </button>
         </div>

@@ -7,6 +7,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_LONG, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable, SkeletonProfile } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
+import { usePreservedState } from '@/hooks/usePreservedState';
 import Icon from '@mdi/react';
 import { mdiBriefcase, mdiAccountBadge, mdiTrashCanOutline, mdiAlertCircleOutline } from '@mdi/js';
 import { useAppSelector } from '@/store';
@@ -85,10 +86,18 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   
-  // View states
-  const [view, setView] = useState<'list' | 'add' | 'edit' | 'profile'>('list');
+  const [eState, setEState] = usePreservedState('employees', {
+    view: 'list' as 'list' | 'add' | 'edit' | 'profile',
+    search: '',
+  });
+
+  const view = eState.view;
+  const setView = (v: any) => setEState({ view: v });
+
+  const search = eState.search;
+  const setSearch = (s: string) => setEState({ search: s });
+
   const [form, setForm] = useState({ ...BLANK_FORM });
-  const [search, setSearch] = useState('');
   const [computedEmployeeId, setComputedEmployeeId] = useState('');
 
   // Delete modal states
