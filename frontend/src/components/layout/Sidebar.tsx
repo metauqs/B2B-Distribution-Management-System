@@ -109,25 +109,39 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   };
 
   /**
-   * Filter NAV_ITEMS based on user role
+   * Filter NAV_ITEMS based on user role with resilient fallbacks
    */
   const getAccessibleNavItems = (): NavItemConfig[] => {
-    if (!user) return [];
-    
+    let activeRole = user?.role;
+
+    // Check localStorage cached user if Redux state is temporarily unhydrated
+    if (!activeRole && typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('sabzi_user');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          activeRole = parsed?.role;
+        }
+      } catch (e) {}
+    }
+
+    // Fallback: If no role is identified, render standard NAV_ITEMS so sidebar is never blank
+    if (!activeRole) {
+      return NAV_ITEMS;
+    }
+
     return NAV_ITEMS.filter(item => {
-      if (!item.module) return true; // Allow items without explicit module
-      return hasModuleAccess(user.role, item.module);
+      if (!item.module) return true;
+      return hasModuleAccess(activeRole!, item.module);
     }).map(item => {
-      // If it's a group with sub-items, filter those too
       if (item.isGroup && item.items) {
         return {
           ...item,
-          items: item.items.filter(sub => hasModuleAccess(user.role, sub.module))
+          items: item.items.filter(sub => hasModuleAccess(activeRole!, sub.module))
         };
       }
       return item;
     }).filter(item => {
-      // Don't show group headers that have no accessible sub-items
       if (item.isGroup && item.items) {
         return item.items.length > 0;
       }
