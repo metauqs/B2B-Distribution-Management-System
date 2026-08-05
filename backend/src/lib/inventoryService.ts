@@ -242,8 +242,8 @@ export interface AdjustParams {
   productId: string;
   branchId: string;
   systemQty: number;
-  adjustedQty: number; // For SET: final count; For INCREASE/DECREASE: adjustment amount
-  adjustmentType?: 'SET' | 'INCREASE' | 'DECREASE';
+  adjustedQty: number; // For SET/OPENING: final count; For INCREASE/DECREASE/WASTAGE/DAMAGE/SUPPLIER_RETURN: adjustment amount
+  adjustmentType?: 'SET' | 'INCREASE' | 'DECREASE' | 'WASTAGE' | 'DAMAGE' | 'SUPPLIER_RETURN' | 'OPENING';
   reason?: string;
   remarks?: string;
   userId?: string;
@@ -258,7 +258,7 @@ export interface AdjustResult {
 
 export async function manualAdjust(tx: any, p: AdjustParams): Promise<AdjustResult> {
   const db = tx || prisma;
-  const adjCount = await db.stockMovement.count({ where: { type: 'ADJUSTMENT' } });
+  const adjCount = await db.stockMovement.count();
   const refNo = `ADJ-${String(adjCount + 1).padStart(4, '0')}`;
 
   const existing = await db.inventory.findUnique({
@@ -267,19 +267,45 @@ export async function manualAdjust(tx: any, p: AdjustParams): Promise<AdjustResu
 
   const previousQty = existing?.qty ?? p.systemQty;
   let newQty = previousQty;
+  let moveType: 'ADJUSTMENT' | 'WASTAGE' | 'TRANSFER_OUT' | 'OPENING' = 'ADJUSTMENT';
 
   const adjType = p.adjustmentType ?? 'SET';
   if (adjType === 'INCREASE') {
     newQty = previousQty + Math.abs(p.adjustedQty);
+    moveType = 'ADJUSTMENT';
   } else if (adjType === 'DECREASE') {
     newQty = Math.max(0, previousQty - Math.abs(p.adjustedQty));
+    moveType = 'ADJUSTMENT';
+  } else if (adjType === 'WASTAGE') {
+    newQty = Math.max(0, previousQty - Math.abs(p.adjustedQty));
+    moveType = 'WASTAGE';
+  } else if (adjType === 'DAMAGE') {
+    newQty = Math.max(0, previousQty - Math.abs(p.adjustedQty));
+    moveType = 'WASTAGE';
+  } else if (adjType === 'SUPPLIER_RETURN') {
+    newQty = Math.max(0, previousQty - Math.abs(p.adjustedQty));
+    moveType = 'TRANSFER_OUT';
+  } else if (adjType === 'OPENING') {
+    newQty = Math.max(0, p.adjustedQty);
+    moveType = 'OPENING';
   } else {
     // SET physical count
     newQty = Math.max(0, p.adjustedQty);
+    moveType = 'ADJUSTMENT';
   }
 
   const delta = newQty - previousQty;
-  const reasonText = [p.reason, p.remarks].filter(Boolean).join(' - ') || 'Manual adjustment';
+  const modeLabels: Record<string, string> = {
+    SET: 'Physical Count Correction',
+    INCREASE: 'Stock Increase',
+    DECREASE: 'Stock Reduction',
+    WASTAGE: 'Recorded Wastage',
+    DAMAGE: 'Recorded Damaged Stock',
+    SUPPLIER_RETURN: 'Supplier Return',
+    OPENING: 'Opening Balance Correction',
+  };
+  const modeTitle = modeLabels[adjType] ?? 'Stock Adjustment';
+  const reasonText = [p.reason, p.remarks].filter(Boolean).join(' - ') || modeTitle;
 
   if (existing) {
     await db.inventory.update({
@@ -296,7 +322,7 @@ export async function manualAdjust(tx: any, p: AdjustParams): Promise<AdjustResu
     data: {
       productId: p.productId,
       branchId: p.branchId,
-      type: 'ADJUSTMENT',
+      type: moveType,
       qty: delta,
       previousStock: previousQty,
       newStock: newQty,
@@ -304,7 +330,7 @@ export async function manualAdjust(tx: any, p: AdjustParams): Promise<AdjustResu
       refId: refNo,
       userId: p.userId ?? undefined,
       date: new Date(),
-      note: `${refNo} | Stock: ${previousQty} → ${newQty} (${delta >= 0 ? '+' : ''}${delta}) | ${reasonText}`,
+      note: `${refNo} | [${modeTitle}] Stock: ${previousQty} → ${newQty} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)}) | ${reasonText}`,
     },
   });
 

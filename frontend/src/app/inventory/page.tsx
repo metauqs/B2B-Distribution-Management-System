@@ -75,25 +75,26 @@ interface Movement {
 type View = 'list' | 'wastage' | 'adjust' | 'movements' | 'priceHistory';
 
 const UNITS = ['KG','G','DOZEN','PIECE','BOX','CRATE','LITRE','BUNDLE','TRAY'];
-const WASTAGE_REASONS = [
-  'Rotten / Spoiled',
-  'Physical Damage',
-  'Expired',
-  'Lost / Stolen',
-  'Quality Issue',
-  'Returned to Supplier',
-  'Other',
+
+const ADJUSTMENT_MODES = [
+  { id: 'SET', label: '📋 Physical Count Correction (Set Total)', desc: 'Set exact physical count verified in warehouse' },
+  { id: 'INCREASE', label: '➕ Increase Stock (+ Add Qty)', desc: 'Add quantity to current inventory' },
+  { id: 'DECREASE', label: '➖ Decrease Stock (- Deduct Qty)', desc: 'Reduce quantity from current inventory' },
+  { id: 'WASTAGE', label: '🗑 Record Wastage (Rotten / Spoiled)', desc: 'Record stock wastage and auto-deduct' },
+  { id: 'DAMAGE', label: '💥 Record Damaged Stock', desc: 'Deduct damaged items from stock' },
+  { id: 'SUPPLIER_RETURN', label: '🚛 Supplier Return (Stock Out)', desc: 'Deduct stock returned to supplier' },
+  { id: 'OPENING', label: '🔓 Opening Balance Correction', desc: 'Set or correct initial opening stock' },
 ];
 
-const ADJUSTMENT_REASONS = [
-  'Physical Verification Correction',
-  'Opening Stock Entry',
-  'Inventory Damage Correction',
-  'Warehouse Stock Relocation',
-  'Supplier Stock Return',
-  'System Reconciliation',
-  'Other',
-];
+const REASON_PRESETS: Record<string, string[]> = {
+  SET: ['Physical Verification Correction', 'System Audit Reconciliation', 'Opening Stock Correction', 'Other'],
+  INCREASE: ['Purchased Local Stock', 'Found Extra Uncounted Stock', 'Correction Addition', 'Other'],
+  DECREASE: ['Internal Consumption', 'Stock Correction Deduction', 'Sampling', 'Other'],
+  WASTAGE: ['Rotten / Spoiled', 'Expired Produce', 'Quality Issue', 'Temperature Damage', 'Other'],
+  DAMAGE: ['Physical Handling Damage', 'Transport Damage', 'Crushed in Storage', 'Other'],
+  SUPPLIER_RETURN: ['Defective Quality Returned', 'Over-delivered Return', 'Supplier Recall', 'Other'],
+  OPENING: ['Opening Inventory Setup', 'Initial Stock Entry', 'System Migration Opening', 'Other'],
+};
 
 // ── Emoji Helper ─────────────────────────────────────────────────────────────
 function getProductEmoji(name: string = ''): string {
@@ -151,7 +152,7 @@ export default function InventoryPage() {
   const [wComboboxOpen, setWComboboxOpen] = useState(false);
   const [wQty, setWQty] = useState<number>(0);
   const [wUnit, setWUnit] = useState('KG');
-  const [wReason, setWReason] = useState(WASTAGE_REASONS[0]);
+  const [wReason, setWReason] = useState('Rotten / Spoiled');
   const [wRemarks, setWRemarks] = useState('');
   const [wDate, setWDate] = useState('');
 
@@ -159,9 +160,9 @@ export default function InventoryPage() {
   const [aProdId, setAProdId] = useState('');
   const [aProdSearch, setAProdSearch] = useState('');
   const [aComboboxOpen, setAComboboxOpen] = useState(false);
-  const [aType, setAType] = useState<'SET' | 'INCREASE' | 'DECREASE'>('SET');
+  const [aType, setAType] = useState<'SET' | 'INCREASE' | 'DECREASE' | 'WASTAGE' | 'DAMAGE' | 'SUPPLIER_RETURN' | 'OPENING'>('SET');
   const [aQtyVal, setAQtyVal] = useState<number | ''>('');
-  const [aReason, setAReason] = useState(ADJUSTMENT_REASONS[0]);
+  const [aReason, setAReason] = useState(REASON_PRESETS.SET[0]);
   const [aRemarks, setARemarks] = useState('');
   const [aSysQty, setASysQty] = useState<number>(0);
 
@@ -197,7 +198,7 @@ export default function InventoryPage() {
 
   // ── Combined Master Product List for Dropdowns ──────────────────────────────
   const masterProductsList = useMemo(() => {
-    const map = new Map<string, { productId: string; name: string; urduName?: string; unit: string; qty: number }>();
+    const map = new Map<string, { productId: string; name: string; urduName?: string; unit: string; qty: number; currentBuyPrice: number; previousBuyPrice: number; lastPurchaseDate?: string; lastPurchaseQty?: number }>();
 
     inventory.forEach(inv => {
       if (inv.productId) {
@@ -207,6 +208,10 @@ export default function InventoryPage() {
           urduName: inv.product?.urduName ?? '',
           unit: inv.product?.defaultUnit ?? 'KG',
           qty: inv.qty ?? 0,
+          currentBuyPrice: inv.currentBuyPrice ?? inv.avgCost ?? 0,
+          previousBuyPrice: inv.previousBuyPrice ?? 0,
+          lastPurchaseDate: inv.lastPurchaseDate,
+          lastPurchaseQty: inv.lastPurchaseQty,
         });
       }
     });
@@ -219,6 +224,8 @@ export default function InventoryPage() {
           urduName: prod.urduName ?? '',
           unit: prod.defaultUnit ?? 'KG',
           qty: 0,
+          currentBuyPrice: 0,
+          previousBuyPrice: 0,
         });
       }
     });
@@ -241,6 +248,10 @@ export default function InventoryPage() {
       (p.urduName ?? '').includes(wProdSearch)
     );
   }, [masterProductsList, wProdSearch]);
+
+  const selectedAdjProduct = useMemo(() => {
+    return masterProductsList.find(p => p.productId === aProdId);
+  }, [masterProductsList, aProdId]);
 
   const openAdjustForProduct = (item: InventoryItem) => {
     setAProdId(item.productId);
@@ -323,12 +334,39 @@ export default function InventoryPage() {
     } finally { setSaving(false); }
   };
 
+  // ── Calculation helper for Adjust Form ──────────────────────────────────────
+  const prevStock = aSysQty;
+  const numQtyVal = Number(aQtyVal || 0);
+
+  let newExpectedStock = prevStock;
+  let calcDiff = 0;
+
+  if (aType === 'SET' || aType === 'OPENING') {
+    newExpectedStock = Math.max(0, numQtyVal);
+    calcDiff = newExpectedStock - prevStock;
+  } else if (aType === 'INCREASE') {
+    newExpectedStock = prevStock + Math.abs(numQtyVal);
+    calcDiff = +Math.abs(numQtyVal);
+  } else {
+    // DECREASE, WASTAGE, DAMAGE, SUPPLIER_RETURN
+    newExpectedStock = prevStock - Math.abs(numQtyVal);
+    calcDiff = -Math.abs(numQtyVal);
+  }
+
+  const isStockInvalid = newExpectedStock < 0;
+
   // ── Adjust submit ───────────────────────────────────────────────────────────
   const handleAdjust = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!aProdId) return showToast('❌ Select a product');
-    if (aQtyVal === '') return showToast('❌ Enter quantity');
+    if (aQtyVal === '' || isNaN(Number(aQtyVal))) return showToast('❌ Enter a valid quantity');
     if (Number(aQtyVal) < 0) return showToast('❌ Quantity cannot be negative');
+    if (isStockInvalid) return showToast('❌ Operation would result in negative stock!');
+
+    if (['DECREASE', 'WASTAGE', 'DAMAGE', 'SUPPLIER_RETURN'].includes(aType) && numQtyVal > prevStock) {
+      return showToast(`❌ Cannot deduct ${numQtyVal} from current stock (${prevStock.toFixed(2)})`);
+    }
+
     setSaving(true);
     try {
       const res = await apiFetch('/api/inventory/adjust', {
@@ -347,7 +385,7 @@ export default function InventoryPage() {
         invalidateCache('/api/inventory');
         invalidateCache('/api/reports');
         const { refNo, delta, newQty } = data.data;
-        showToast(`✅ Stock adjusted — ${refNo} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)} → New: ${newQty.toFixed(2)})`);
+        showToast(`✅ Stock updated — ${refNo} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)} → New Stock: ${newQty.toFixed(2)})`);
         setAProdId(''); setAProdSearch(''); setAQtyVal(''); setARemarks(''); setASysQty(0);
         await load(true); setView('list');
       } else showToast('❌ ' + (data.error ?? 'Failed'));
@@ -871,7 +909,7 @@ export default function InventoryPage() {
               <div className="va-field">
                 <label>Reason *</label>
                 <select value={wReason} onChange={e => setWReason(e.target.value)} style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 600 }}>
-                  {WASTAGE_REASONS.map(r => <option key={r} value={r} style={{ background: '#ffffff', color: '#0F172A' }}>{r}</option>)}
+                  {REASON_PRESETS.WASTAGE.map(r => <option key={r} value={r} style={{ background: '#ffffff', color: '#0F172A' }}>{r}</option>)}
                 </select>
               </div>
             </div>
@@ -901,20 +939,23 @@ export default function InventoryPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* VIEW: MANUAL STOCK ADJUSTMENT                                          */}
+      {/* VIEW: MANUAL STOCK ADJUSTMENT (PROFESSIONAL ERP MODULE)                */}
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {view === 'adjust' && (
-        <div className="va-panel" style={{ maxWidth: 640 }}>
-          <div className="va-panel-head"><h3>⚙ Manual Stock Adjustment</h3></div>
+        <div className="va-panel" style={{ maxWidth: 720 }}>
+          <div className="va-panel-head">
+            <h3>⚙ Professional ERP Manual Stock Adjustment</h3>
+          </div>
           <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 16px' }}>
-            Adjust inventory count. Every adjustment records previous stock, new stock, and user details in the Stock Movement audit log.
+            Single Source of Truth — Stock corrections, physical verifications, wastage, damaged items, and supplier returns. Every action updates stock and records a full audit log.
           </p>
+
           <form onSubmit={handleAdjust}>
             <div className="va-form-row">
               {/* Searchable Product Combobox */}
               <div className="va-field" style={{ position: 'relative' }}>
                 <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
-                  Product * (Type English or Urdu name)
+                  Product * (Search English or Urdu name)
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
@@ -1043,7 +1084,7 @@ export default function InventoryPage() {
                     cursor: 'pointer',
                   }}
                 >
-                  <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>— Or select from full list ({masterProductsList.length} products) —</option>
+                  <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>— Select from full product list ({masterProductsList.length} items) —</option>
                   {masterProductsList.map(p => (
                     <option key={p.productId} value={p.productId} style={{ background: '#ffffff', color: '#0F172A', padding: '6px' }}>
                       {getProductEmoji(p.name)} {p.name} {p.urduName ? `/ ${p.urduName}` : ''} — Stock: {p.qty.toFixed(2)} {p.unit}
@@ -1052,53 +1093,155 @@ export default function InventoryPage() {
                 </select>
               </div>
 
+              {/* Adjustment Mode Selection */}
               <div className="va-field">
-                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Adjustment Mode *</label>
-                <select value={aType} onChange={e => setAType(e.target.value as any)} style={{ background: '#ffffff', color: '#0F172A', fontWeight: 600, fontSize: 13, width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line)' }}>
-                  <option value="SET" style={{ background: '#ffffff', color: '#0F172A' }}>Physical Count Correction (Set Total)</option>
-                  <option value="INCREASE" style={{ background: '#ffffff', color: '#0F172A' }}>Increase Stock (+ Add Qty)</option>
-                  <option value="DECREASE" style={{ background: '#ffffff', color: '#0F172A' }}>Decrease Stock (- Deduct Qty)</option>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                  Adjustment Operation Mode *
+                </label>
+                <select
+                  value={aType}
+                  onChange={e => {
+                    const newMode = e.target.value as any;
+                    setAType(newMode);
+                    if (REASON_PRESETS[newMode]) setAReason(REASON_PRESETS[newMode][0]);
+                  }}
+                  style={{ background: '#ffffff', color: '#0F172A', fontWeight: 600, fontSize: 13, width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
+                >
+                  {ADJUSTMENT_MODES.map(m => (
+                    <option key={m.id} value={m.id} style={{ background: '#ffffff', color: '#0F172A' }}>
+                      {m.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
 
+            {/* ── ERP STOCK INFORMATION PANEL ──────────────────────────────── */}
+            {selectedAdjProduct && (
+              <div style={{
+                margin: '16px 0',
+                padding: '16px',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                borderRadius: 12,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                gap: 14,
+              }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>PRODUCT</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', marginTop: 2 }}>
+                    {getProductEmoji(selectedAdjProduct.name)} {selectedAdjProduct.name}
+                  </div>
+                  {selectedAdjProduct.urduName && (
+                    <div style={{ fontSize: 13, color: '#475569', fontFamily: 'serif' }}>{selectedAdjProduct.urduName}</div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>CURRENT STOCK</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#166534', fontFamily: 'monospace', marginTop: 2 }}>
+                    {selectedAdjProduct.qty.toFixed(2)} {selectedAdjProduct.unit}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748B' }}>System Record</div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>LATEST BUY RATE</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#1E3A8A', fontFamily: 'monospace', marginTop: 2 }}>
+                    {selectedAdjProduct.currentBuyPrice > 0 ? `Rs ${selectedAdjProduct.currentBuyPrice.toFixed(2)}` : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748B' }}>per {selectedAdjProduct.unit}</div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>PREVIOUS BUY RATE</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#64748B', fontFamily: 'monospace', marginTop: 2 }}>
+                    {selectedAdjProduct.previousBuyPrice > 0 ? `Rs ${selectedAdjProduct.previousBuyPrice.toFixed(2)}` : '—'}
+                  </div>
+                  {selectedAdjProduct.previousBuyPrice > 0 && selectedAdjProduct.currentBuyPrice > 0 && (
+                    <div style={{ fontSize: 11, fontWeight: 700, color: selectedAdjProduct.currentBuyPrice > selectedAdjProduct.previousBuyPrice ? '#DC2626' : '#166534' }}>
+                      {selectedAdjProduct.currentBuyPrice > selectedAdjProduct.previousBuyPrice ? `+${(selectedAdjProduct.currentBuyPrice - selectedAdjProduct.previousBuyPrice).toFixed(1)}` : (selectedAdjProduct.currentBuyPrice - selectedAdjProduct.previousBuyPrice).toFixed(1)}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>LAST PURCHASE</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginTop: 2 }}>
+                    {selectedAdjProduct.lastPurchaseDate ? new Date(selectedAdjProduct.lastPurchaseDate).toLocaleDateString('en-GB') : 'No purchases yet'}
+                  </div>
+                  {selectedAdjProduct.lastPurchaseQty && (
+                    <div style={{ fontSize: 11, color: '#64748B' }}>{selectedAdjProduct.lastPurchaseQty} {selectedAdjProduct.unit} bought</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── DYNAMIC LIVE CALCULATION PREVIEW CARD ─────────────────────── */}
             {aProdId && (
               <>
-                <div style={{ display: 'flex', gap: 12, margin: '16px 0', flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, padding: '14px 16px', background: 'rgba(31,61,43,0.07)', borderRadius: 10, border: '1px solid var(--line)' }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>SYSTEM STOCK</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--forest)', fontFamily: 'monospace' }}>{aSysQty.toFixed(2)}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{masterProductsList.find(i => i.productId === aProdId)?.unit ?? 'KG'}</div>
+                <div style={{
+                  display: 'flex', gap: 12, margin: '16px 0', flexWrap: 'wrap',
+                  padding: '14px', background: '#F1F5F9', borderRadius: 12, border: '1px solid #CBD5E1'
+                }}>
+                  <div style={{ flex: 1, padding: '12px 14px', background: '#ffffff', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                    <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700 }}>PREVIOUS STOCK</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: '#334155', fontFamily: 'monospace', marginTop: 2 }}>
+                      {prevStock.toFixed(2)}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748B' }}>{selectedAdjProduct?.unit ?? 'KG'}</div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', fontSize: 24, color: 'var(--muted)' }}>→</div>
-                  <div style={{ flex: 1, padding: '14px 16px', background: 'rgba(43,91,138,0.07)', borderRadius: 10, border: '1px solid var(--line)' }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>
-                      {aType === 'SET' ? 'NEW PHYSICAL COUNT' : aType === 'INCREASE' ? 'ADD QUANTITY' : 'DEDUCT QUANTITY'}
+
+                  <div style={{ flex: 1.2, padding: '12px 14px', background: 'rgba(43,91,138,0.06)', borderRadius: 8, border: '1px solid var(--line)' }}>
+                    <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700 }}>
+                      {aType === 'SET' || aType === 'OPENING' ? 'ACTUAL PHYSICAL STOCK *'
+                        : aType === 'INCREASE' ? 'QUANTITY TO ADD (+)'
+                        : aType === 'DECREASE' ? 'QUANTITY TO DEDUCT (-)'
+                        : aType === 'WASTAGE' ? 'QUANTITY WASTED (-)'
+                        : aType === 'DAMAGE' ? 'QUANTITY DAMAGED (-)'
+                        : 'QUANTITY RETURNED (-)'}
                     </div>
                     <input
                       type="number" min="0" step="0.01" required
                       value={aQtyVal}
                       onChange={e => setAQtyVal(e.target.value === '' ? '' : +e.target.value)}
-                      style={{ width: '100%', fontSize: 22, fontWeight: 800, fontFamily: 'monospace', border: 'none', background: 'transparent', color: 'var(--forest)', outline: 'none' }}
+                      style={{ width: '100%', fontSize: 22, fontWeight: 800, fontFamily: 'monospace', border: 'none', background: 'transparent', color: 'var(--forest)', outline: 'none', marginTop: 2 }}
                       placeholder="0.00"
                     />
+                  </div>
+
+                  <div style={{ flex: 1, padding: '12px 14px', background: '#ffffff', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                    <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700 }}>NEW EXPECTED STOCK</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: isStockInvalid ? '#DC2626' : '#166534', fontFamily: 'monospace', marginTop: 2 }}>
+                      {newExpectedStock.toFixed(2)}
+                    </div>
+                    <div style={{ fontSize: 11, color: isStockInvalid ? '#DC2626' : '#64748B' }}>
+                      {isStockInvalid ? '⚠ Cannot be negative' : `${calcDiff >= 0 ? '+' : ''}${calcDiff.toFixed(2)} ${selectedAdjProduct?.unit ?? 'KG'}`}
+                    </div>
                   </div>
                 </div>
 
                 <div className="va-form-row">
                   <div className="va-field">
-                    <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Reason *</label>
-                    <select value={aReason} onChange={e => setAReason(e.target.value)} style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 600, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}>
-                      {ADJUSTMENT_REASONS.map(r => <option key={r} value={r} style={{ background: '#ffffff', color: '#0F172A' }}>{r}</option>)}
+                    <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Adjustment Reason *</label>
+                    <select
+                      value={aReason}
+                      onChange={e => setAReason(e.target.value)}
+                      style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 600, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
+                    >
+                      {(REASON_PRESETS[aType] || REASON_PRESETS.SET).map(r => (
+                        <option key={r} value={r} style={{ background: '#ffffff', color: '#0F172A' }}>{r}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
 
                 <div className="va-form-row" style={{ marginTop: 12 }}>
                   <div className="va-field">
-                    <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Remarks / Notes</label>
+                    <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Remarks / Notes (Logged in Audit Trail)</label>
                     <input value={aRemarks} onChange={e => setARemarks(e.target.value)}
-                      placeholder="Additional notes for stock adjustment log…"
+                      placeholder="Additional details for stock movement audit log…"
                       style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
                     />
                   </div>
@@ -1107,8 +1250,8 @@ export default function InventoryPage() {
             )}
 
             <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-              <button type="submit" className="va-btn" disabled={saving || !aProdId || aQtyVal === ''}>
-                {saving ? 'Saving…' : '⚙ Apply Stock Adjustment'}
+              <button type="submit" className="va-btn" disabled={saving || !aProdId || aQtyVal === '' || isStockInvalid}>
+                {saving ? 'Saving ERP Update…' : '⚙ Apply Stock Adjustment'}
               </button>
               <button type="button" className="va-btn secondary" onClick={() => { setAComboboxOpen(false); setView('list'); }}>Cancel</button>
             </div>
@@ -1131,8 +1274,8 @@ export default function InventoryPage() {
               </select>
               <select value={mType} onChange={e => setMType(e.target.value)}
                 style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, background: '#ffffff', color: '#0F172A' }}>
-                <option value="all" style={{ background: '#ffffff', color: '#0F172A' }}>All Types</option>
-                {['PURCHASE','SALE','WASTAGE','ADJUSTMENT','OPENING'].map(t => <option key={t} style={{ background: '#ffffff', color: '#0F172A' }}>{t}</option>)}
+                <option value="all" style={{ background: '#ffffff', color: '#0F172A' }}>All Movement Types</option>
+                {['PURCHASE','SALE','WASTAGE','ADJUSTMENT','TRANSFER_OUT','OPENING'].map(t => <option key={t} style={{ background: '#ffffff', color: '#0F172A' }}>{t}</option>)}
               </select>
               <input type="date" value={mFrom} onChange={e => setMFrom(e.target.value)}
                 style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, background: '#ffffff', color: '#0F172A' }} />
