@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
-import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline, mdiArrowUpBold, mdiArrowDownBold } from '@mdi/js';
+import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline } from '@mdi/js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -95,7 +95,27 @@ const ADJUSTMENT_REASONS = [
   'Other',
 ];
 
-// ── Helper ────────────────────────────────────────────────────────────────────
+// ── Emoji Helper ─────────────────────────────────────────────────────────────
+function getProductEmoji(name: string = ''): string {
+  const n = name.toLowerCase();
+  if (n.includes('potato') || n.includes('aloo')) return '🥔';
+  if (n.includes('onion') || n.includes('pyaz') || n.includes('piaz')) return '🧅';
+  if (n.includes('tomato') || n.includes('timatar') || n.includes('tamatar')) return '🍅';
+  if (n.includes('mango') || n.includes('aam')) return '🥭';
+  if (n.includes('apple') || n.includes('seb')) return '🍎';
+  if (n.includes('cabbage') || n.includes('gobhi') || n.includes('gobi')) return '🥬';
+  if (n.includes('cauliflower')) return '🥦';
+  if (n.includes('carrot') || n.includes('gajar')) return '🥕';
+  if (n.includes('lemon') || n.includes('nimbu') || n.includes('limo')) return '🍋';
+  if (n.includes('banana') || n.includes('kela')) return '🍌';
+  if (n.includes('orange') || n.includes('malta') || n.includes('kino')) return '🍊';
+  if (n.includes('garlic') || n.includes('lehsan')) return '🧄';
+  if (n.includes('ginger') || n.includes('adrak')) return '🫚';
+  if (n.includes('chilli') || n.includes('mirch')) return '🌶️';
+  if (n.includes('cucumber') || n.includes('kheera')) return '🥒';
+  return '📦';
+}
+
 function fmtQty(qty: number, unit = 'KG') {
   return `${qty % 1 === 0 ? qty : qty.toFixed(2)} ${unit}`;
 }
@@ -107,6 +127,7 @@ export default function InventoryPage() {
     const cached = getCachedData<any>('/api/inventory');
     return cached?.data ?? cached ?? [];
   });
+  const [allProducts, setAllProducts] = useState<any[]>([]);
   const [summary, setSummary] = useState<InventorySummary | null>(() => {
     const cached = getCachedData<any>('/api/inventory');
     return cached?.summary ?? null;
@@ -126,6 +147,8 @@ export default function InventoryPage() {
 
   // Wastage form
   const [wProdId, setWProdId] = useState('');
+  const [wProdSearch, setWProdSearch] = useState('');
+  const [wComboboxOpen, setWComboboxOpen] = useState(false);
   const [wQty, setWQty] = useState<number>(0);
   const [wUnit, setWUnit] = useState('KG');
   const [wReason, setWReason] = useState(WASTAGE_REASONS[0]);
@@ -135,20 +158,12 @@ export default function InventoryPage() {
   // Adjust form
   const [aProdId, setAProdId] = useState('');
   const [aProdSearch, setAProdSearch] = useState('');
+  const [aComboboxOpen, setAComboboxOpen] = useState(false);
   const [aType, setAType] = useState<'SET' | 'INCREASE' | 'DECREASE'>('SET');
   const [aQtyVal, setAQtyVal] = useState<number | ''>('');
   const [aReason, setAReason] = useState(ADJUSTMENT_REASONS[0]);
   const [aRemarks, setARemarks] = useState('');
   const [aSysQty, setASysQty] = useState<number>(0);
-  const [wProdSearch, setWProdSearch] = useState('');
-
-  const openAdjustForProduct = (item: InventoryItem) => {
-    setAProdId(item.productId);
-    setAProdSearch(item.product?.name ?? '');
-    setASysQty(item.qty);
-    setAQtyVal('');
-    setView('adjust');
-  };
 
   // Movements filters
   const [mProdId, setMProdId] = useState('');
@@ -158,14 +173,20 @@ export default function InventoryPage() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
-  // ── Load inventory ──────────────────────────────────────────────────────────
+  // ── Load inventory & all products ───────────────────────────────────────────
   const load = useCallback(async (isBackground = false) => {
     if (!isBackground && inventory.length === 0) setLoading(true);
     try {
-      const data = await fetchWithCache<any>('/api/inventory', { ttl: TTL_SHORT, forceRefresh: isBackground });
-      if (data) {
-        setInventory(data.data ?? []);
-        setSummary(data.summary ?? null);
+      const [invData, prodData] = await Promise.all([
+        fetchWithCache<any>('/api/inventory', { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/products', { ttl: TTL_LONG, forceRefresh: isBackground }),
+      ]);
+      if (invData) {
+        setInventory(invData.data ?? invData ?? []);
+        setSummary(invData.summary ?? null);
+      }
+      if (prodData) {
+        setAllProducts(prodData.data ?? prodData ?? []);
       }
     } catch (err) {
       console.error('inventory load error:', err);
@@ -173,6 +194,62 @@ export default function InventoryPage() {
   }, [inventory.length]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── Combined Master Product List for Dropdowns ──────────────────────────────
+  const masterProductsList = useMemo(() => {
+    const map = new Map<string, { productId: string; name: string; urduName?: string; unit: string; qty: number }>();
+
+    inventory.forEach(inv => {
+      if (inv.productId) {
+        map.set(inv.productId, {
+          productId: inv.productId,
+          name: inv.product?.name ?? 'Product',
+          urduName: inv.product?.urduName ?? '',
+          unit: inv.product?.defaultUnit ?? 'KG',
+          qty: inv.qty ?? 0,
+        });
+      }
+    });
+
+    allProducts.forEach(prod => {
+      if (prod.id && !map.has(prod.id)) {
+        map.set(prod.id, {
+          productId: prod.id,
+          name: prod.name,
+          urduName: prod.urduName ?? '',
+          unit: prod.defaultUnit ?? 'KG',
+          qty: 0,
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [inventory, allProducts]);
+
+  const matchingAdjProducts = useMemo(() => {
+    return masterProductsList.filter(p =>
+      !aProdSearch ||
+      p.name.toLowerCase().includes(aProdSearch.toLowerCase()) ||
+      (p.urduName ?? '').includes(aProdSearch)
+    );
+  }, [masterProductsList, aProdSearch]);
+
+  const matchingWastageProducts = useMemo(() => {
+    return masterProductsList.filter(p =>
+      !wProdSearch ||
+      p.name.toLowerCase().includes(wProdSearch.toLowerCase()) ||
+      (p.urduName ?? '').includes(wProdSearch)
+    );
+  }, [masterProductsList, wProdSearch]);
+
+  const openAdjustForProduct = (item: InventoryItem) => {
+    setAProdId(item.productId);
+    setAProdSearch(item.product?.name ?? '');
+    setASysQty(item.qty);
+    setAQtyVal('');
+    setAComboboxOpen(false);
+    setView('adjust');
+  };
 
   // ── Load movements ──────────────────────────────────────────────────────────
   const loadMovements = useCallback(async (isBackground = false) => {
@@ -218,7 +295,7 @@ export default function InventoryPage() {
     e.preventDefault();
     if (!wProdId) return showToast('❌ Select a product');
     if (!wQty || wQty <= 0) return showToast('❌ Quantity must be > 0');
-    const inv = inventory.find(i => i.productId === wProdId);
+    const inv = masterProductsList.find(i => i.productId === wProdId);
     if (inv && wQty > inv.qty) return showToast(`❌ Qty (${wQty}) exceeds stock (${inv.qty.toFixed(2)})`);
     setSaving(true);
     try {
@@ -227,7 +304,7 @@ export default function InventoryPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           productId: wProdId,
-          itemName: inv?.product?.name ?? '',
+          itemName: inv?.name ?? '',
           qty: wQty,
           unit: wUnit,
           reason: wReason,
@@ -240,7 +317,7 @@ export default function InventoryPage() {
         invalidateCache('/api/inventory');
         invalidateCache('/api/reports');
         showToast(`✅ Wastage recorded — ${data.data?.refNo ?? ''}`);
-        setWProdId(''); setWQty(0); setWRemarks(''); setWDate('');
+        setWProdId(''); setWProdSearch(''); setWQty(0); setWRemarks(''); setWDate('');
         await load(true); setView('list');
       } else showToast('❌ ' + (data.error ?? 'Failed'));
     } finally { setSaving(false); }
@@ -271,7 +348,7 @@ export default function InventoryPage() {
         invalidateCache('/api/reports');
         const { refNo, delta, newQty } = data.data;
         showToast(`✅ Stock adjusted — ${refNo} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)} → New: ${newQty.toFixed(2)})`);
-        setAProdId(''); setAQtyVal(''); setARemarks(''); setASysQty(0);
+        setAProdId(''); setAProdSearch(''); setAQtyVal(''); setARemarks(''); setASysQty(0);
         await load(true); setView('list');
       } else showToast('❌ ' + (data.error ?? 'Failed'));
     } finally { setSaving(false); }
@@ -298,17 +375,6 @@ export default function InventoryPage() {
     ADJUSTMENT: '⚙ Adjustment', TRANSFER_IN: '↓ Transfer In',
     TRANSFER_OUT: '↑ Transfer Out', OPENING: '🔓 Opening',
   };
-  const matchingAdjProducts = inventory.filter(i =>
-    !aProdSearch ||
-    (i.product?.name ?? '').toLowerCase().includes(aProdSearch.toLowerCase()) ||
-    (i.product?.urduName ?? '').includes(aProdSearch)
-  ).sort((a, b) => (a.product?.name ?? '').localeCompare(b.product?.name ?? ''));
-
-  const matchingWastageProducts = inventory.filter(i =>
-    !wProdSearch ||
-    (i.product?.name ?? '').toLowerCase().includes(wProdSearch.toLowerCase()) ||
-    (i.product?.urduName ?? '').includes(wProdSearch)
-  ).sort((a, b) => (a.product?.name ?? '').localeCompare(b.product?.name ?? ''));
 
   return (
     <DashboardLayout>
@@ -339,16 +405,16 @@ export default function InventoryPage() {
               <button className="va-btn secondary small" onClick={() => { setView('movements'); loadMovements(); }} style={{ fontWeight: 700 }}>
                 📋 Movements
               </button>
-              <button className="va-btn secondary small" onClick={() => { setAProdId(''); setAQtyVal(''); setARemarks(''); setASysQty(0); setView('adjust'); load(true); }} style={{ fontWeight: 700 }}>
+              <button className="va-btn secondary small" onClick={() => { setAProdId(''); setAProdSearch(''); setAQtyVal(''); setARemarks(''); setASysQty(0); setView('adjust'); load(true); }} style={{ fontWeight: 700 }}>
                 <Icon path={mdiTune} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Adjust Stock
               </button>
-              <button className="va-btn" onClick={() => { setWProdId(''); setWQty(0); setWRemarks(''); setView('wastage'); load(true); }}>
+              <button className="va-btn" onClick={() => { setWProdId(''); setWProdSearch(''); setWQty(0); setWRemarks(''); setView('wastage'); load(true); }}>
                 <Icon path={mdiDeleteOutline} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Record Wastage
               </button>
             </div>
           )}
           {view !== 'list' && (
-            <button className="va-btn secondary small" onClick={() => setView('list')}>← Back to Stock Hub</button>
+            <button className="va-btn secondary small" onClick={() => { setAComboboxOpen(false); setWComboboxOpen(false); setView('list'); }}>← Back to Stock Hub</button>
           )}
         </div>
       </div>
@@ -474,7 +540,7 @@ export default function InventoryPage() {
                           <tr key={i.id} style={{ background: sc.bg }}>
                             <td className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>{idx + 1}</td>
                             <td style={{ fontWeight: 700 }}>
-                              {i.product?.name}
+                              {getProductEmoji(i.product?.name)} {i.product?.name}
                               {i.lastPurchaseDate && (
                                 <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
                                   Last buy: {new Date(i.lastPurchaseDate).toLocaleDateString('en-GB')} ({i.lastPurchaseQty ?? 0} {i.product?.defaultUnit})
@@ -511,7 +577,7 @@ export default function InventoryPage() {
                               }}>{sc.label}</span>
                             </td>
                             <td style={{ textAlign: 'center' }}>
-                              <button className="va-btn secondary small" onClick={() => openAdjustForProduct(i)} style={{ fontSize: 11, padding: '2px 8px', fontWeight: 700 }}>
+                              <button className="va-btn secondary small" onClick={() => openAdjustForProduct(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700 }}>
                                 ⚙ Adjust
                               </button>
                             </td>
@@ -546,7 +612,7 @@ export default function InventoryPage() {
                     return (
                       <MobileCard
                         key={i.id}
-                        title={i.product?.name ?? 'Product'}
+                        title={`${getProductEmoji(i.product?.name)} ${i.product?.name ?? 'Product'}`}
                         headerBadge={i.product?.urduName || (i.product?.defaultUnit ?? 'KG')}
                       >
                         <MobileCardRow label="Total Stock" value={`${i.qty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} isMono />
@@ -580,9 +646,9 @@ export default function InventoryPage() {
           <div className="va-panel-head">
             <h3><Icon path={mdiHistory} size={0.8} style={{ verticalAlign: 'middle', marginRight: 6 }} /> Purchase Buy Price History</h3>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <select value={histProdId} onChange={e => { setHistProdId(e.target.value); loadPriceHistory(e.target.value); }} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--line)', fontSize: 13 }}>
-                <option value="">All Products</option>
-                {inventory.map(i => <option key={i.productId} value={i.productId}>{i.product?.name}</option>)}
+              <select value={histProdId} onChange={e => { setHistProdId(e.target.value); loadPriceHistory(e.target.value); }} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--line)', fontSize: 13, background: '#ffffff', color: '#0F172A' }}>
+                <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>All Products</option>
+                {masterProductsList.map(p => <option key={p.productId} value={p.productId} style={{ background: '#ffffff', color: '#0F172A' }}>{getProductEmoji(p.name)} {p.name} {p.urduName ? `/ ${p.urduName}` : ''}</option>)}
               </select>
               <button className="va-btn secondary small" onClick={() => loadPriceHistory(histProdId)}>↻ Refresh</button>
             </div>
@@ -610,7 +676,7 @@ export default function InventoryPage() {
                   {priceHistory.map(entry => (
                     <tr key={entry.id}>
                       <td style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtDateTime(entry.date)}</td>
-                      <td style={{ fontWeight: 700 }}>{entry.product?.name ?? '—'}</td>
+                      <td style={{ fontWeight: 700 }}>{getProductEmoji(entry.product?.name)} {entry.product?.name ?? '—'}</td>
                       <td>{entry.supplier?.name ?? 'Mandi / Direct'}</td>
                       <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
                         Rs {entry.buyPrice.toFixed(2)}
@@ -635,42 +701,158 @@ export default function InventoryPage() {
           <div className="va-panel-head"><h3>🗑 Record Stock Wastage</h3></div>
           <form onSubmit={handleWastage}>
             <div className="va-form-row">
+              {/* Searchable Product Combobox */}
               <div className="va-field" style={{ position: 'relative' }}>
-                <label>Product * (Search or Select)</label>
-                <input
-                  type="text"
-                  placeholder="🔍 Type product name to filter..."
-                  value={wProdSearch}
-                  onChange={e => setWProdSearch(e.target.value)}
-                  style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, background: '#ffffff', color: '#1E293B', fontSize: 13, marginBottom: 6, width: '100%' }}
-                />
-                <select value={wProdId} onChange={e => {
-                  const selId = e.target.value;
-                  setWProdId(selId);
-                  const inv = inventory.find(i => i.productId === selId);
-                  if (inv) setWUnit(inv.product?.defaultUnit ?? 'KG');
-                  if (inv?.product?.name) setWProdSearch(inv.product.name);
-                }} required style={{ background: '#ffffff', color: '#1E293B', fontWeight: 600, fontSize: 13, width: '100%', padding: '8px' }}>
-                  <option value="" style={{ background: '#ffffff', color: '#1E293B' }}>— Select product ({matchingWastageProducts.length} matching) —</option>
-                  {matchingWastageProducts.map(i => (
-                    <option key={i.productId} value={i.productId} style={{ background: '#ffffff', color: '#1E293B', padding: '6px' }}>
-                      {i.product?.name ?? 'Product'} {i.product?.urduName ? `(${i.product.urduName})` : ''} — Stock: {i.qty.toFixed(2)} {i.product?.defaultUnit ?? 'KG'}
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Product * (Search English or Urdu name)</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 Search product (e.g. Potato, آلو, Onion)..."
+                    value={wProdSearch}
+                    onFocus={() => setWComboboxOpen(true)}
+                    onChange={e => {
+                      setWProdSearch(e.target.value);
+                      setWComboboxOpen(true);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      border: '1px solid var(--line)',
+                      borderRadius: 8,
+                      background: '#ffffff',
+                      color: '#0F172A',
+                      fontSize: 14,
+                      fontWeight: 600,
+                    }}
+                  />
+
+                  {wComboboxOpen && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        maxHeight: 250,
+                        overflowY: 'auto',
+                        background: '#ffffff',
+                        border: '1px solid #CBD5E1',
+                        borderRadius: 8,
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+                        zIndex: 1000,
+                        marginTop: 4,
+                      }}
+                    >
+                      {matchingWastageProducts.length === 0 ? (
+                        <div style={{ padding: '12px 16px', color: '#64748B', fontSize: 13, textAlign: 'center' }}>
+                          No products match "{wProdSearch}"
+                        </div>
+                      ) : (
+                        matchingWastageProducts.map(p => {
+                          const emoji = getProductEmoji(p.name);
+                          const isSelected = p.productId === wProdId;
+
+                          return (
+                            <div
+                              key={p.productId}
+                              onClick={() => {
+                                setWProdId(p.productId);
+                                setWProdSearch(p.name);
+                                setWUnit(p.unit);
+                                setWComboboxOpen(false);
+                              }}
+                              style={{
+                                padding: '10px 14px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                cursor: 'pointer',
+                                background: isSelected ? '#E2F0D9' : '#ffffff',
+                                borderBottom: '1px solid #F1F5F9',
+                                transition: 'background 0.15s ease',
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.background = '#F0FDF4')}
+                              onMouseLeave={e => (e.currentTarget.style.background = isSelected ? '#E2F0D9' : '#ffffff')}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: 18 }}>{emoji}</span>
+                                <div>
+                                  <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>{p.name}</span>
+                                  {p.urduName && (
+                                    <span style={{ marginLeft: 8, color: '#475569', fontSize: 14, fontFamily: 'serif' }}>
+                                      / {p.urduName}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{
+                                fontSize: 12,
+                                fontWeight: 700,
+                                fontFamily: 'monospace',
+                                padding: '3px 8px',
+                                borderRadius: 6,
+                                background: p.qty > 0 ? '#DCFCE7' : '#F1F5F9',
+                                color: p.qty > 0 ? '#166534' : '#64748B',
+                              }}>
+                                Stock: {p.qty.toFixed(2)} {p.unit}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <select
+                  value={wProdId}
+                  onChange={e => {
+                    const selId = e.target.value;
+                    setWProdId(selId);
+                    const match = masterProductsList.find(p => p.productId === selId);
+                    if (match) {
+                      setWProdSearch(match.name);
+                      setWUnit(match.unit);
+                    }
+                  }}
+                  required
+                  style={{
+                    marginTop: 6,
+                    padding: '8px 12px',
+                    border: '1px solid var(--line)',
+                    borderRadius: 8,
+                    background: '#ffffff',
+                    color: '#0F172A',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    width: '100%',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>— Or select from full list ({masterProductsList.length} products) —</option>
+                  {masterProductsList.map(p => (
+                    <option key={p.productId} value={p.productId} style={{ background: '#ffffff', color: '#0F172A', padding: '6px' }}>
+                      {getProductEmoji(p.name)} {p.name} {p.urduName ? `/ ${p.urduName}` : ''} — Stock: {p.qty.toFixed(2)} {p.unit}
                     </option>
                   ))}
                 </select>
+
                 {wProdId && (() => {
-                  const inv = inventory.find(i => i.productId === wProdId);
-                  return inv ? <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, display: 'block' }}>Current stock: {inv.qty.toFixed(2)} {inv.product?.defaultUnit}</span> : null;
+                  const inv = masterProductsList.find(i => i.productId === wProdId);
+                  return inv ? <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'block' }}>Current stock: {inv.qty.toFixed(2)} {inv.unit}</span> : null;
                 })()}
               </div>
+
               <div className="va-field">
                 <label>Quantity Wasted *</label>
                 <input type="number" required min="0.01" step="0.01"
-                  value={wQty || ''} onChange={e => setWQty(+e.target.value)} />
+                  value={wQty || ''} onChange={e => setWQty(+e.target.value)}
+                  style={{ background: '#ffffff', color: '#0F172A', fontSize: 14, fontWeight: 700, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
+                />
                 {wProdId && wQty > 0 && (() => {
-                  const inv = inventory.find(i => i.productId === wProdId);
+                  const inv = masterProductsList.find(i => i.productId === wProdId);
                   if (inv && wQty > inv.qty) return (
-                    <span style={{ color: 'var(--danger)', fontSize: 11, fontWeight: 700, marginTop: 2, display: 'block' }}>
+                    <span style={{ color: 'var(--danger)', fontSize: 11, fontWeight: 700, marginTop: 4, display: 'block' }}>
                       ⚠ Exceeds current stock ({inv.qty.toFixed(2)})
                     </span>
                   );
@@ -678,32 +860,39 @@ export default function InventoryPage() {
                 })()}
               </div>
             </div>
+
             <div className="va-form-row" style={{ marginTop: 12 }}>
               <div className="va-field">
                 <label>Unit</label>
-                <select value={wUnit} onChange={e => setWUnit(e.target.value)}>
-                  {UNITS.map(u => <option key={u}>{u}</option>)}
+                <select value={wUnit} onChange={e => setWUnit(e.target.value)} style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 600 }}>
+                  {UNITS.map(u => <option key={u} style={{ background: '#ffffff', color: '#0F172A' }}>{u}</option>)}
                 </select>
               </div>
               <div className="va-field">
                 <label>Reason *</label>
-                <select value={wReason} onChange={e => setWReason(e.target.value)}>
-                  {WASTAGE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                <select value={wReason} onChange={e => setWReason(e.target.value)} style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 600 }}>
+                  {WASTAGE_REASONS.map(r => <option key={r} value={r} style={{ background: '#ffffff', color: '#0F172A' }}>{r}</option>)}
                 </select>
               </div>
             </div>
+
             <div className="va-form-row" style={{ marginTop: 12 }}>
               <div className="va-field">
                 <label>Remarks / Notes</label>
                 <input value={wRemarks} onChange={e => setWRemarks(e.target.value)}
-                  placeholder="Additional details regarding wastage…" />
+                  placeholder="Additional details regarding wastage…"
+                  style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, borderRadius: 8, padding: '8px 12px' }}
+                />
               </div>
               <div className="va-field">
                 <label>Date (optional)</label>
-                <input type="datetime-local" value={wDate} onChange={e => setWDate(e.target.value)} />
+                <input type="datetime-local" value={wDate} onChange={e => setWDate(e.target.value)}
+                  style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, borderRadius: 8, padding: '8px 12px' }}
+                />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
               <button type="submit" className="va-btn" disabled={saving}>{saving ? 'Saving…' : '✓ Record Wastage'}</button>
               <button type="button" className="va-btn secondary" onClick={() => setView('list')}>Cancel</button>
             </div>
@@ -722,37 +911,153 @@ export default function InventoryPage() {
           </p>
           <form onSubmit={handleAdjust}>
             <div className="va-form-row">
+              {/* Searchable Product Combobox */}
               <div className="va-field" style={{ position: 'relative' }}>
-                <label>Product * (Search or Select)</label>
-                <input
-                  type="text"
-                  placeholder="🔍 Type product name to filter..."
-                  value={aProdSearch}
-                  onChange={e => setAProdSearch(e.target.value)}
-                  style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, background: '#ffffff', color: '#1E293B', fontSize: 13, marginBottom: 6, width: '100%' }}
-                />
-                <select value={aProdId} onChange={e => {
-                  const selId = e.target.value;
-                  setAProdId(selId);
-                  const inv = inventory.find(i => i.productId === selId);
-                  setASysQty(inv?.qty ?? 0);
-                  setAQtyVal('');
-                  if (inv?.product?.name) setAProdSearch(inv.product.name);
-                }} required style={{ background: '#ffffff', color: '#1E293B', fontWeight: 600, fontSize: 13, width: '100%', padding: '8px' }}>
-                  <option value="" style={{ background: '#ffffff', color: '#1E293B' }}>— Select product ({matchingAdjProducts.length} matching) —</option>
-                  {matchingAdjProducts.map(i => (
-                    <option key={i.productId} value={i.productId} style={{ background: '#ffffff', color: '#1E293B', padding: '6px' }}>
-                      {i.product?.name ?? 'Product'} {i.product?.urduName ? `(${i.product.urduName})` : ''} — Current Stock: {i.qty.toFixed(2)} {i.product?.defaultUnit ?? 'KG'}
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                  Product * (Type English or Urdu name)
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 Search product (e.g. Potato, آلو, Onion)..."
+                    value={aProdSearch}
+                    onFocus={() => setAComboboxOpen(true)}
+                    onChange={e => {
+                      setAProdSearch(e.target.value);
+                      setAComboboxOpen(true);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      border: '1px solid var(--line)',
+                      borderRadius: 8,
+                      background: '#ffffff',
+                      color: '#0F172A',
+                      fontSize: 14,
+                      fontWeight: 600,
+                    }}
+                  />
+
+                  {aComboboxOpen && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        maxHeight: 250,
+                        overflowY: 'auto',
+                        background: '#ffffff',
+                        border: '1px solid #CBD5E1',
+                        borderRadius: 8,
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+                        zIndex: 1000,
+                        marginTop: 4,
+                      }}
+                    >
+                      {matchingAdjProducts.length === 0 ? (
+                        <div style={{ padding: '12px 16px', color: '#64748B', fontSize: 13, textAlign: 'center' }}>
+                          No products match "{aProdSearch}"
+                        </div>
+                      ) : (
+                        matchingAdjProducts.map(p => {
+                          const emoji = getProductEmoji(p.name);
+                          const isSelected = p.productId === aProdId;
+
+                          return (
+                            <div
+                              key={p.productId}
+                              onClick={() => {
+                                setAProdId(p.productId);
+                                setAProdSearch(p.name);
+                                setASysQty(p.qty);
+                                setAQtyVal('');
+                                setAComboboxOpen(false);
+                              }}
+                              style={{
+                                padding: '10px 14px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                cursor: 'pointer',
+                                background: isSelected ? '#E2F0D9' : '#ffffff',
+                                borderBottom: '1px solid #F1F5F9',
+                                transition: 'background 0.15s ease',
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.background = '#F0FDF4')}
+                              onMouseLeave={e => (e.currentTarget.style.background = isSelected ? '#E2F0D9' : '#ffffff')}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: 18 }}>{emoji}</span>
+                                <div>
+                                  <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>{p.name}</span>
+                                  {p.urduName && (
+                                    <span style={{ marginLeft: 8, color: '#475569', fontSize: 14, fontFamily: 'serif' }}>
+                                      / {p.urduName}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{
+                                fontSize: 12,
+                                fontWeight: 700,
+                                fontFamily: 'monospace',
+                                padding: '3px 8px',
+                                borderRadius: 6,
+                                background: p.qty > 0 ? '#DCFCE7' : '#F1F5F9',
+                                color: p.qty > 0 ? '#166534' : '#64748B',
+                              }}>
+                                Stock: {p.qty.toFixed(2)} {p.unit}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <select
+                  value={aProdId}
+                  onChange={e => {
+                    const selId = e.target.value;
+                    setAProdId(selId);
+                    const match = masterProductsList.find(p => p.productId === selId);
+                    if (match) {
+                      setAProdSearch(match.name);
+                      setASysQty(match.qty);
+                      setAQtyVal('');
+                    }
+                  }}
+                  required
+                  style={{
+                    marginTop: 6,
+                    padding: '8px 12px',
+                    border: '1px solid var(--line)',
+                    borderRadius: 8,
+                    background: '#ffffff',
+                    color: '#0F172A',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    width: '100%',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>— Or select from full list ({masterProductsList.length} products) —</option>
+                  {masterProductsList.map(p => (
+                    <option key={p.productId} value={p.productId} style={{ background: '#ffffff', color: '#0F172A', padding: '6px' }}>
+                      {getProductEmoji(p.name)} {p.name} {p.urduName ? `/ ${p.urduName}` : ''} — Stock: {p.qty.toFixed(2)} {p.unit}
                     </option>
                   ))}
                 </select>
               </div>
+
               <div className="va-field">
-                <label>Adjustment Mode *</label>
-                <select value={aType} onChange={e => setAType(e.target.value as any)} style={{ background: '#ffffff', color: '#1E293B', fontWeight: 600, fontSize: 13, width: '100%', padding: '8px' }}>
-                  <option value="SET" style={{ background: '#ffffff', color: '#1E293B' }}>Physical Count Correction (Set Total)</option>
-                  <option value="INCREASE" style={{ background: '#ffffff', color: '#1E293B' }}>Increase Stock (+ Add Qty)</option>
-                  <option value="DECREASE" style={{ background: '#ffffff', color: '#1E293B' }}>Decrease Stock (- Deduct Qty)</option>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Adjustment Mode *</label>
+                <select value={aType} onChange={e => setAType(e.target.value as any)} style={{ background: '#ffffff', color: '#0F172A', fontWeight: 600, fontSize: 13, width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line)' }}>
+                  <option value="SET" style={{ background: '#ffffff', color: '#0F172A' }}>Physical Count Correction (Set Total)</option>
+                  <option value="INCREASE" style={{ background: '#ffffff', color: '#0F172A' }}>Increase Stock (+ Add Qty)</option>
+                  <option value="DECREASE" style={{ background: '#ffffff', color: '#0F172A' }}>Decrease Stock (- Deduct Qty)</option>
                 </select>
               </div>
             </div>
@@ -763,7 +1068,7 @@ export default function InventoryPage() {
                   <div style={{ flex: 1, padding: '14px 16px', background: 'rgba(31,61,43,0.07)', borderRadius: 10, border: '1px solid var(--line)' }}>
                     <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>SYSTEM STOCK</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--forest)', fontFamily: 'monospace' }}>{aSysQty.toFixed(2)}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{inventory.find(i => i.productId === aProdId)?.product?.defaultUnit ?? 'KG'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{masterProductsList.find(i => i.productId === aProdId)?.unit ?? 'KG'}</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', fontSize: 24, color: 'var(--muted)' }}>→</div>
                   <div style={{ flex: 1, padding: '14px 16px', background: 'rgba(43,91,138,0.07)', borderRadius: 10, border: '1px solid var(--line)' }}>
@@ -782,28 +1087,30 @@ export default function InventoryPage() {
 
                 <div className="va-form-row">
                   <div className="va-field">
-                    <label>Reason *</label>
-                    <select value={aReason} onChange={e => setAReason(e.target.value)}>
-                      {ADJUSTMENT_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                    <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Reason *</label>
+                    <select value={aReason} onChange={e => setAReason(e.target.value)} style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 600, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}>
+                      {ADJUSTMENT_REASONS.map(r => <option key={r} value={r} style={{ background: '#ffffff', color: '#0F172A' }}>{r}</option>)}
                     </select>
                   </div>
                 </div>
 
                 <div className="va-form-row" style={{ marginTop: 12 }}>
                   <div className="va-field">
-                    <label>Remarks / Notes</label>
+                    <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Remarks / Notes</label>
                     <input value={aRemarks} onChange={e => setARemarks(e.target.value)}
-                      placeholder="Additional notes for stock adjustment log…" />
+                      placeholder="Additional notes for stock adjustment log…"
+                      style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
+                    />
                   </div>
                 </div>
               </>
             )}
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
               <button type="submit" className="va-btn" disabled={saving || !aProdId || aQtyVal === ''}>
                 {saving ? 'Saving…' : '⚙ Apply Stock Adjustment'}
               </button>
-              <button type="button" className="va-btn secondary" onClick={() => setView('list')}>Cancel</button>
+              <button type="button" className="va-btn secondary" onClick={() => { setAComboboxOpen(false); setView('list'); }}>Cancel</button>
             </div>
           </form>
         </div>
@@ -818,20 +1125,20 @@ export default function InventoryPage() {
           <div className="va-panel" style={{ padding: '10px 16px' }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <select value={mProdId} onChange={e => setMProdId(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, flex: 2, minWidth: 160 }}>
-                <option value="">All Products</option>
-                {inventory.map(i => <option key={i.productId} value={i.productId}>{i.product?.name}</option>)}
+                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, flex: 2, minWidth: 160, background: '#ffffff', color: '#0F172A' }}>
+                <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>All Products</option>
+                {masterProductsList.map(p => <option key={p.productId} value={p.productId} style={{ background: '#ffffff', color: '#0F172A' }}>{getProductEmoji(p.name)} {p.name}</option>)}
               </select>
               <select value={mType} onChange={e => setMType(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}>
-                <option value="all">All Types</option>
-                {['PURCHASE','SALE','WASTAGE','ADJUSTMENT','OPENING'].map(t => <option key={t}>{t}</option>)}
+                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, background: '#ffffff', color: '#0F172A' }}>
+                <option value="all" style={{ background: '#ffffff', color: '#0F172A' }}>All Types</option>
+                {['PURCHASE','SALE','WASTAGE','ADJUSTMENT','OPENING'].map(t => <option key={t} style={{ background: '#ffffff', color: '#0F172A' }}>{t}</option>)}
               </select>
               <input type="date" value={mFrom} onChange={e => setMFrom(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }} />
+                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, background: '#ffffff', color: '#0F172A' }} />
               <span style={{ color: 'var(--muted)', fontSize: 12 }}>to</span>
               <input type="date" value={mTo} onChange={e => setMTo(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }} />
+                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, background: '#ffffff', color: '#0F172A' }} />
               <button className="va-btn secondary small" onClick={() => loadMovements()}>Apply</button>
               <button className="va-btn secondary small" onClick={() => loadMovements()}>↻ Refresh</button>
             </div>
@@ -865,7 +1172,7 @@ export default function InventoryPage() {
                       <tr key={m.id}>
                         <td style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDateTime(m.date)}</td>
                         <td>
-                          <div style={{ fontWeight: 600 }}>{m.productName}</div>
+                          <div style={{ fontWeight: 600 }}>{getProductEmoji(m.productName)} {m.productName}</div>
                           {m.productUrdu && <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'serif' }}>{m.productUrdu}</div>}
                         </td>
                         <td style={{ textAlign: 'center' }}>
