@@ -7,13 +7,30 @@ const router = Router();
 // GET /api/inventory
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const branchId = (req.headers['x-branch-id'] as string) ?? undefined;
+    let branchId = (req.headers['x-branch-id'] as string) || undefined;
+    if (!branchId) {
+      const firstBranch = await prisma.branch.findFirst();
+      branchId = firstBranch?.id ?? '';
+    }
     const { search } = req.query;
 
-    const where: any = { ...(branchId ? { branchId } : {}) };
+    // 1. Fetch all active products from master catalog
+    const allProducts = await prisma.product.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        urduName: true,
+        category: true,
+        defaultUnit: true,
+        minStock: true,
+        availability: true,
+      },
+    });
 
-    const inventory = await prisma.inventory.findMany({
-      where,
+    // 2. Fetch existing inventory records for this branch
+    const existingInventory = await prisma.inventory.findMany({
+      where: { ...(branchId ? { branchId } : {}) },
       include: {
         product: {
           select: {
@@ -27,7 +44,35 @@ router.get('/', async (req: Request, res: Response) => {
           },
         },
       },
-      orderBy: { product: { name: 'asc' } },
+    });
+
+    const inventoryMap = new Map(existingInventory.map(inv => [inv.productId, inv]));
+
+    // 3. Merge: Every product in master catalog gets an inventory entry
+    const mergedInventory = allProducts.map(prod => {
+      const inv = inventoryMap.get(prod.id);
+      if (inv) {
+        return {
+          ...inv,
+          product: inv.product ?? prod,
+        };
+      }
+      return {
+        id: `virtual-${prod.id}`,
+        productId: prod.id,
+        branchId: branchId ?? '',
+        qty: 0,
+        reservedQty: 0,
+        avgCost: 0,
+        currentBuyPrice: 0,
+        previousBuyPrice: 0,
+        lastPurchaseDate: null,
+        lastPurchaseQty: 0,
+        minStock: prod.minStock ?? 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        product: prod,
+      };
     });
 
     const todayStart = new Date(Date.now() - 5 * 60 * 60 * 1000);
@@ -47,7 +92,7 @@ router.get('/', async (req: Request, res: Response) => {
     const todayStockOut = todayMoves.filter(m => m.qty < 0 && m.type !== 'WASTAGE').reduce((s, m) => s + Math.abs(m.qty), 0);
     const todayWastage = todayMoves.filter(m => m.type === 'WASTAGE').reduce((s, m) => s + Math.abs(m.qty), 0);
 
-    const data = inventory
+    const data = mergedInventory
       .filter(inv => !search || inv.product?.name.toLowerCase().includes(String(search).toLowerCase()) || inv.product?.urduName?.includes(String(search)))
       .map(inv => {
         const availableQty = Math.max(0, inv.qty - (inv.reservedQty ?? 0));

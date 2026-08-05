@@ -318,10 +318,10 @@ export default function InventoryPage() {
               <button className="va-btn secondary small" onClick={() => { setView('movements'); loadMovements(); }} style={{ fontWeight: 700 }}>
                 📋 Movements
               </button>
-              <button className="va-btn secondary small" onClick={() => { setAProdId(''); setAQtyVal(''); setARemarks(''); setASysQty(0); setView('adjust'); }} style={{ fontWeight: 700 }}>
+              <button className="va-btn secondary small" onClick={() => { setAProdId(''); setAQtyVal(''); setARemarks(''); setASysQty(0); setView('adjust'); load(true); }} style={{ fontWeight: 700 }}>
                 <Icon path={mdiTune} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Adjust Stock
               </button>
-              <button className="va-btn" onClick={() => { setWProdId(''); setWQty(0); setWRemarks(''); setView('wastage'); }}>
+              <button className="va-btn" onClick={() => { setWProdId(''); setWQty(0); setWRemarks(''); setView('wastage'); load(true); }}>
                 <Icon path={mdiDeleteOutline} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Record Wastage
               </button>
             </div>
@@ -611,9 +611,9 @@ export default function InventoryPage() {
                   if (inv) setWUnit(inv.product?.defaultUnit ?? 'KG');
                 }} required>
                   <option value="">— Select product —</option>
-                  {inventory.map(i => (
+                  {[...inventory].sort((a, b) => (a.product?.name ?? '').localeCompare(b.product?.name ?? '')).map(i => (
                     <option key={i.productId} value={i.productId}>
-                      {i.product?.name} (Stock: {i.qty.toFixed(2)} {i.product?.defaultUnit})
+                      {i.product?.name ?? 'Product'} (Stock: {i.qty.toFixed(2)} {i.product?.defaultUnit ?? 'KG'})
                     </option>
                   ))}
                 </select>
@@ -690,9 +690,9 @@ export default function InventoryPage() {
                   setAQtyVal('');
                 }} required>
                   <option value="">— Select product —</option>
-                  {inventory.map(i => (
+                  {[...inventory].sort((a, b) => (a.product?.name ?? '').localeCompare(b.product?.name ?? '')).map(i => (
                     <option key={i.productId} value={i.productId}>
-                      {i.product?.name} (System: {i.qty.toFixed(2)} {i.product?.defaultUnit})
+                      {i.product?.name ?? 'Product'} (System: {i.qty.toFixed(2)} {i.product?.defaultUnit ?? 'KG'})
                     </option>
                   ))}
                 </select>
