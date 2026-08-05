@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAppSelector } from '@/store';
 import { hasModuleAccess } from '@/utils/rbac';
+import { savePageState } from '@/utils/navigationStateStore';
 
 interface SubItem {
   label: string;
@@ -90,6 +91,22 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   
   // Collapsed mobile popup menu trigger index
   const [activePopupIdx, setActivePopupIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    // Prefetch all key module routes for instant 0ms transitions
+    const routes = ['/', '/sales', '/inventory', '/clients', '/purchases', '/delivery', '/reports', '/employees', '/pricelist', '/collections', '/expenses', '/settings'];
+    routes.forEach(r => {
+      try { router.prefetch(r); } catch (e) {}
+    });
+  }, [router]);
+
+  const handleNavClick = (href: string) => {
+    if (typeof window !== 'undefined') {
+      const currentPath = window.location.pathname;
+      savePageState(currentPath, {}, window.scrollY);
+    }
+    if (onClose) onClose();
+  };
 
   /**
    * Filter NAV_ITEMS based on user role

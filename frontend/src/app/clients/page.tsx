@@ -9,6 +9,7 @@ import { SkeletonKPI, SkeletonTable, SkeletonProfile } from '@/components/ui/Ske
 import { loadBrandConfig, loadBrandConfigWithLogo, generateStatementHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
+import { usePreservedState } from '@/hooks/usePreservedState';
 import Icon from '@mdi/react';
 import {
   mdiAccountMultiple,
@@ -203,11 +204,30 @@ export default function ClientsPage() {
     setStatementMode('share');
   };
 
-  // Filters
-  const [search,    setSearch]    = useState('');
+  const [pState, setPState] = usePreservedState('clients', {
+    view: 'list' as 'list' | 'profile' | 'add' | 'edit',
+    search: '',
+    typeFilter: 'all',
+    ratingFilter: 'all',
+    profTab: 'overview' as 'overview' | 'behaviour' | 'ledger' | 'invoices' | 'payments' | 'deliveries' | 'broadcasts',
+  });
+
+  const view = pState.view;
+  const setView = (v: any) => setPState({ view: v });
+
+  const search = pState.search;
+  const setSearch = (s: string) => setPState({ search: s });
+
+  const typeFilter = pState.typeFilter;
+  const setTypeFilter = (tf: string) => setPState({ typeFilter: tf });
+
+  const ratingFilter = pState.ratingFilter;
+  const setRatingFilter = (rf: string) => setPState({ ratingFilter: rf });
+
+  const profTab = pState.profTab;
+  const setProfTab = (pt: any) => setPState({ profTab: pt });
+
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [ratingFilter, setRatingFilter] = useState('all');
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -216,9 +236,6 @@ export default function ClientsPage() {
     return () => clearTimeout(handler);
   }, [search]);
 
-  // Drawer / tabs
-  const [view,     setView]     = useState<'list' | 'profile' | 'add' | 'edit'>('list');
-  const [profTab,  setProfTab]  = useState<'overview' | 'behaviour' | 'ledger' | 'invoices' | 'payments' | 'deliveries' | 'broadcasts'>('overview');
   const [form,     setForm]     = useState({ ...BLANK_FORM });
   const [editId,   setEditId]   = useState<string | null>(null);
 

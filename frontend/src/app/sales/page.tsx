@@ -12,6 +12,7 @@ import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
+import { usePreservedState } from '@/hooks/usePreservedState';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,23 +100,45 @@ type View = 'list' | 'new' | 'detail';
 type Step = 1 | 2 | 3;
 
 export default function SalesPage() {
-  const [view,     setView]    = useState<View>('list');
+  const [pState, setPState] = usePreservedState('sales', {
+    view: 'list' as View,
+    srchInv: '',
+    filterSt: 'all',
+    filterMode: 'all',
+    filterDate: todayInputDate(),
+  });
+
+  const view = pState.view;
+  const setView = (v: View) => setPState({ view: v });
+
+  const srchInv = pState.srchInv;
+  const setSrchInv = (s: string) => setPState({ srchInv: s });
+
+  const filterSt = pState.filterSt;
+  const setFilterSt = (st: string) => setPState({ filterSt: st });
+
+  const filterMode = pState.filterMode;
+  const setFilterMode = (fm: string) => setPState({ filterMode: fm });
+
+  const filterDate = pState.filterDate;
+  const setFilterDate = (fd: string) => setPState({ filterDate: fd });
+
   const [step,     setStep]    = useState<Step>(1);
   const [toast,    setToast]   = useState('');
 
   // ── List state ──────────────────────────────────────────────────────────────
   const [sales,      setSales]      = useState<Sale[]>(() => {
-    const targetDate = todayInputDate();
+    const targetDate = filterDate || todayInputDate();
     const p = new URLSearchParams({ limit: '200', from: targetDate, to: targetDate + 'T23:59:59' });
     return getCachedData<Sale[]>(`/api/sales?${p}`) || [];
   });
   const [loading,    setLoading]    = useState(() => {
-    const targetDate = todayInputDate();
+    const targetDate = filterDate || todayInputDate();
     const p = new URLSearchParams({ limit: '200', from: targetDate, to: targetDate + 'T23:59:59' });
     return !getCachedData<Sale[]>(`/api/sales?${p}`);
   });
   const [todayCollectionsAmt, setTodayCollectionsAmt] = useState(() => {
-    const targetDate = todayInputDate();
+    const targetDate = filterDate || todayInputDate();
     const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=500`;
     const cachedColls = getCachedData<any[]>(collKey);
     if (cachedColls && Array.isArray(cachedColls)) {
@@ -123,11 +146,7 @@ export default function SalesPage() {
     }
     return 0;
   });
-  const [srchInv,    setSrchInv]    = useState('');
   const [debouncedSrchInv, setDebouncedSrchInv] = useState('');
-  const [filterSt,   setFilterSt]   = useState('all');
-  const [filterMode, setFilterMode] = useState('all');
-  const [filterDate, setFilterDate] = useState(() => todayInputDate());
 
   // ── New invoice state ────────────────────────────────────────────────────────
   const [clients,     setClients]     = useState<Client[]>([]);

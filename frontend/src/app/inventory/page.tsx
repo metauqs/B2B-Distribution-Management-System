@@ -8,6 +8,7 @@ import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, 
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { useAppSelector } from '@/store';
+import { usePreservedState } from '@/hooks/usePreservedState';
 import Icon from '@mdi/react';
 import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline, mdiTagOutline } from '@mdi/js';
 
@@ -127,7 +128,51 @@ export default function InventoryPage() {
   const user = useAppSelector((state: any) => state.auth.user);
   const isAdmin = user?.role === 'OWNER' || user?.role === 'MANAGER';
 
-  const [view, setView] = useState<View>('list');
+  const [pState, setPState] = usePreservedState('inventory', {
+    view: 'list' as View,
+    search: '',
+    mProdId: '',
+    mType: 'all',
+    mFrom: '',
+    mTo: '',
+    histProdId: '',
+    aProdId: '',
+    aProdSearch: '',
+    aType: 'SET' as const,
+    wProdId: '',
+    wProdSearch: '',
+  });
+
+  const view = pState.view;
+  const setView = (v: View) => setPState({ view: v });
+
+  const search = pState.search;
+  const setSearch = (s: string) => setPState({ search: s });
+
+  const mProdId = pState.mProdId;
+  const setMProdId = (id: string) => setPState({ mProdId: id });
+  const mType = pState.mType;
+  const setMType = (t: string) => setPState({ mType: t });
+  const mFrom = pState.mFrom;
+  const setMFrom = (f: string) => setPState({ mFrom: f });
+  const mTo = pState.mTo;
+  const setMTo = (t: string) => setPState({ mTo: t });
+
+  const histProdId = pState.histProdId;
+  const setHistProdId = (id: string) => setPState({ histProdId: id });
+
+  const aProdId = pState.aProdId;
+  const setAProdId = (id: string) => setPState({ aProdId: id });
+  const aProdSearch = pState.aProdSearch;
+  const setAProdSearch = (s: string) => setPState({ aProdSearch: s });
+  const aType = pState.aType;
+  const setAType = (t: any) => setPState({ aType: t });
+
+  const wProdId = pState.wProdId;
+  const setWProdId = (id: string) => setPState({ wProdId: id });
+  const wProdSearch = pState.wProdSearch;
+  const setWProdSearch = (s: string) => setPState({ wProdSearch: s });
+
   const [inventory, setInventory] = useState<InventoryItem[]>(() => {
     const cached = getCachedData<any>('/api/inventory');
     return cached?.data ?? cached ?? [];
@@ -139,7 +184,6 @@ export default function InventoryPage() {
   });
   const [movements, setMovements] = useState<Movement[]>([]);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
-  const [histProdId, setHistProdId] = useState<string>('');
 
   const [loading, setLoading] = useState(() => {
     return !getCachedData<any>('/api/inventory');
@@ -148,7 +192,6 @@ export default function InventoryPage() {
   const [histLoad, setHistLoad] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
-  const [search, setSearch] = useState('');
 
   // Buy Price Adjust Modal
   const [priceModalOpen, setPriceModalOpen] = useState(false);
@@ -159,8 +202,6 @@ export default function InventoryPage() {
   const [pReason, setPReason] = useState('');
 
   // Wastage form
-  const [wProdId, setWProdId] = useState('');
-  const [wProdSearch, setWProdSearch] = useState('');
   const [wComboboxOpen, setWComboboxOpen] = useState(false);
   const [wQty, setWQty] = useState<number>(0);
   const [wUnit, setWUnit] = useState('KG');
@@ -169,20 +210,11 @@ export default function InventoryPage() {
   const [wDate, setWDate] = useState('');
 
   // Adjust form
-  const [aProdId, setAProdId] = useState('');
-  const [aProdSearch, setAProdSearch] = useState('');
   const [aComboboxOpen, setAComboboxOpen] = useState(false);
-  const [aType, setAType] = useState<'SET' | 'INCREASE' | 'DECREASE' | 'WASTAGE' | 'DAMAGE' | 'SUPPLIER_RETURN' | 'OPENING'>('SET');
   const [aQtyVal, setAQtyVal] = useState<number | ''>('');
   const [aReason, setAReason] = useState(REASON_PRESETS.SET[0]);
   const [aRemarks, setARemarks] = useState('');
   const [aSysQty, setASysQty] = useState<number>(0);
-
-  // Movements filters
-  const [mProdId, setMProdId] = useState('');
-  const [mType, setMType] = useState('all');
-  const [mFrom, setMFrom] = useState('');
-  const [mTo, setMTo] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
