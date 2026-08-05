@@ -8,6 +8,11 @@ const router = Router();
 
 const ALLOWED_ROLES = ['ADMIN', 'SUPERVISOR', 'BILLING_STAFF', 'PURCHASE_STAFF', 'DELIVERY_STAFF'];
 
+function isAdminUser(req: Request): boolean {
+  const role = req.user?.role || (req.headers['x-user-role'] as string);
+  return role === 'OWNER' || role === 'MANAGER' || role === 'ADMIN';
+}
+
 // Helper to get branch ID safely
 async function getTargetBranchId(req: Request): Promise<string> {
   const headerBranch = req.headers['x-branch-id'] as string;
@@ -127,6 +132,10 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 // POST /api/employees (Admin Only)
 router.post('/', async (req: Request, res: Response) => {
+  if (!isAdminUser(req)) {
+    return res.status(403).json({ success: false, error: 'Forbidden: Only Admin can add employee profiles' });
+  }
+
   const branchId = await getTargetBranchId(req);
   const userId = (req.headers['x-user-id'] as string) || null;
 
@@ -209,6 +218,10 @@ router.post('/', async (req: Request, res: Response) => {
 
 // POST /api/employees/clear-all (Admin action to purge ALL employee data)
 router.post('/clear-all', async (req: Request, res: Response) => {
+  if (!isAdminUser(req)) {
+    return res.status(403).json({ success: false, error: 'Forbidden: Only Admin can delete all employee data' });
+  }
+
   try {
     const userId = (req.headers['x-user-id'] as string) || null;
 
@@ -242,8 +255,12 @@ router.post('/clear-all', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/employees/:id
+// PUT /api/employees/:id (Admin Only)
 router.put('/:id', async (req: Request, res: Response) => {
+  if (!isAdminUser(req)) {
+    return res.status(403).json({ success: false, error: 'Forbidden: Only Admin can edit employee profiles' });
+  }
+
   const userId = (req.headers['x-user-id'] as string) || null;
   const { id } = req.params;
 
@@ -346,8 +363,12 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/employees/:id/toggle (Toggle Active / Inactive)
+// PATCH /api/employees/:id/toggle (Toggle Active / Inactive - Admin Only)
 router.patch('/:id/toggle', async (req: Request, res: Response) => {
+  if (!isAdminUser(req)) {
+    return res.status(403).json({ success: false, error: 'Forbidden: Only Admin can change employee status' });
+  }
+
   const { id } = req.params;
 
   try {
@@ -372,8 +393,12 @@ router.patch('/:id/toggle', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/employees/:id (Permanent Delete Single Employee)
+// DELETE /api/employees/:id (Permanent Delete Single Employee - Admin Only)
 router.delete('/:id', async (req: Request, res: Response) => {
+  if (!isAdminUser(req)) {
+    return res.status(403).json({ success: false, error: 'Forbidden: Only Admin can delete employee profiles' });
+  }
+
   const userId = (req.headers['x-user-id'] as string) || null;
   const { id } = req.params;
 

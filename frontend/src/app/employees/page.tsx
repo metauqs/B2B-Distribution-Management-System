@@ -9,6 +9,7 @@ import { SkeletonKPI, SkeletonTable, SkeletonProfile } from '@/components/ui/Ske
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiBriefcase, mdiAccountBadge, mdiTrashCanOutline, mdiAlertCircleOutline } from '@mdi/js';
+import { useAppSelector } from '@/store';
 
 interface SalaryPayment {
   id: string;
@@ -71,6 +72,9 @@ const BLANK_PAYMENT = {
 };
 
 export default function EmployeesPage() {
+  const user = useAppSelector(state => state.auth.user);
+  const isAdmin = user?.role === 'OWNER' || user?.role === 'MANAGER';
+
   const [employees, setEmployees] = useState<Employee[]>(() => {
     return getCachedData<Employee[]>('/api/employees') || [];
   });
@@ -197,6 +201,7 @@ export default function EmployeesPage() {
 
   // Toggle active status
   const toggleActiveStatus = async (emp: Employee) => {
+    if (!isAdmin) return showToast('❌ Only Admins can change employee status');
     try {
       const res = await apiFetch(`/api/employees/${emp.id}/toggle`, { method: 'PATCH' });
       const data = await res.json();
@@ -208,7 +213,7 @@ export default function EmployeesPage() {
           loadProfile(emp.id, true);
         }
       } else {
-        showToast('❌ Failed to update status');
+        showToast('❌ ' + (data.error ?? 'Failed to update status'));
       }
     } catch {
       showToast('❌ Network error');
@@ -217,6 +222,7 @@ export default function EmployeesPage() {
 
   // Delete single employee permanently
   const confirmDeleteEmployee = async () => {
+    if (!isAdmin) return showToast('❌ Only Admins can delete employee profiles');
     if (!empToDelete) return;
     setSaving(true);
     try {
@@ -242,6 +248,7 @@ export default function EmployeesPage() {
 
   // Clear ALL employees permanently
   const confirmClearAllEmployees = async () => {
+    if (!isAdmin) return showToast('❌ Only Admins can delete employee profiles');
     setSaving(true);
     try {
       const res = await apiFetch('/api/employees/clear-all', { method: 'POST' });
@@ -290,12 +297,14 @@ export default function EmployeesPage() {
   };
 
   const startAdd = () => {
+    if (!isAdmin) return showToast('❌ Only Admins can add employee profiles');
     setForm({ ...BLANK_FORM });
     setComputedEmployeeId('Auto-generated (e.g. 9001)');
     setView('add');
   };
 
   const startEdit = (emp: Employee) => {
+    if (!isAdmin) return showToast('❌ Only Admins can edit employee profiles');
     setForm({
       employeeId: emp.employeeId || '',
       name: emp.name,
@@ -352,12 +361,14 @@ export default function EmployeesPage() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {view === 'list' ? (
               <>
-                {employees.length > 0 && (
+                {isAdmin && employees.length > 0 && (
                   <button className="va-btn secondary small" style={{ color: '#C62828', borderColor: '#E9C6C6' }} onClick={() => setShowClearAllModal(true)}>
                     🗑️ Delete All Employees Data
                   </button>
                 )}
-                <button className="va-btn" onClick={startAdd}>+ Add Employee</button>
+                {isAdmin && (
+                  <button className="va-btn" onClick={startAdd}>+ Add Employee</button>
+                )}
               </>
             ) : (
               <button className="va-btn secondary small" onClick={() => setView('list')}>← Back to List</button>
@@ -548,13 +559,17 @@ export default function EmployeesPage() {
                         <td style={{ textAlign: 'right' }}>
                           <div style={{ display: 'inline-flex', gap: 6 }}>
                             <button className="va-btn secondary small" onClick={() => loadProfile(emp.id)}>Profile</button>
-                            <button className="va-btn secondary small" onClick={() => startEdit(emp)}>Edit</button>
-                            <button className="va-btn secondary small" style={{ color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
-                              {emp.isActive ? 'Deactivate' : 'Activate'}
-                            </button>
-                            <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(emp)}>
-                              Delete
-                            </button>
+                            {isAdmin && (
+                              <>
+                                <button className="va-btn secondary small" onClick={() => startEdit(emp)}>Edit</button>
+                                <button className="va-btn secondary small" style={{ color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
+                                  {emp.isActive ? 'Deactivate' : 'Activate'}
+                                </button>
+                                <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(emp)}>
+                                  Delete
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -573,13 +588,17 @@ export default function EmployeesPage() {
                     footer={
                       <div style={{ display: 'flex', gap: 6, width: '100%', flexWrap: 'wrap' }}>
                         <button className="va-btn small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => loadProfile(emp.id)}>👤 Profile</button>
-                        <button className="va-btn secondary small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => startEdit(emp)}>✏️ Edit</button>
-                        <button className="va-btn secondary small" style={{ flex: '1 1 45%', color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
-                          {emp.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <button className="va-btn secondary small" style={{ flex: '1 1 45%', color: '#9B1C1C' }} onClick={() => setEmpToDelete(emp)}>
-                          🗑️ Delete
-                        </button>
+                        {isAdmin && (
+                          <>
+                            <button className="va-btn secondary small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => startEdit(emp)}>✏️ Edit</button>
+                            <button className="va-btn secondary small" style={{ flex: '1 1 45%', color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
+                              {emp.isActive ? 'Deactivate' : 'Activate'}
+                            </button>
+                            <button className="va-btn secondary small" style={{ flex: '1 1 45%', color: '#9B1C1C' }} onClick={() => setEmpToDelete(emp)}>
+                              🗑️ Delete
+                            </button>
+                          </>
+                        )}
                       </div>
                     }
                   >
@@ -614,9 +633,11 @@ export default function EmployeesPage() {
             <div className="va-panel" style={{ marginBottom: 0 }}>
               <div className="va-panel-head" style={{ justifyContent: 'space-between' }}>
                 <h3>Employee Profile</h3>
-                <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(activeEmp)}>
-                  🗑️ Delete Profile
-                </button>
+                {isAdmin && (
+                  <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(activeEmp)}>
+                    🗑️ Delete Profile
+                  </button>
+                )}
               </div>
               
               <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 20 }}>
