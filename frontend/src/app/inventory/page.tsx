@@ -134,11 +134,21 @@ export default function InventoryPage() {
 
   // Adjust form
   const [aProdId, setAProdId] = useState('');
+  const [aProdSearch, setAProdSearch] = useState('');
   const [aType, setAType] = useState<'SET' | 'INCREASE' | 'DECREASE'>('SET');
   const [aQtyVal, setAQtyVal] = useState<number | ''>('');
   const [aReason, setAReason] = useState(ADJUSTMENT_REASONS[0]);
   const [aRemarks, setARemarks] = useState('');
   const [aSysQty, setASysQty] = useState<number>(0);
+  const [wProdSearch, setWProdSearch] = useState('');
+
+  const openAdjustForProduct = (item: InventoryItem) => {
+    setAProdId(item.productId);
+    setAProdSearch(item.product?.name ?? '');
+    setASysQty(item.qty);
+    setAQtyVal('');
+    setView('adjust');
+  };
 
   // Movements filters
   const [mProdId, setMProdId] = useState('');
@@ -288,6 +298,17 @@ export default function InventoryPage() {
     ADJUSTMENT: '⚙ Adjustment', TRANSFER_IN: '↓ Transfer In',
     TRANSFER_OUT: '↑ Transfer Out', OPENING: '🔓 Opening',
   };
+  const matchingAdjProducts = inventory.filter(i =>
+    !aProdSearch ||
+    (i.product?.name ?? '').toLowerCase().includes(aProdSearch.toLowerCase()) ||
+    (i.product?.urduName ?? '').includes(aProdSearch)
+  ).sort((a, b) => (a.product?.name ?? '').localeCompare(b.product?.name ?? ''));
+
+  const matchingWastageProducts = inventory.filter(i =>
+    !wProdSearch ||
+    (i.product?.name ?? '').toLowerCase().includes(wProdSearch.toLowerCase()) ||
+    (i.product?.urduName ?? '').includes(wProdSearch)
+  ).sort((a, b) => (a.product?.name ?? '').localeCompare(b.product?.name ?? ''));
 
   return (
     <DashboardLayout>
@@ -436,6 +457,7 @@ export default function InventoryPage() {
                         <th style={{ textAlign: 'right' }}>Avg Cost</th>
                         <th style={{ textAlign: 'right' }}>Stock Value</th>
                         <th style={{ textAlign: 'center' }}>Status</th>
+                        <th style={{ textAlign: 'center' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -488,6 +510,11 @@ export default function InventoryPage() {
                                 border: `1px solid ${sc.badge}44`,
                               }}>{sc.label}</span>
                             </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button className="va-btn secondary small" onClick={() => openAdjustForProduct(i)} style={{ fontSize: 11, padding: '2px 8px', fontWeight: 700 }}>
+                                ⚙ Adjust
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
@@ -498,11 +525,11 @@ export default function InventoryPage() {
                         <td className="mono" style={{ textAlign: 'right', color: '#90CAF9', fontWeight: 800 }}>
                           {filtered.reduce((s, i) => s + i.availableQty, 0).toFixed(1)}
                         </td>
-                        <td colSpan={3}></td>
+                        <td colSpan={4}></td>
                         <td className="mono" style={{ textAlign: 'right', color: '#6FD89A', fontWeight: 800, fontSize: 15 }}>
                           {fmtMoney(filtered.reduce((s, i) => s + i.totalValue, 0))}
                         </td>
-                        <td></td>
+                        <td colSpan={2}></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -530,6 +557,11 @@ export default function InventoryPage() {
                         <MobileCardRow label="Status">
                           <MobileCardBadge variant={sc.badge}>{sc.label}</MobileCardBadge>
                         </MobileCardRow>
+                        <div style={{ marginTop: 8 }}>
+                          <button className="va-btn secondary small" style={{ width: '100%', fontWeight: 700 }} onClick={() => openAdjustForProduct(i)}>
+                            ⚙ Adjust Stock
+                          </button>
+                        </div>
                       </MobileCard>
                     );
                   })}
@@ -603,17 +635,26 @@ export default function InventoryPage() {
           <div className="va-panel-head"><h3>🗑 Record Stock Wastage</h3></div>
           <form onSubmit={handleWastage}>
             <div className="va-form-row">
-              <div className="va-field">
-                <label>Product *</label>
+              <div className="va-field" style={{ position: 'relative' }}>
+                <label>Product * (Search or Select)</label>
+                <input
+                  type="text"
+                  placeholder="🔍 Type product name to filter..."
+                  value={wProdSearch}
+                  onChange={e => setWProdSearch(e.target.value)}
+                  style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, background: '#ffffff', color: '#1E293B', fontSize: 13, marginBottom: 6, width: '100%' }}
+                />
                 <select value={wProdId} onChange={e => {
-                  setWProdId(e.target.value);
-                  const inv = inventory.find(i => i.productId === e.target.value);
+                  const selId = e.target.value;
+                  setWProdId(selId);
+                  const inv = inventory.find(i => i.productId === selId);
                   if (inv) setWUnit(inv.product?.defaultUnit ?? 'KG');
-                }} required>
-                  <option value="">— Select product —</option>
-                  {[...inventory].sort((a, b) => (a.product?.name ?? '').localeCompare(b.product?.name ?? '')).map(i => (
-                    <option key={i.productId} value={i.productId}>
-                      {i.product?.name ?? 'Product'} (Stock: {i.qty.toFixed(2)} {i.product?.defaultUnit ?? 'KG'})
+                  if (inv?.product?.name) setWProdSearch(inv.product.name);
+                }} required style={{ background: '#ffffff', color: '#1E293B', fontWeight: 600, fontSize: 13, width: '100%', padding: '8px' }}>
+                  <option value="" style={{ background: '#ffffff', color: '#1E293B' }}>— Select product ({matchingWastageProducts.length} matching) —</option>
+                  {matchingWastageProducts.map(i => (
+                    <option key={i.productId} value={i.productId} style={{ background: '#ffffff', color: '#1E293B', padding: '6px' }}>
+                      {i.product?.name ?? 'Product'} {i.product?.urduName ? `(${i.product.urduName})` : ''} — Stock: {i.qty.toFixed(2)} {i.product?.defaultUnit ?? 'KG'}
                     </option>
                   ))}
                 </select>
@@ -681,28 +722,37 @@ export default function InventoryPage() {
           </p>
           <form onSubmit={handleAdjust}>
             <div className="va-form-row">
-              <div className="va-field">
-                <label>Product *</label>
+              <div className="va-field" style={{ position: 'relative' }}>
+                <label>Product * (Search or Select)</label>
+                <input
+                  type="text"
+                  placeholder="🔍 Type product name to filter..."
+                  value={aProdSearch}
+                  onChange={e => setAProdSearch(e.target.value)}
+                  style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, background: '#ffffff', color: '#1E293B', fontSize: 13, marginBottom: 6, width: '100%' }}
+                />
                 <select value={aProdId} onChange={e => {
-                  setAProdId(e.target.value);
-                  const inv = inventory.find(i => i.productId === e.target.value);
+                  const selId = e.target.value;
+                  setAProdId(selId);
+                  const inv = inventory.find(i => i.productId === selId);
                   setASysQty(inv?.qty ?? 0);
                   setAQtyVal('');
-                }} required>
-                  <option value="">— Select product —</option>
-                  {[...inventory].sort((a, b) => (a.product?.name ?? '').localeCompare(b.product?.name ?? '')).map(i => (
-                    <option key={i.productId} value={i.productId}>
-                      {i.product?.name ?? 'Product'} (System: {i.qty.toFixed(2)} {i.product?.defaultUnit ?? 'KG'})
+                  if (inv?.product?.name) setAProdSearch(inv.product.name);
+                }} required style={{ background: '#ffffff', color: '#1E293B', fontWeight: 600, fontSize: 13, width: '100%', padding: '8px' }}>
+                  <option value="" style={{ background: '#ffffff', color: '#1E293B' }}>— Select product ({matchingAdjProducts.length} matching) —</option>
+                  {matchingAdjProducts.map(i => (
+                    <option key={i.productId} value={i.productId} style={{ background: '#ffffff', color: '#1E293B', padding: '6px' }}>
+                      {i.product?.name ?? 'Product'} {i.product?.urduName ? `(${i.product.urduName})` : ''} — Current Stock: {i.qty.toFixed(2)} {i.product?.defaultUnit ?? 'KG'}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="va-field">
                 <label>Adjustment Mode *</label>
-                <select value={aType} onChange={e => setAType(e.target.value as any)}>
-                  <option value="SET">Physical Count Correction (Set Total)</option>
-                  <option value="INCREASE">Increase Stock (+ Add Qty)</option>
-                  <option value="DECREASE">Decrease Stock (- Deduct Qty)</option>
+                <select value={aType} onChange={e => setAType(e.target.value as any)} style={{ background: '#ffffff', color: '#1E293B', fontWeight: 600, fontSize: 13, width: '100%', padding: '8px' }}>
+                  <option value="SET" style={{ background: '#ffffff', color: '#1E293B' }}>Physical Count Correction (Set Total)</option>
+                  <option value="INCREASE" style={{ background: '#ffffff', color: '#1E293B' }}>Increase Stock (+ Add Qty)</option>
+                  <option value="DECREASE" style={{ background: '#ffffff', color: '#1E293B' }}>Decrease Stock (- Deduct Qty)</option>
                 </select>
               </div>
             </div>
