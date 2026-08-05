@@ -1,10 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Icon from '@mdi/react';
 import { mdiShieldAccount, mdiAccount, mdiLock } from '@mdi/js';
+import { useAppDispatch } from '@/store';
+import { setUser } from '@/store/slices/authSlice';
+import { getDefaultRouteForRole } from '@/utils/rbac';
 
 export default function LoginPage() {
+  const router = useRouter();
+  const dispatch = useAppDispatch();
   const [employeeId, setEmployeeId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -98,7 +104,16 @@ export default function LoginPage() {
         document.cookie = `sabzi_refresh_token=${data.refreshToken}; path=/; max-age=604800; SameSite=Lax`;
       }
 
-      window.location.href = '/';
+      const loggedInUser = data.data?.user ?? data.user;
+      if (loggedInUser) {
+        localStorage.setItem('sabzi_user', JSON.stringify(loggedInUser));
+        dispatch(setUser(loggedInUser));
+        const targetRoute = getDefaultRouteForRole(loggedInUser.role);
+        router.prefetch(targetRoute);
+        router.push(targetRoute);
+      } else {
+        router.push('/');
+      }
     } catch (err: any) {
       console.error('[LOGIN SUBMIT ERROR]', err);
       setError('Employee not found or network error. Please try again.');

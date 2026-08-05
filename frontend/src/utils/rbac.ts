@@ -94,3 +94,23 @@ export const getAccessibleModules = (role: UserRole): Set<string> => {
   const accessLevel = roleToAccessLevel(role);
   return accessLevelModules[accessLevel];
 };
+
+/**
+ * Get primary landing page route according to role for fast post-login navigation
+ */
+export const getDefaultRouteForRole = (role?: UserRole | null): string => {
+  if (!role) return '/login';
+  switch (role) {
+    case 'CASHIER':
+    case 'SALESMAN':
+      return '/sales';
+    case 'DELIVERY':
+      return '/delivery';
+    case 'ACCOUNTANT':
+      return '/purchases';
+    case 'OWNER':
+    case 'MANAGER':
+    default:
+      return '/';
+  }
+};

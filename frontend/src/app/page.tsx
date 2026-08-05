@@ -54,15 +54,29 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`va-badge ${map[status] ?? 'pending'}`}>{status}</span>;
 }
 
+import { useRouter } from 'next/navigation';
+import { useAppSelector } from '@/store';
+import { getDefaultRouteForRole } from '@/utils/rbac';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, TTL_SHORT } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const router = useRouter();
+  const user = useAppSelector(state => state.auth.user);
   const [data, setData]     = useState<DashboardData | null>(() => getCachedData<DashboardData>('/api/reports/dashboard'));
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(() => !getCachedData<DashboardData>('/api/reports/dashboard'));
+
+  useEffect(() => {
+    if (user) {
+      const defaultRoute = getDefaultRouteForRole(user.role);
+      if (defaultRoute !== '/') {
+        router.replace(defaultRoute);
+      }
+    }
+  }, [user, router]);
 
   const load = useCallback(async (showLoadingSpinner = false) => {
     if (showLoadingSpinner && !getCachedData('/api/reports/dashboard')) setLoading(true);

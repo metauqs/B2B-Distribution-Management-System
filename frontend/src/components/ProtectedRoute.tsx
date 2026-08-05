@@ -5,7 +5,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useAppSelector } from '@/store';
-import { hasModuleAccess } from '@/utils/rbac';
+import { hasModuleAccess, getDefaultRouteForRole } from '@/utils/rbac';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -32,8 +32,8 @@ export function ProtectedRoute({ children, module, fallback }: ProtectedRoutePro
     }
 
     if (!hasModuleAccess(user.role, module)) {
-      // User doesn't have access, redirect to dashboard
-      router.push('/');
+      // User doesn't have access, redirect to default landing page for role
+      router.push(getDefaultRouteForRole(user.role));
       return;
     }
   }, [isAuthenticated, user, module, router]);

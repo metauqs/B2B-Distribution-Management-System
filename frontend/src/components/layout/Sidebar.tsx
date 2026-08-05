@@ -95,8 +95,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
    * Filter NAV_ITEMS based on user role
    */
   const getAccessibleNavItems = (): NavItemConfig[] => {
-    // Only filter if user is loaded (not loading and user exists)
-    if (!user || isLoadingUser) return [];
+    if (!user) return [];
     
     return NAV_ITEMS.filter(item => {
       if (!item.module) return true; // Allow items without explicit module
@@ -220,7 +219,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       {/* Nav List - Expanded (visible on desktop view) */}
       <nav className="va-nav hide-collapsed" aria-label="Main navigation" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        {isLoadingUser ? (
+        {isLoadingUser && !user ? (
           <div style={{ padding: '16px 12px', color: 'rgba(250, 246, 236, 0.6)', fontSize: '13px', textAlign: 'center' }}>
             Loading navigation...
           </div>
@@ -337,7 +336,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       {/* Nav List - Collapsed/Slim (visible on mobile view) */}
       <nav className="va-nav show-collapsed" aria-label="Collapsed navigation" style={{ display: 'flex', flexDirection: 'column', gap: '14px', alignItems: 'center', padding: '10px 0' }}>
-        {isLoadingUser ? (
+        {isLoadingUser && !user ? (
           <div style={{ padding: '16px 12px', color: 'rgba(250, 246, 236, 0.6)', fontSize: '13px', textAlign: 'center' }}>
             Loading...
           </div>

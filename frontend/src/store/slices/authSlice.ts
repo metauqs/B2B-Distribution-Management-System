@@ -1,7 +1,30 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import type { AuthState, LoginCredentials, User } from '@/types/auth';
 
-// ─── Login via fetch (cookie-based, no Redux token needed) ────────────────────
+const loadCachedUser = (): User | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('sabzi_user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const setCachedUser = (user: User | null) => {
+  if (typeof window === 'undefined') return;
+  try {
+    if (user) {
+      localStorage.setItem('sabzi_user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('sabzi_user');
+    }
+  } catch (err) {
+    console.warn('Failed to update sabzi_user in localStorage', err);
+  }
+};
+
+// ─── Login via fetch ──────────────────────────────────────────────────────────
 
 export const login = createAsyncThunk<User, LoginCredentials>(
   'auth/login',
@@ -14,7 +37,9 @@ export const login = createAsyncThunk<User, LoginCredentials>(
       });
       const data = await res.json();
       if (!res.ok || !data.success) return rejectWithValue(data.error ?? 'Login failed');
-      return data.data.user as User;
+      const user = (data.data?.user ?? data.user) as User;
+      setCachedUser(user);
+      return user;
     } catch {
       return rejectWithValue('Network error');
     }
@@ -22,6 +47,7 @@ export const login = createAsyncThunk<User, LoginCredentials>(
 );
 
 export const logout = createAsyncThunk('auth/logout', async () => {
+  setCachedUser(null);
   await fetch('/api/auth/logout', { method: 'POST' });
 });
 
@@ -31,19 +57,26 @@ export const fetchCurrentUser = createAsyncThunk(
     try {
       const res  = await fetch('/api/auth/me');
       const data = await res.json();
-      if (!res.ok || !data.success) return rejectWithValue('Session expired');
-      return data.data as User;
+      if (!res.ok || !data.success) {
+        setCachedUser(null);
+        return rejectWithValue('Session expired');
+      }
+      const user = (data.data ?? data.user) as User;
+      setCachedUser(user);
+      return user;
     } catch {
       return rejectWithValue('Network error');
     }
   }
 );
 
-// ─── Initial State ────────────────────────────────────────────────────────────
+// ─── Initial State (Hydrates instantly from localStorage) ─────────────────────
+
+const initialCachedUser = loadCachedUser();
 
 const initialState: AuthState = {
-  user:            null,
-  isAuthenticated: false,
+  user:            initialCachedUser,
+  isAuthenticated: !!initialCachedUser,
   isLoading:       false,
   error:           null,
 };
@@ -58,6 +91,7 @@ const authSlice = createSlice({
     setUser(state, action: PayloadAction<User>) {
       state.user            = action.payload;
       state.isAuthenticated = true;
+      setCachedUser(action.payload);
     },
   },
   extraReducers: builder => {
@@ -79,7 +113,9 @@ const authSlice = createSlice({
         state.isAuthenticated = false;
         state.error           = null;
       })
-      .addCase(fetchCurrentUser.pending,   state => { state.isLoading = true; })
+      .addCase(fetchCurrentUser.pending,   state => {
+        if (!state.user) state.isLoading = true;
+      })
       .addCase(fetchCurrentUser.fulfilled, (state, action) => {
         state.isLoading       = false;
         state.isAuthenticated = true;
