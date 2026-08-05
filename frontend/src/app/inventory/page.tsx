@@ -7,8 +7,9 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
+import { useAppSelector } from '@/store';
 import Icon from '@mdi/react';
-import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline } from '@mdi/js';
+import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline, mdiTagOutline } from '@mdi/js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -123,6 +124,9 @@ function fmtQty(qty: number, unit = 'KG') {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
+  const user = useAppSelector((state: any) => state.auth.user);
+  const isAdmin = user?.role === 'OWNER' || user?.role === 'MANAGER';
+
   const [view, setView] = useState<View>('list');
   const [inventory, setInventory] = useState<InventoryItem[]>(() => {
     const cached = getCachedData<any>('/api/inventory');
@@ -145,6 +149,14 @@ export default function InventoryPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   const [search, setSearch] = useState('');
+
+  // Buy Price Adjust Modal
+  const [priceModalOpen, setPriceModalOpen] = useState(false);
+  const [pProdId, setPProdId] = useState('');
+  const [pProdSearch, setPProdSearch] = useState('');
+  const [pComboboxOpen, setPComboboxOpen] = useState(false);
+  const [pNewPrice, setPNewPrice] = useState<number | ''>('');
+  const [pReason, setPReason] = useState('');
 
   // Wastage form
   const [wProdId, setWProdId] = useState('');
@@ -173,6 +185,48 @@ export default function InventoryPage() {
   const [mTo, setMTo] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  const openPriceAdjustModal = (item?: any) => {
+    if (item) {
+      setPProdId(item.productId);
+      setPProdSearch(item.name || item.product?.name || '');
+      setPNewPrice(item.currentBuyPrice > 0 ? item.currentBuyPrice : item.avgCost > 0 ? item.avgCost : '');
+    } else {
+      setPProdId('');
+      setPProdSearch('');
+      setPNewPrice('');
+    }
+    setPReason('Admin Manual Buy Rate Adjustment');
+    setPriceModalOpen(true);
+  };
+
+  const handleBuyPriceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pProdId) return showToast('❌ Select a product');
+    if (pNewPrice === '' || isNaN(Number(pNewPrice)) || Number(pNewPrice) < 0) {
+      return showToast('❌ Enter a valid non-negative buy rate');
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch('/api/inventory/buy-price', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: pProdId,
+          newBuyPrice: Number(pNewPrice),
+          reason: pReason || 'Admin Manual Buy Rate Adjustment',
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        invalidateCache('/api/inventory');
+        invalidateCache('/api/pricelist');
+        showToast(`✅ Buy price updated — Rs ${Number(pNewPrice).toFixed(2)}`);
+        setPriceModalOpen(false);
+        await load(true);
+      } else showToast('❌ ' + (data.error ?? 'Failed to update buy price'));
+    } finally { setSaving(false); }
+  };
 
   // ── Load inventory & all products ───────────────────────────────────────────
   const load = useCallback(async (isBackground = false) => {
@@ -437,6 +491,15 @@ export default function InventoryPage() {
           </div>
           {view === 'list' && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {isAdmin && (
+                <button
+                  className="va-btn secondary small"
+                  onClick={() => openPriceAdjustModal()}
+                  style={{ fontWeight: 700, borderColor: 'var(--forest)', color: 'var(--forest)' }}
+                >
+                  <Icon path={mdiTagOutline} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Adjust Buy Rate
+                </button>
+              )}
               <button className="va-btn secondary small" onClick={() => { setView('priceHistory'); loadPriceHistory(); }} style={{ fontWeight: 700 }}>
                 <Icon path={mdiHistory} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Buy Price History
               </button>
@@ -456,6 +519,141 @@ export default function InventoryPage() {
           )}
         </div>
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* MODAL: ADMIN BUY PRICE ADJUSTMENT                                      */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {priceModalOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)',
+          zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+        }}>
+          <div className="va-panel" style={{ width: '100%', maxWidth: 520, margin: 0, background: '#ffffff', borderRadius: 16, boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>
+            <div className="va-panel-head" style={{ borderBottom: '1px solid #E2E8F0', paddingBottom: 12, marginBottom: 16 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#0F172A' }}>
+                <Icon path={mdiTagOutline} size={0.9} color="var(--forest)" />
+                Adjust Buy Rate (Buy Price)
+              </h3>
+              <button className="va-btn secondary small" onClick={() => setPriceModalOpen(false)}>✕</button>
+            </div>
+
+            <form onSubmit={handleBuyPriceSubmit}>
+              <div className="va-field" style={{ position: 'relative', marginBottom: 14 }}>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6, color: '#0F172A' }}>
+                  Product * (Search English or Urdu name)
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 Search product..."
+                    value={pProdSearch}
+                    onFocus={() => setPComboboxOpen(true)}
+                    onChange={e => {
+                      setPProdSearch(e.target.value);
+                      setPComboboxOpen(true);
+                    }}
+                    style={{
+                      width: '100%', padding: '10px 12px', border: '1px solid var(--line)',
+                      borderRadius: 8, background: '#ffffff', color: '#0F172A', fontSize: 14, fontWeight: 600
+                    }}
+                  />
+
+                  {pComboboxOpen && (
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: 220,
+                      overflowY: 'auto', background: '#ffffff', border: '1px solid #CBD5E1',
+                      borderRadius: 8, boxShadow: '0 10px 25px rgba(0,0,0,0.18)', zIndex: 10001, marginTop: 4
+                    }}>
+                      {masterProductsList.filter(p => !pProdSearch || p.name.toLowerCase().includes(pProdSearch.toLowerCase()) || (p.urduName ?? '').includes(pProdSearch)).map(p => (
+                        <div
+                          key={p.productId}
+                          onClick={() => {
+                            setPProdId(p.productId);
+                            setPProdSearch(p.name);
+                            setPNewPrice(p.currentBuyPrice > 0 ? p.currentBuyPrice : '');
+                            setPComboboxOpen(false);
+                          }}
+                          style={{
+                            padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            cursor: 'pointer', borderBottom: '1px solid #F1F5F9'
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#F0FDF4')}
+                          onMouseLeave={e => (e.currentTarget.style.background = '#ffffff')}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 18 }}>{getProductEmoji(p.name)}</span>
+                            <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>{p.name} {p.urduName ? `/ ${p.urduName}` : ''}</span>
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#166534', fontFamily: 'monospace' }}>
+                            Current: Rs {p.currentBuyPrice.toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {pProdId && (() => {
+                const prod = masterProductsList.find(p => p.productId === pProdId);
+                const currRate = prod?.currentBuyPrice ?? 0;
+                const prevRate = prod?.previousBuyPrice ?? 0;
+                const newRateNum = Number(pNewPrice || 0);
+                const diff = newRateNum - currRate;
+
+                return (
+                  <div style={{ padding: '12px 14px', background: '#F8FAFC', borderRadius: 10, border: '1px solid #E2E8F0', marginBottom: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748B', marginBottom: 6 }}>
+                      <span>Current Buy Rate: <strong style={{ color: '#0F172A' }}>Rs {currRate.toFixed(2)} / {prod?.unit}</strong></span>
+                      <span>Previous Rate: <strong style={{ color: '#0F172A' }}>{prevRate > 0 ? `Rs ${prevRate.toFixed(2)}` : '—'}</strong></span>
+                    </div>
+
+                    {newRateNum > 0 && (
+                      <div style={{ fontSize: 13, fontWeight: 700, color: diff > 0 ? '#DC2626' : diff < 0 ? '#166534' : '#64748B' }}>
+                        Rate Change: Rs {currRate.toFixed(2)} → Rs {newRateNum.toFixed(2)} ({diff >= 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)})
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="va-field" style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6, color: '#0F172A' }}>
+                  New Buy Rate (Rs / Unit) *
+                </label>
+                <input
+                  type="number" min="0" step="0.01" required
+                  value={pNewPrice}
+                  onChange={e => setPNewPrice(e.target.value === '' ? '' : +e.target.value)}
+                  placeholder="0.00"
+                  style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 8, background: '#ffffff', color: '#0F172A', fontSize: 16, fontWeight: 800, fontFamily: 'monospace' }}
+                />
+              </div>
+
+              <div className="va-field" style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6, color: '#0F172A' }}>
+                  Adjustment Reason / Note
+                </label>
+                <input
+                  type="text"
+                  value={pReason}
+                  onChange={e => setPReason(e.target.value)}
+                  placeholder="Admin buy rate update..."
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: '#ffffff', color: '#0F172A', fontSize: 13 }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button type="button" className="va-btn secondary" onClick={() => setPriceModalOpen(false)}>Cancel</button>
+                <button type="submit" className="va-btn" disabled={saving || !pProdId || pNewPrice === ''}>
+                  {saving ? 'Updating…' : '✓ Save Buy Rate'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {/* VIEW: DASHBOARD + CURRENT STOCK HUB                                   */}
@@ -561,7 +759,7 @@ export default function InventoryPage() {
                         <th style={{ textAlign: 'right' }}>Avg Cost</th>
                         <th style={{ textAlign: 'right' }}>Stock Value</th>
                         <th style={{ textAlign: 'center' }}>Status</th>
-                        <th style={{ textAlign: 'center' }}>Action</th>
+                        <th style={{ textAlign: 'center' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -615,9 +813,16 @@ export default function InventoryPage() {
                               }}>{sc.label}</span>
                             </td>
                             <td style={{ textAlign: 'center' }}>
-                              <button className="va-btn secondary small" onClick={() => openAdjustForProduct(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700 }}>
-                                ⚙ Adjust
-                              </button>
+                              <div style={{ display: 'inline-flex', gap: 4 }}>
+                                <button className="va-btn secondary small" onClick={() => openAdjustForProduct(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700 }}>
+                                  ⚙ Adjust
+                                </button>
+                                {isAdmin && (
+                                  <button className="va-btn secondary small" onClick={() => openPriceAdjustModal(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700, color: 'var(--forest)' }} title="Adjust Buy Price">
+                                    🏷️ Rate
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -661,10 +866,15 @@ export default function InventoryPage() {
                         <MobileCardRow label="Status">
                           <MobileCardBadge variant={sc.badge}>{sc.label}</MobileCardBadge>
                         </MobileCardRow>
-                        <div style={{ marginTop: 8 }}>
-                          <button className="va-btn secondary small" style={{ width: '100%', fontWeight: 700 }} onClick={() => openAdjustForProduct(i)}>
+                        <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                          <button className="va-btn secondary small" style={{ flex: 1, fontWeight: 700 }} onClick={() => openAdjustForProduct(i)}>
                             ⚙ Adjust Stock
                           </button>
+                          {isAdmin && (
+                            <button className="va-btn secondary small" style={{ flex: 1, fontWeight: 700, color: 'var(--forest)' }} onClick={() => openPriceAdjustModal(i)}>
+                              🏷️ Buy Rate
+                            </button>
+                          )}
                         </div>
                       </MobileCard>
                     );
@@ -696,18 +906,18 @@ export default function InventoryPage() {
           : priceHistory.length === 0 ? (
             <div className="va-empty">
               <div className="big">No purchase price history recorded</div>
-              <div>Historical buy prices will accumulate automatically as purchases are created</div>
+              <div>Historical buy prices will accumulate automatically as purchases or manual adjustments are recorded</div>
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="va-table">
                 <thead>
                   <tr>
-                    <th>Purchase Date</th>
+                    <th>Date &amp; Time</th>
                     <th>Product Name</th>
-                    <th>Supplier</th>
+                    <th>Supplier / Record</th>
                     <th style={{ textAlign: 'right' }}>Buy Price (Rs)</th>
-                    <th style={{ textAlign: 'right' }}>Purchase Qty</th>
+                    <th style={{ textAlign: 'right' }}>Purchase / Stock Qty</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -715,7 +925,7 @@ export default function InventoryPage() {
                     <tr key={entry.id}>
                       <td style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtDateTime(entry.date)}</td>
                       <td style={{ fontWeight: 700 }}>{getProductEmoji(entry.product?.name)} {entry.product?.name ?? '—'}</td>
-                      <td>{entry.supplier?.name ?? 'Mandi / Direct'}</td>
+                      <td>{entry.supplier?.name ?? 'Mandi / Direct / Admin Update'}</td>
                       <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
                         Rs {entry.buyPrice.toFixed(2)}
                       </td>
@@ -1152,6 +1362,16 @@ export default function InventoryPage() {
                     {selectedAdjProduct.currentBuyPrice > 0 ? `Rs ${selectedAdjProduct.currentBuyPrice.toFixed(2)}` : '—'}
                   </div>
                   <div style={{ fontSize: 11, color: '#64748B' }}>per {selectedAdjProduct.unit}</div>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="va-btn secondary small"
+                      onClick={() => openPriceAdjustModal(selectedAdjProduct)}
+                      style={{ fontSize: 10, padding: '2px 6px', marginTop: 4, fontWeight: 700, color: 'var(--forest)' }}
+                    >
+                      🏷️ Adjust Rate
+                    </button>
+                  )}
                 </div>
 
                 <div>

@@ -245,6 +245,74 @@ router.post('/adjust', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/inventory/buy-price (Admin manual buy price adjustment)
+router.post('/buy-price', async (req: Request, res: Response) => {
+  try {
+    let branchId = (req.headers['x-branch-id'] as string) || undefined;
+    if (!branchId) {
+      const firstBranch = await prisma.branch.findFirst();
+      branchId = firstBranch?.id ?? '';
+    }
+
+    const { productId, newBuyPrice, reason } = req.body;
+
+    if (!productId) {
+      return res.status(400).json({ success: false, error: 'Product is required' });
+    }
+    if (newBuyPrice === undefined || newBuyPrice === null || isNaN(Number(newBuyPrice)) || Number(newBuyPrice) < 0) {
+      return res.status(400).json({ success: false, error: 'Valid non-negative buy price is required' });
+    }
+
+    const price = Number(newBuyPrice);
+
+    const existing = await prisma.inventory.findUnique({
+      where: { productId_branchId: { productId, branchId } },
+    });
+
+    const oldBuyPrice = existing?.currentBuyPrice ?? 0;
+
+    const updated = await prisma.inventory.upsert({
+      where: { productId_branchId: { productId, branchId } },
+      update: {
+        previousBuyPrice: oldBuyPrice > 0 ? oldBuyPrice : (existing?.previousBuyPrice ?? 0),
+        currentBuyPrice: price,
+      },
+      create: {
+        productId,
+        branchId,
+        qty: 0,
+        currentBuyPrice: price,
+        previousBuyPrice: 0,
+        avgCost: price,
+      },
+    });
+
+    // Record entry in PurchasePriceHistory
+    await prisma.purchasePriceHistory.create({
+      data: {
+        productId,
+        branchId,
+        buyPrice: price,
+        qty: existing?.qty ?? 0,
+        date: new Date(),
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        productId,
+        oldBuyPrice,
+        newBuyPrice: price,
+        inventory: updated,
+      },
+    });
+  } catch (err: any) {
+    console.error('[POST /api/inventory/buy-price]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to update buy price' });
+  }
+});
+
 // GET /api/inventory/movements (Stock movement history audit log)
 router.get('/movements', async (req: Request, res: Response) => {
   try {
