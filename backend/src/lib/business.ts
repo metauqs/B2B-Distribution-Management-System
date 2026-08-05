@@ -332,120 +332,16 @@ export interface PurchaseItemForSync {
 }
 
 export async function syncPriceListFromPurchase(
-  tx:          any,                    // Prisma transaction client
+  tx:          any,
   branchId:    string,
   userId:      string | null | undefined,
-  purchaseDate: Date,                  // normalised date
+  purchaseDate: Date,
   items:       PurchaseItemForSync[],
 ): Promise<string> {
-  const dayStart = new Date(purchaseDate); dayStart.setHours(0, 0, 0, 0);
-  const dayEnd   = new Date(purchaseDate); dayEnd.setHours(23, 59, 59, 999);
-
-  // 1. Fetch or create the PriceList header for this date + branch
-  let priceList = await tx.priceList.findFirst({
-    where: { branchId, date: { gte: dayStart, lte: dayEnd } },
-  });
-
-  if (!priceList) {
-    const normalizedDate = new Date(purchaseDate);
-    normalizedDate.setHours(12, 0, 0, 0);
-    const validatedUserId = await getValidUserId(userId, tx);
-
-    const activeProducts = await tx.product.findMany({
-      where: {
-        availability: { in: ['AVAILABLE', 'SEASONAL'] },
-        isActive: true,
-      },
-      select: { id: true, name: true, defaultUnit: true },
-    });
-
-    priceList = await tx.priceList.create({
-      data: {
-        date:        normalizedDate,
-        branchId,
-        createdById: validatedUserId ?? undefined,
-        notes:       'Created automatically from Purchase Entry',
-        isActive:    true,
-        items: {
-          create: activeProducts.map((prod: any) => ({
-            productId: prod.id,
-            itemName: prod.name,
-            unit: prod.defaultUnit,
-            buyRate: 0,
-            sellRate: 0,
-          })),
-        },
-      },
-    });
-  }
-
-  const priceListId = priceList.id;
-
-  // 2. Batch-fetch ALL existing price items for this list in ONE query
-  const productIds  = items.filter(i => i.productId).map(i => i.productId as string);
-  const itemNames   = items.filter(i => !i.productId).map(i => i.itemName);
-
-  const existingItems = await tx.priceItem.findMany({
-    where: {
-      priceListId,
-      OR: [
-        ...(productIds.length > 0  ? [{ productId: { in: productIds } }]  : []),
-        ...(itemNames.length  > 0  ? [{ itemName:  { in: itemNames  } }]  : []),
-      ],
-    },
-    select: { id: true, productId: true, itemName: true },
-  });
-
-  // Build lookup maps for O(1) access
-  const existingByProductId = new Map<string, string>(); // productId -> priceItem.id
-  const existingByName      = new Map<string, string>(); // itemName  -> priceItem.id
-  for (const ei of existingItems) {
-    if (ei.productId) existingByProductId.set(ei.productId, ei.id);
-    else              existingByName.set(ei.itemName, ei.id);
-  }
-
-  // 3. Split items into "needs update" and "needs create"
-  const toCreate: any[] = [];
-  const toUpdate: { id: string; buyRate: number }[] = [];
-
-  for (const item of items) {
-    const existingId = item.productId
-      ? existingByProductId.get(item.productId)
-      : existingByName.get(item.itemName);
-
-    if (existingId) {
-      toUpdate.push({ id: existingId, buyRate: item.rate });
-    } else {
-      toCreate.push({
-        priceListId,
-        productId: item.productId ?? undefined,
-        itemName:  item.itemName,
-        unit:      item.unit as any,
-        buyRate:   item.rate,
-        sellRate:  0,
-      });
-    }
-  }
-
-  // 4. Batch create new items (one query for all new items)
-  if (toCreate.length > 0) {
-    await tx.priceItem.createMany({ data: toCreate, skipDuplicates: true });
-  }
-
-  // 5. Update existing items in parallel (not sequential)
-  if (toUpdate.length > 0) {
-    await Promise.all(
-      toUpdate.map(({ id, buyRate }) =>
-        tx.priceItem.update({ where: { id }, data: { buyRate } })
-      )
-    );
-  }
-
-  return priceListId;
+  // Inventory is now the Single Source of Truth for Buy Prices and Stock.
+  // Purchase updates Inventory directly. Price List loads rates from Inventory.
+  return '';
 }
-
-
-// ─── Sync Price List from Sales Invoice ────────────────────────────────────────
 
 export interface SaleItemForSync {
   productId?: string | null;
@@ -461,79 +357,6 @@ export async function syncPriceListFromSale(
   saleDate: Date,
   items:    SaleItemForSync[],
 ): Promise<string> {
-  const dayStart = new Date(saleDate); dayStart.setHours(0, 0, 0, 0);
-  const dayEnd   = new Date(saleDate); dayEnd.setHours(23, 59, 59, 999);
-
-  let priceList = await tx.priceList.findFirst({
-    where: { branchId, date: { gte: dayStart, lte: dayEnd } },
-  });
-
-  if (!priceList) {
-    const normalizedDate = new Date(saleDate);
-    normalizedDate.setHours(12, 0, 0, 0);
-    const validatedUserId = await getValidUserId(userId, tx);
-
-    const activeProducts = await tx.product.findMany({
-      where: {
-        availability: { in: ['AVAILABLE', 'SEASONAL'] },
-        isActive: true,
-      },
-    });
-
-    priceList = await tx.priceList.create({
-      data: {
-        date:        normalizedDate,
-        branchId,
-        createdById: validatedUserId ?? undefined,
-        notes:       'Created automatically from Sales Invoice',
-        isActive:    true,
-        items: {
-          create: activeProducts.map((prod: any) => ({
-            productId: prod.id,
-            itemName: prod.name,
-            unit: prod.defaultUnit,
-            buyRate: 0,
-            sellRate: 0,
-          })),
-        },
-      },
-    });
-  }
-
-  const priceListId = priceList.id;
-
-  await Promise.all(
-    items.map(async (item) => {
-      if (!item.rate || item.rate <= 0) return;
-
-      if (item.productId) {
-        await tx.priceItem.upsert({
-          where: { priceListId_productId: { priceListId, productId: item.productId } },
-          update: { sellRate: item.rate },
-          create: {
-            priceListId,
-            productId: item.productId,
-            itemName: item.itemName,
-            unit: item.unit as any,
-            buyRate: 0,
-            sellRate: item.rate,
-          },
-        });
-      } else {
-        await tx.priceItem.upsert({
-          where: { priceListId_itemName: { priceListId, itemName: item.itemName } },
-          update: { sellRate: item.rate },
-          create: {
-            priceListId,
-            itemName: item.itemName,
-            unit: item.unit as any,
-            buyRate: 0,
-            sellRate: item.rate,
-          },
-        });
-      }
-    })
-  );
-
-  return priceListId;
+  // Sales consume stock directly from Inventory and do not mutate Price List.
+  return '';
 }

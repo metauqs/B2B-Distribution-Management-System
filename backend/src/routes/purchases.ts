@@ -146,18 +146,13 @@ router.post('/', async (req: Request, res: Response) => {
               unit: item.unit ?? 'KG',
               refType: 'purchase',
               refId: p.id,
+              purchaseId: p.id,
+              supplierId: finalSupplierId,
+              userId: userId ?? undefined,
               date: pDate,
             })
           )
       );
-
-      const syncItems: PurchaseItemForSync[] = finalItems.map((i: any) => ({
-        productId: i.productId ?? null,
-        itemName: i.itemName ?? i.name,
-        unit: i.unit ?? 'KG',
-        rate: i.rate,
-      }));
-      await syncPriceListFromPurchase(tx, branchId, userId, pDate, syncItems);
 
       return p;
     }, { maxWait: 15000, timeout: 600000 });

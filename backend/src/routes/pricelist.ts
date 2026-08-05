@@ -4,7 +4,7 @@ import { writeAuditLog, getValidUserId } from '../lib/business';
 
 const router = Router();
 
-// GET /api/pricelist/active
+// GET /api/pricelist/active — Get today's active Price List with Inventory buy rates & stock
 router.get('/active', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
@@ -12,23 +12,8 @@ router.get('/active', async (req: Request, res: Response) => {
     const todayStart = new Date(Date.now() - 5 * 60 * 60 * 1000); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(todayStart); todayEnd.setHours(23, 59, 59, 999);
 
-    const purchasedToday = await prisma.purchaseItem.findMany({
-      where: {
-        purchase: {
-          branchId: branchId ?? undefined,
-          date: { gte: todayStart, lte: todayEnd },
-          deletedAt: null,
-        },
-      },
-      select: {
-        productId: true,
-      },
-    });
-    const purchasedProductIds = Array.from(
-      new Set(purchasedToday.map((it) => it.productId).filter(Boolean))
-    ) as string[];
-
-    const list = await prisma.priceList.findFirst({
+    // Fetch active price list header
+    let list = await prisma.priceList.findFirst({
       where: {
         ...(branchId ? { branchId } : {}),
         date: { gte: todayStart, lte: todayEnd },
@@ -36,25 +21,9 @@ router.get('/active', async (req: Request, res: Response) => {
       },
       include: {
         items: {
-          ...(purchasedProductIds.length > 0 ? {
-            where: {
-              OR: [
-                { productId: { in: purchasedProductIds } },
-                { productId: null, buyRate: { gt: 0 } },
-                { sellRate: { gt: 0 } },
-              ]
-            }
-          } : {
-            where: {
-              OR: [
-                { buyRate: { gt: 0 } },
-                { sellRate: { gt: 0 } },
-              ]
-            }
-          }),
           include: {
             product: {
-              select: { id: true, name: true, urduName: true, category: true }
+              select: { id: true, name: true, urduName: true, category: true, availability: true }
             }
           },
           orderBy: { itemName: 'asc' },
@@ -62,18 +31,107 @@ router.get('/active', async (req: Request, res: Response) => {
       },
     });
 
-    const rateMap: Record<string, number> = {};
-    if (list) {
-      list.items.forEach(item => {
+    // Fetch all inventory items for this branch to enrich buy rates and stock
+    const inventories = branchId ? await prisma.inventory.findMany({
+      where: { branchId },
+      include: { product: { select: { id: true, name: true, urduName: true, category: true, defaultUnit: true, availability: true } } }
+    }) : [];
+
+    const inventoryMap = new Map<string, any>();
+    inventories.forEach(inv => inventoryMap.set(inv.productId, inv));
+
+    // If no active price list exists yet for today, generate a draft sourced directly from Inventory
+    if (!list) {
+      const activeProducts = await prisma.product.findMany({
+        where: {
+          availability: { in: ['AVAILABLE', 'SEASONAL'] },
+          isActive: true,
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
+
+      const draftItems = activeProducts.map((prod) => {
+        const inv = inventoryMap.get(prod.id);
+        const currentBuyPrice = inv?.currentBuyPrice ?? 0;
+        const previousBuyPrice = inv?.previousBuyPrice ?? 0;
+        const currentStock = inv?.qty ?? 0;
+        const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
+
+        return {
+          id: `draft-${prod.id}`,
+          productId: prod.id,
+          itemName: prod.name,
+          unit: prod.defaultUnit,
+          buyRate: currentBuyPrice,
+          previousBuyPrice,
+          currentBuyPrice,
+          currentStock,
+          availableStock,
+          sellRate: 0,
+          notes: '',
+          product: {
+            id: prod.id,
+            name: prod.name,
+            urduName: prod.urduName,
+            category: prod.category,
+            availability: prod.availability,
+          },
+        };
+      });
+
+      const rateMap: Record<string, number> = {};
+      draftItems.forEach(item => {
         rateMap[item.itemName.toLowerCase()] = item.sellRate;
         if (item.productId) rateMap[item.productId] = item.sellRate;
       });
+
+      return res.json({
+        success: true,
+        isToday: false,
+        isDraft: true,
+        data: {
+          id: 'draft',
+          date: todayStart.toISOString(),
+          isActive: true,
+          notes: 'Draft price list loaded from Central Inventory',
+          items: draftItems,
+        },
+        rateMap,
+      });
     }
+
+    // Enrich existing price items with live Inventory buy rates and stock
+    const enrichedItems = list.items.map(item => {
+      const inv = item.productId ? inventoryMap.get(item.productId) : null;
+      const currentBuyPrice = inv?.currentBuyPrice ?? item.buyRate;
+      const previousBuyPrice = inv?.previousBuyPrice ?? 0;
+      const currentStock = inv?.qty ?? 0;
+      const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
+
+      return {
+        ...item,
+        buyRate: currentBuyPrice,
+        currentBuyPrice,
+        previousBuyPrice,
+        currentStock,
+        availableStock,
+      };
+    });
+
+    const rateMap: Record<string, number> = {};
+    enrichedItems.forEach(item => {
+      rateMap[item.itemName.toLowerCase()] = item.sellRate;
+      if (item.productId) rateMap[item.productId] = item.sellRate;
+    });
 
     return res.json({
       success: true,
-      isToday: !!list,
-      data: list,
+      isToday: true,
+      isDraft: false,
+      data: {
+        ...list,
+        items: enrichedItems,
+      },
       rateMap,
     });
   } catch (err: any) {
@@ -97,11 +155,6 @@ router.get('/history', async (req: Request, res: Response) => {
           ...(branchId ? { branchId } : {}),
           date: { gte: since },
           isActive: true,
-        },
-        product: {
-          purchaseItems: {
-            some: {}
-          }
         },
         ...(productId ? { productId: String(productId) } : {}),
         ...(itemName ? { itemName: { contains: String(itemName), mode: 'insensitive' } } : {}),
@@ -227,7 +280,7 @@ router.post('/duplicate', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/pricelist
+// GET /api/pricelist — List or query price lists
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
@@ -240,23 +293,6 @@ router.get('/', async (req: Request, res: Response) => {
       const dayEnd = new Date(String(dateStr));
       dayEnd.setHours(23, 59, 59, 999);
 
-      // Get all products purchased on this specific date
-      const purchasedToday = await prisma.purchaseItem.findMany({
-        where: {
-          purchase: {
-            branchId: branchId ?? undefined,
-            date: { gte: day, lte: dayEnd },
-            deletedAt: null,
-          },
-        },
-        select: {
-          productId: true,
-        },
-      });
-      const purchasedProductIds = Array.from(
-        new Set(purchasedToday.map((it) => it.productId).filter(Boolean))
-      ) as string[];
-
       const list = await prisma.priceList.findFirst({
         where: {
           branchId: branchId ?? undefined,
@@ -265,22 +301,6 @@ router.get('/', async (req: Request, res: Response) => {
         },
         include: {
           items: {
-            ...(purchasedProductIds.length > 0 ? {
-              where: {
-                OR: [
-                  { productId: { in: purchasedProductIds } },
-                  { productId: null, buyRate: { gt: 0 } },
-                  { sellRate: { gt: 0 } },
-                ]
-              }
-            } : {
-              where: {
-                OR: [
-                  { buyRate: { gt: 0 } },
-                  { sellRate: { gt: 0 } },
-                ]
-              }
-            }),
             include: {
               product: {
                 select: { id: true, name: true, urduName: true, category: true, availability: true }
@@ -292,15 +312,35 @@ router.get('/', async (req: Request, res: Response) => {
         },
       });
 
+      const inventories = branchId ? await prisma.inventory.findMany({
+        where: { branchId },
+      }) : [];
+      const inventoryMap = new Map<string, any>();
+      inventories.forEach(inv => inventoryMap.set(inv.productId, inv));
+
       if (list) {
-        return res.json({ success: true, isDraft: false, data: list });
+        const enrichedItems = list.items.map(item => {
+          const inv = item.productId ? inventoryMap.get(item.productId) : null;
+          const currentBuyPrice = inv?.currentBuyPrice ?? item.buyRate;
+          const previousBuyPrice = inv?.previousBuyPrice ?? 0;
+          const currentStock = inv?.qty ?? 0;
+          const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
+
+          return {
+            ...item,
+            buyRate: currentBuyPrice,
+            currentBuyPrice,
+            previousBuyPrice,
+            currentStock,
+            availableStock,
+          };
+        });
+
+        return res.json({ success: true, isDraft: false, data: { ...list, items: enrichedItems } });
       }
 
       const activeProducts = await prisma.product.findMany({
         where: {
-          id: {
-            in: purchasedProductIds
-          },
           availability: { in: ['AVAILABLE', 'SEASONAL'] },
           isActive: true,
         },
@@ -308,11 +348,21 @@ router.get('/', async (req: Request, res: Response) => {
       });
 
       const draftItems = activeProducts.map((prod) => {
+        const inv = inventoryMap.get(prod.id);
+        const currentBuyPrice = inv?.currentBuyPrice ?? 0;
+        const previousBuyPrice = inv?.previousBuyPrice ?? 0;
+        const currentStock = inv?.qty ?? 0;
+        const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
+
         return {
           productId: prod.id,
           itemName: prod.name,
           unit: prod.defaultUnit,
-          buyRate: 0,
+          buyRate: currentBuyPrice,
+          previousBuyPrice,
+          currentBuyPrice,
+          currentStock,
+          availableStock,
           sellRate: 0,
           notes: '',
           product: {
@@ -332,7 +382,7 @@ router.get('/', async (req: Request, res: Response) => {
           id: 'draft',
           date: day.toISOString(),
           isActive: true,
-          notes: 'Draft based on active products catalog',
+          notes: 'Draft based on central inventory catalog',
           items: draftItems,
         },
       });
@@ -355,7 +405,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/pricelist
+// POST /api/pricelist — Save or update selling rates for Price List
 router.post('/', async (req: Request, res: Response) => {
   try {
     const branchId = req.headers['x-branch-id'] as string;
@@ -370,14 +420,56 @@ router.post('/', async (req: Request, res: Response) => {
     const dayStart = new Date(listDate); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(listDate); dayEnd.setHours(23, 59, 59, 999);
 
-    const existing = await prisma.priceList.findFirst({
+    let existing = await prisma.priceList.findFirst({
       where: { branchId, date: { gte: dayStart, lte: dayEnd } },
     });
-    if (existing) {
-      return res.status(409).json({ success: false, error: 'A price list for this date already exists', existingId: existing.id });
-    }
+
+    // Fetch Inventory buy rates map
+    const productIds = items.filter((it: any) => it.productId).map((it: any) => it.productId);
+    const inventories = productIds.length > 0 ? await prisma.inventory.findMany({
+      where: { branchId, productId: { in: productIds } },
+      select: { productId: true, currentBuyPrice: true }
+    }) : [];
+    const invBuyMap = new Map<string, number>();
+    inventories.forEach(inv => invBuyMap.set(inv.productId, inv.currentBuyPrice));
 
     const validatedUserId = await getValidUserId(userId);
+
+    if (existing) {
+      // Upsert item sell rates into existing list
+      for (const it of items) {
+        const buyRate = it.productId ? (invBuyMap.get(it.productId) ?? it.buyRate ?? 0) : (it.buyRate ?? 0);
+        await prisma.priceItem.upsert({
+          where: { priceListId_itemName: { priceListId: existing.id, itemName: it.itemName } },
+          update: {
+            sellRate: Number(it.sellRate ?? 0),
+            buyRate,
+            unit: it.unit ?? 'KG',
+            notes: it.notes ?? undefined,
+            productId: it.productId ?? undefined,
+          },
+          create: {
+            priceListId: existing.id,
+            itemName: it.itemName,
+            productId: it.productId ?? undefined,
+            unit: it.unit ?? 'KG',
+            buyRate,
+            sellRate: Number(it.sellRate ?? 0),
+            notes: it.notes ?? undefined,
+          },
+        });
+      }
+
+      const updated = await prisma.priceList.findUnique({
+        where: { id: existing.id },
+        include: {
+          items: { include: { product: { select: { id: true, name: true, urduName: true, category: true } } }, orderBy: { itemName: 'asc' } },
+          createdBy: { select: { id: true, name: true } },
+        },
+      });
+      return res.status(200).json({ success: true, data: updated });
+    }
+
     const list = await prisma.priceList.create({
       data: {
         date: listDate,
@@ -385,18 +477,21 @@ router.post('/', async (req: Request, res: Response) => {
         createdById: validatedUserId ?? undefined,
         notes: notes ?? undefined,
         items: items.length > 0 ? {
-          create: items.map((it: any) => ({
-            productId: it.productId ?? undefined,
-            itemName: it.itemName,
-            unit: it.unit ?? 'KG',
-            buyRate: it.buyRate ?? 0,
-            sellRate: it.sellRate ?? 0,
-            notes: it.notes ?? undefined,
-          })),
+          create: items.map((it: any) => {
+            const buyRate = it.productId ? (invBuyMap.get(it.productId) ?? it.buyRate ?? 0) : (it.buyRate ?? 0);
+            return {
+              productId: it.productId ?? undefined,
+              itemName: it.itemName,
+              unit: it.unit ?? 'KG',
+              buyRate,
+              sellRate: Number(it.sellRate ?? 0),
+              notes: it.notes ?? undefined,
+            };
+          }),
         } : undefined,
       },
       include: {
-        items: { include: { product: { select: { id: true, name: true, urduName: true, category: true } } } },
+        items: { include: { product: { select: { id: true, name: true, urduName: true, category: true } } }, orderBy: { itemName: 'asc' } },
         createdBy: { select: { id: true, name: true } },
       },
     });
@@ -404,7 +499,7 @@ router.post('/', async (req: Request, res: Response) => {
     return res.status(201).json({ success: true, data: list });
   } catch (err: any) {
     console.error('Error in POST /api/pricelist:', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to create price list' });
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to create/update price list' });
   }
 });
 
@@ -425,7 +520,25 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
 
     if (!list) return res.status(404).json({ success: false, error: 'Not found' });
-    return res.json({ success: true, data: list });
+
+    const inventories = await prisma.inventory.findMany({
+      where: { branchId: list.branchId },
+    });
+    const invMap = new Map<string, any>();
+    inventories.forEach(i => invMap.set(i.productId, i));
+
+    const enrichedItems = list.items.map(item => {
+      const inv = item.productId ? invMap.get(item.productId) : null;
+      return {
+        ...item,
+        currentBuyPrice: inv?.currentBuyPrice ?? item.buyRate,
+        previousBuyPrice: inv?.previousBuyPrice ?? 0,
+        currentStock: inv?.qty ?? 0,
+        availableStock: Math.max(0, (inv?.qty ?? 0) - (inv?.reservedQty ?? 0)),
+      };
+    });
+
+    return res.json({ success: true, data: { ...list, items: enrichedItems } });
   } catch (err: any) {
     console.error('Error in GET /api/pricelist/:id:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load price list' });
@@ -438,6 +551,9 @@ router.patch('/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
     const { notes, isActive, items } = req.body;
 
+    const existingList = await prisma.priceList.findUnique({ where: { id }, select: { branchId: true } });
+    if (!existingList) return res.status(404).json({ success: false, error: 'Price list not found' });
+
     await prisma.priceList.update({
       where: { id },
       data: {
@@ -447,12 +563,21 @@ router.patch('/:id', async (req: Request, res: Response) => {
     });
 
     if (items && Array.isArray(items)) {
+      const productIds = items.filter((it: any) => it.productId).map((it: any) => it.productId);
+      const inventories = productIds.length > 0 ? await prisma.inventory.findMany({
+        where: { branchId: existingList.branchId, productId: { in: productIds } },
+        select: { productId: true, currentBuyPrice: true }
+      }) : [];
+      const invBuyMap = new Map<string, number>();
+      inventories.forEach(inv => invBuyMap.set(inv.productId, inv.currentBuyPrice));
+
       for (const item of items) {
+        const buyRate = item.productId ? (invBuyMap.get(item.productId) ?? item.buyRate ?? 0) : (item.buyRate ?? 0);
         await prisma.priceItem.upsert({
           where: { priceListId_itemName: { priceListId: id, itemName: item.itemName } },
           update: {
-            buyRate: item.buyRate ?? 0,
-            sellRate: item.sellRate ?? 0,
+            buyRate,
+            sellRate: Number(item.sellRate ?? 0),
             unit: item.unit ?? 'KG',
             notes: item.notes ?? undefined,
             productId: item.productId ?? undefined,
@@ -462,8 +587,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
             itemName: item.itemName,
             productId: item.productId ?? undefined,
             unit: item.unit ?? 'KG',
-            buyRate: item.buyRate ?? 0,
-            sellRate: item.sellRate ?? 0,
+            buyRate,
+            sellRate: Number(item.sellRate ?? 0),
             notes: item.notes ?? undefined,
           },
         });

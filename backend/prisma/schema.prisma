@@ -30,6 +30,7 @@ model Branch {
   priceBroadcasts   PriceBroadcast[]
   priceLists        PriceList[]
   purchases         Purchase[]
+  purchasePriceHistories PurchasePriceHistory[]
   sales             Sale[]
   stockMovements    StockMovement[]
   supplierLedgers   SupplierLedger[]
@@ -60,6 +61,7 @@ model User {
   priceListsCreated PriceList[]      @relation("PriceListCreator")
   sales             Sale[]
   expensesCreated   Expense[]        @relation("ExpenseCreator")
+  stockMovements    StockMovement[]
   branch            Branch           @relation(fields: [branchId], references: [id])
 
   @@index([branchId])
@@ -85,6 +87,7 @@ model Product {
   saleItems      SaleItem[]
   stockMovements StockMovement[]
   wastage        Wastage[]
+  purchasePriceHistories PurchasePriceHistory[]
 
   @@index([name])
   @@index([category])
@@ -144,6 +147,7 @@ model Supplier {
   ledgers          SupplierLedger[]
   supplierPayments SupplierPayment[]
   expenses         Expense[]
+  purchasePriceHistories PurchasePriceHistory[]
   branch           Branch            @relation(fields: [branchId], references: [id])
 
   @@index([branchId])
@@ -233,6 +237,7 @@ model Purchase {
   branch           Branch            @relation(fields: [branchId], references: [id])
   supplier         Supplier          @relation(fields: [supplierId], references: [id])
   supplierPayments SupplierPayment[]
+  purchasePriceHistories PurchasePriceHistory[]
 
   @@index([supplierId])
   @@index([branchId])
@@ -370,14 +375,20 @@ model Wastage {
 }
 
 model Inventory {
-  id        String   @id @default(cuid())
-  productId String
-  branchId  String
-  qty       Float    @default(0)
-  avgCost   Float    @default(0)
-  updatedAt DateTime @db.Timestamptz(3) @updatedAt
-  branch    Branch   @relation(fields: [branchId], references: [id])
-  product   Product  @relation(fields: [productId], references: [id])
+  id               String    @id @default(cuid())
+  productId        String
+  branchId         String
+  qty              Float     @default(0)
+  reservedQty      Float     @default(0)
+  minStock         Float     @default(0)
+  avgCost          Float     @default(0)
+  currentBuyPrice  Float     @default(0)
+  previousBuyPrice Float     @default(0)
+  lastPurchaseDate DateTime? @db.Timestamptz(3)
+  lastPurchaseQty  Float     @default(0)
+  updatedAt        DateTime  @db.Timestamptz(3) @updatedAt
+  branch           Branch    @relation(fields: [branchId], references: [id])
+  product          Product   @relation(fields: [productId], references: [id])
 
   @@unique([productId, branchId])
   @@index([branchId])
@@ -385,23 +396,49 @@ model Inventory {
 }
 
 model StockMovement {
-  id        String            @id @default(cuid())
-  productId String
-  branchId  String
-  type      StockMovementType
-  qty       Float
-  refType   String?
-  refId     String?
-  note      String?
-  date      DateTime @db.Timestamptz(3)          @default(now())
-  createdAt DateTime @db.Timestamptz(3)          @default(now())
-  branch    Branch            @relation(fields: [branchId], references: [id])
-  product   Product           @relation(fields: [productId], references: [id])
+  id            String            @id @default(cuid())
+  productId     String
+  branchId      String
+  type          StockMovementType
+  qty           Float
+  previousStock Float             @default(0)
+  newStock      Float             @default(0)
+  refType       String?
+  refId         String?
+  note          String?
+  userId        String?
+  date          DateTime          @db.Timestamptz(3) @default(now())
+  createdAt     DateTime          @db.Timestamptz(3) @default(now())
+  branch        Branch            @relation(fields: [branchId], references: [id])
+  product       Product           @relation(fields: [productId], references: [id])
+  user          User?             @relation(fields: [userId], references: [id])
 
   @@index([productId])
   @@index([branchId])
   @@index([date])
+  @@index([userId])
   @@map("stock_movements")
+}
+
+model PurchasePriceHistory {
+  id         String    @id @default(cuid())
+  productId  String
+  branchId   String
+  purchaseId String?
+  supplierId String?
+  buyPrice   Float
+  qty        Float
+  date       DateTime  @db.Timestamptz(3) @default(now())
+  createdAt  DateTime  @db.Timestamptz(3) @default(now())
+  branch     Branch    @relation(fields: [branchId], references: [id])
+  product    Product   @relation(fields: [productId], references: [id])
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id])
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  @@index([productId])
+  @@index([branchId])
+  @@index([date])
+  @@map("purchase_price_histories")
 }
 
 model PriceList {

@@ -8,7 +8,7 @@ import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM }
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
-import { mdiArchive } from '@mdi/js';
+import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline, mdiArrowUpBold, mdiArrowDownBold } from '@mdi/js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -16,7 +16,13 @@ interface InventoryItem {
   id: string;
   productId: string;
   qty: number;
+  reservedQty?: number;
+  availableQty: number;
   avgCost: number;
+  currentBuyPrice: number;
+  previousBuyPrice: number;
+  lastPurchaseDate?: string;
+  lastPurchaseQty?: number;
   totalValue: number;
   stockStatus: 'OK' | 'LOW' | 'OUT_OF_STOCK';
   product: {
@@ -28,12 +34,23 @@ interface InventoryItem {
 interface InventorySummary {
   totalProducts: number;
   totalQty: number;
+  totalAvailableQty: number;
   lowStockCount: number;
   outOfStockCount: number;
   totalValue: number;
   todayStockIn: number;
   todayStockOut: number;
   todayWastage: number;
+}
+
+interface PriceHistoryEntry {
+  id: string;
+  date: string;
+  productId: string;
+  buyPrice: number;
+  qty: number;
+  product?: { name: string; urduName?: string; defaultUnit: string };
+  supplier?: { name: string };
 }
 
 interface Movement {
@@ -45,16 +62,38 @@ interface Movement {
   unit: string;
   type: string;
   qty: number;
+  previousStock: number;
+  newStock: number;
   stockIn: number;
   stockOut: number;
   refType: string;
   refId: string;
+  userName?: string;
   note: string;
 }
 
-type View = 'list' | 'wastage' | 'adjust' | 'movements';
+type View = 'list' | 'wastage' | 'adjust' | 'movements' | 'priceHistory';
 
 const UNITS = ['KG','G','DOZEN','PIECE','BOX','CRATE','LITRE','BUNDLE','TRAY'];
+const WASTAGE_REASONS = [
+  'Rotten / Spoiled',
+  'Physical Damage',
+  'Expired',
+  'Lost / Stolen',
+  'Quality Issue',
+  'Returned to Supplier',
+  'Other',
+];
+
+const ADJUSTMENT_REASONS = [
+  'Physical Verification Correction',
+  'Opening Stock Entry',
+  'Inventory Damage Correction',
+  'Warehouse Stock Relocation',
+  'Supplier Stock Return',
+  'System Reconciliation',
+  'Other',
+];
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 function fmtQty(qty: number, unit = 'KG') {
@@ -63,42 +102,49 @@ function fmtQty(qty: number, unit = 'KG') {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
-  const [view,      setView]      = useState<View>('list');
+  const [view, setView] = useState<View>('list');
   const [inventory, setInventory] = useState<InventoryItem[]>(() => {
     const cached = getCachedData<any>('/api/inventory');
     return cached?.data ?? cached ?? [];
   });
-  const [summary,   setSummary]   = useState<InventorySummary | null>(() => {
+  const [summary, setSummary] = useState<InventorySummary | null>(() => {
     const cached = getCachedData<any>('/api/inventory');
     return cached?.summary ?? null;
   });
   const [movements, setMovements] = useState<Movement[]>([]);
-  const [loading,   setLoading]   = useState(() => {
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
+  const [histProdId, setHistProdId] = useState<string>('');
+
+  const [loading, setLoading] = useState(() => {
     return !getCachedData<any>('/api/inventory');
   });
-  const [movLoad,   setMovLoad]   = useState(false);
-  const [saving,    setSaving]    = useState(false);
-  const [toast,     setToast]     = useState('');
-  const [search,    setSearch]    = useState('');
+  const [movLoad, setMovLoad] = useState(false);
+  const [histLoad, setHistLoad] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState('');
+  const [search, setSearch] = useState('');
 
   // Wastage form
-  const [wProdId,  setWProdId]  = useState('');
-  const [wQty,     setWQty]     = useState<number>(0);
-  const [wUnit,    setWUnit]    = useState('KG');
-  const [wReason,  setWReason]  = useState('');
-  const [wDate,    setWDate]    = useState('');
+  const [wProdId, setWProdId] = useState('');
+  const [wQty, setWQty] = useState<number>(0);
+  const [wUnit, setWUnit] = useState('KG');
+  const [wReason, setWReason] = useState(WASTAGE_REASONS[0]);
+  const [wRemarks, setWRemarks] = useState('');
+  const [wDate, setWDate] = useState('');
 
   // Adjust form
-  const [aProdId,  setAProdId]  = useState('');
-  const [aPhysQty, setAPhysQty] = useState<number | ''>('');
-  const [aReason,  setAReason]  = useState('');
-  const [aSysQty,  setASysQty]  = useState<number>(0);
+  const [aProdId, setAProdId] = useState('');
+  const [aType, setAType] = useState<'SET' | 'INCREASE' | 'DECREASE'>('SET');
+  const [aQtyVal, setAQtyVal] = useState<number | ''>('');
+  const [aReason, setAReason] = useState(ADJUSTMENT_REASONS[0]);
+  const [aRemarks, setARemarks] = useState('');
+  const [aSysQty, setASysQty] = useState<number>(0);
 
   // Movements filters
-  const [mProdId,  setMProdId]  = useState('');
-  const [mType,    setMType]    = useState('all');
-  const [mFrom,    setMFrom]    = useState('');
-  const [mTo,      setMTo]      = useState('');
+  const [mProdId, setMProdId] = useState('');
+  const [mType, setMType] = useState('all');
+  const [mFrom, setMFrom] = useState('');
+  const [mTo, setMTo] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -108,7 +154,7 @@ export default function InventoryPage() {
     try {
       const data = await fetchWithCache<any>('/api/inventory', { ttl: TTL_SHORT, forceRefresh: isBackground });
       if (data) {
-        setInventory(data.data ?? data ?? []);
+        setInventory(data.data ?? []);
         setSummary(data.summary ?? null);
       }
     } catch (err) {
@@ -123,10 +169,10 @@ export default function InventoryPage() {
     setMovLoad(true);
     try {
       const p = new URLSearchParams({ limit: '300' });
-      if (mProdId)           p.set('productId', mProdId);
-      if (mType !== 'all')   p.set('type', mType);
-      if (mFrom)             p.set('from', mFrom);
-      if (mTo)               p.set('to', mTo);
+      if (mProdId) p.set('productId', mProdId);
+      if (mType !== 'all') p.set('type', mType);
+      if (mFrom) p.set('from', mFrom);
+      if (mTo) p.set('to', mTo);
       const data = await fetchWithCache<any[]>(`/api/inventory/movements?${p}`, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
       if (data) setMovements(data);
       else showToast('❌ Failed to load movements');
@@ -135,37 +181,56 @@ export default function InventoryPage() {
     } finally { setMovLoad(false); }
   }, [mProdId, mType, mFrom, mTo]);
 
+  // ── Load Price History ──────────────────────────────────────────────────────
+  const loadPriceHistory = useCallback(async (prodId?: string) => {
+    setHistLoad(true);
+    try {
+      const url = prodId ? `/api/inventory/price-history?productId=${prodId}` : '/api/inventory/price-history';
+      const data = await fetchWithCache<any>(url, { ttl: TTL_SHORT, forceRefresh: true });
+      setPriceHistory(data.data ?? data ?? []);
+    } catch (err) {
+      console.error('price history load error:', err);
+    } finally { setHistLoad(false); }
+  }, []);
+
   useEffect(() => {
     const handleRevalidate = () => {
       load(true);
-      if (view === 'movements') {
-        loadMovements(true);
-      }
+      if (view === 'movements') loadMovements(true);
+      if (view === 'priceHistory') loadPriceHistory(histProdId);
     };
     window.addEventListener('app-revalidate', handleRevalidate);
     return () => window.removeEventListener('app-revalidate', handleRevalidate);
-  }, [load, view, loadMovements]);
+  }, [load, view, loadMovements, loadPriceHistory, histProdId]);
 
   // ── Wastage submit ──────────────────────────────────────────────────────────
   const handleWastage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!wProdId)     return showToast('❌ Select a product');
+    if (!wProdId) return showToast('❌ Select a product');
     if (!wQty || wQty <= 0) return showToast('❌ Quantity must be > 0');
     const inv = inventory.find(i => i.productId === wProdId);
     if (inv && wQty > inv.qty) return showToast(`❌ Qty (${wQty}) exceeds stock (${inv.qty.toFixed(2)})`);
     setSaving(true);
     try {
-      const res  = await apiFetch('/api/inventory', {
+      const res = await apiFetch('/api/inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId: wProdId, itemName: inv?.product?.name ?? '', qty: wQty, unit: wUnit, reason: wReason, date: wDate || undefined }),
+        body: JSON.stringify({
+          productId: wProdId,
+          itemName: inv?.product?.name ?? '',
+          qty: wQty,
+          unit: wUnit,
+          reason: wReason,
+          remarks: wRemarks,
+          date: wDate || undefined
+        }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
         invalidateCache('/api/inventory');
         invalidateCache('/api/reports');
         showToast(`✅ Wastage recorded — ${data.data?.refNo ?? ''}`);
-        setWProdId(''); setWQty(0); setWReason(''); setWDate('');
+        setWProdId(''); setWQty(0); setWRemarks(''); setWDate('');
         await load(true); setView('list');
       } else showToast('❌ ' + (data.error ?? 'Failed'));
     } finally { setSaving(false); }
@@ -174,23 +239,29 @@ export default function InventoryPage() {
   // ── Adjust submit ───────────────────────────────────────────────────────────
   const handleAdjust = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!aProdId)           return showToast('❌ Select a product');
-    if (aPhysQty === '')    return showToast('❌ Enter physical count');
-    if (Number(aPhysQty) < 0) return showToast('❌ Physical count cannot be negative');
+    if (!aProdId) return showToast('❌ Select a product');
+    if (aQtyVal === '') return showToast('❌ Enter quantity');
+    if (Number(aQtyVal) < 0) return showToast('❌ Quantity cannot be negative');
     setSaving(true);
     try {
-      const res  = await apiFetch('/api/inventory/adjust', {
+      const res = await apiFetch('/api/inventory/adjust', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId: aProdId, adjustedQty: Number(aPhysQty), reason: aReason }),
+        body: JSON.stringify({
+          productId: aProdId,
+          adjustedQty: Number(aQtyVal),
+          adjustmentType: aType,
+          reason: aReason,
+          remarks: aRemarks
+        }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
         invalidateCache('/api/inventory');
         invalidateCache('/api/reports');
-        const { refNo, delta } = data.data;
-        showToast(`✅ Stock adjusted — ${refNo} (${delta >= 0 ? '+' : ''}${delta})`);
-        setAProdId(''); setAPhysQty(''); setAReason(''); setASysQty(0);
+        const { refNo, delta, newQty } = data.data;
+        showToast(`✅ Stock adjusted — ${refNo} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)} → New: ${newQty.toFixed(2)})`);
+        setAProdId(''); setAQtyVal(''); setARemarks(''); setASysQty(0);
         await load(true); setView('list');
       } else showToast('❌ ' + (data.error ?? 'Failed'));
     } finally { setSaving(false); }
@@ -204,13 +275,13 @@ export default function InventoryPage() {
   );
 
   const typeColors: Record<string, string> = {
-    PURCHASE:   '#1F3D2B',
-    SALE:       '#2B5C8A',
-    WASTAGE:    '#8A2B2B',
+    PURCHASE: '#1F3D2B',
+    SALE: '#2B5C8A',
+    WASTAGE: '#8A2B2B',
     ADJUSTMENT: '#7C5C1F',
-    TRANSFER_IN:'#2B5C8A',
-    TRANSFER_OUT:'#8A4A1F',
-    OPENING:    '#3A3A6B',
+    TRANSFER_IN: '#2B5C8A',
+    TRANSFER_OUT: '#8A4A1F',
+    OPENING: '#3A3A6B',
   };
   const typeLabels: Record<string, string> = {
     PURCHASE: '📦 Purchase', SALE: '🧾 Sale', WASTAGE: '🗑 Wastage',
@@ -233,25 +304,36 @@ export default function InventoryPage() {
           <div>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, verticalAlign: 'middle' }}>
               <Icon path={mdiArchive} size={1} color="var(--primary)" />
-              <h2 style={{ margin: 0 }}>Inventory</h2>
+              <h2 style={{ margin: 0 }}>Inventory Hub</h2>
             </div>
-            <p style={{ color: 'var(--muted)', fontSize: 13, margin: '4px 0 0 0' }}>Real-time stock tracking — Purchases, Sales, Wastage &amp; Adjustments</p>
+            <p style={{ color: 'var(--muted)', fontSize: 13, margin: '4px 0 0 0' }}>
+              Single Source of Truth — Live Stock, Buy Prices, Price History, Adjustments &amp; Wastage
+            </p>
           </div>
           {view === 'list' && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="va-btn secondary small" onClick={() => { setView('movements'); loadMovements(); }} style={{ fontWeight: 700 }}>📋 Movements</button>
-              <button className="va-btn secondary small" onClick={() => { setAProdId(''); setAPhysQty(''); setAReason(''); setASysQty(0); setView('adjust'); }} style={{ fontWeight: 700 }}>⚙ Adjust Stock</button>
-              <button className="va-btn" onClick={() => { setWProdId(''); setWQty(0); setWReason(''); setView('wastage'); }}>🗑 Record Wastage</button>
+              <button className="va-btn secondary small" onClick={() => { setView('priceHistory'); loadPriceHistory(); }} style={{ fontWeight: 700 }}>
+                <Icon path={mdiHistory} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Buy Price History
+              </button>
+              <button className="va-btn secondary small" onClick={() => { setView('movements'); loadMovements(); }} style={{ fontWeight: 700 }}>
+                📋 Movements
+              </button>
+              <button className="va-btn secondary small" onClick={() => { setAProdId(''); setAQtyVal(''); setARemarks(''); setASysQty(0); setView('adjust'); }} style={{ fontWeight: 700 }}>
+                <Icon path={mdiTune} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Adjust Stock
+              </button>
+              <button className="va-btn" onClick={() => { setWProdId(''); setWQty(0); setWRemarks(''); setView('wastage'); }}>
+                <Icon path={mdiDeleteOutline} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Record Wastage
+              </button>
             </div>
           )}
           {view !== 'list' && (
-            <button className="va-btn secondary small" onClick={() => setView('list')}>← Back to Stock</button>
+            <button className="va-btn secondary small" onClick={() => setView('list')}>← Back to Stock Hub</button>
           )}
         </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* VIEW: DASHBOARD + CURRENT STOCK                                       */}
+      {/* VIEW: DASHBOARD + CURRENT STOCK HUB                                   */}
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {view === 'list' && (
         <>
@@ -261,15 +343,20 @@ export default function InventoryPage() {
               <div className="va-card accent">
                 <div className="label">Total Products</div>
                 <div className="value">{summary.totalProducts}</div>
-                <div className="foot">in inventory</div>
+                <div className="foot">active catalog items</div>
               </div>
               <div className="va-card">
-                <div className="label">Estimated Value</div>
+                <div className="label">Total Available Qty</div>
+                <div className="value" style={{ color: 'var(--primary)' }}>{summary.totalAvailableQty.toFixed(1)}</div>
+                <div className="foot">units available for sale</div>
+              </div>
+              <div className="va-card">
+                <div className="label">Stock Value</div>
                 <div className="value" style={{ color: 'var(--forest)' }}>{fmtMoney(summary.totalValue)}</div>
-                <div className="foot">at avg cost</div>
+                <div className="foot">at current buy price</div>
               </div>
               <div className="va-card">
-                <div className="label">Low Stock</div>
+                <div className="label">Low Stock Alert</div>
                 <div className="value" style={{ color: summary.lowStockCount > 0 ? 'var(--mustard)' : 'var(--ok)' }}>{summary.lowStockCount}</div>
                 <div className="foot">items need restocking</div>
               </div>
@@ -281,17 +368,12 @@ export default function InventoryPage() {
               <div className="va-card">
                 <div className="label">Today Stock In</div>
                 <div className="value" style={{ color: 'var(--ok)' }}>+{summary.todayStockIn.toFixed(1)}</div>
-                <div className="foot">units received today</div>
+                <div className="foot">purchased today</div>
               </div>
               <div className="va-card">
                 <div className="label">Today Stock Out</div>
                 <div className="value" style={{ color: 'var(--clay)' }}>-{summary.todayStockOut.toFixed(1)}</div>
-                <div className="foot">units sold today</div>
-              </div>
-              <div className="va-card">
-                <div className="label">Today Wastage</div>
-                <div className="value" style={{ color: summary.todayWastage > 0 ? '#8A2B2B' : 'var(--muted)' }}>{summary.todayWastage > 0 ? `-${summary.todayWastage.toFixed(1)}` : '0'}</div>
-                <div className="foot">units wasted today</div>
+                <div className="foot">sold today</div>
               </div>
             </div>
           )}
@@ -309,45 +391,48 @@ export default function InventoryPage() {
                     color: i.stockStatus === 'OUT_OF_STOCK' ? 'var(--danger)' : 'var(--mustard)',
                     border: `1px solid currentColor`,
                   }}>
-                    {i.stockStatus === 'OUT_OF_STOCK' ? '❌' : '⚠'} {i.product?.name} · {fmtQty(i.qty, i.product?.defaultUnit)}
+                    {i.stockStatus === 'OUT_OF_STOCK' ? '❌' : '⚠'} {i.product?.name} · Available: {fmtQty(i.availableQty, i.product?.defaultUnit)}
                   </span>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Search + Current Stock Table */}
+          {/* Search + Central Stock Hub Table */}
           <div className="va-panel">
             <div className="va-panel-head">
-              <h3>Current Stock</h3>
+              <h3>Central Stock Hub (Single Source of Truth)</h3>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
                   value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="🔍 Search product…"
-                  style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, width: 200 }}
+                  style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, width: 220 }}
                 />
                 <button className="va-btn secondary small" onClick={() => load()}>↻ Refresh</button>
               </div>
             </div>
 
-            {loading && inventory.length === 0 ? <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={5} /></div>
+            {loading && inventory.length === 0 ? <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={7} /></div>
             : filtered.length === 0 ? (
               <div className="va-empty">
-                <div className="big">No inventory data</div>
-                <div>Record purchases to build stock</div>
+                <div className="big">No inventory stock found</div>
+                <div>Record purchases to automatically populate stock hub</div>
               </div>
             ) : (
               <>
                 {/* Desktop View Table */}
                 <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table className="va-table" style={{ minWidth: 600 }}>
+                  <table className="va-table" style={{ minWidth: 850 }}>
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Product</th>
+                        <th>Product Name</th>
                         <th>Urdu Name</th>
                         <th>Unit</th>
-                        <th style={{ textAlign: 'right' }}>Current Qty</th>
+                        <th style={{ textAlign: 'right' }}>Total Stock</th>
+                        <th style={{ textAlign: 'right', color: 'var(--primary)' }}>Available Qty</th>
+                        <th style={{ textAlign: 'right' }}>Prev Buy Price</th>
+                        <th style={{ textAlign: 'right', color: 'var(--forest)' }}>Current Buy Price</th>
                         <th style={{ textAlign: 'right' }}>Avg Cost</th>
                         <th style={{ textAlign: 'right' }}>Stock Value</th>
                         <th style={{ textAlign: 'center' }}>Status</th>
@@ -360,14 +445,38 @@ export default function InventoryPage() {
                           : i.stockStatus === 'LOW'
                           ? { bg: '#FFFBF0', badge: '#B87333', label: 'Low Stock' }
                           : { bg: undefined, badge: 'var(--ok)', label: 'Available' };
+
+                        const priceDiff = i.currentBuyPrice - i.previousBuyPrice;
+
                         return (
                           <tr key={i.id} style={{ background: sc.bg }}>
                             <td className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>{idx + 1}</td>
-                            <td style={{ fontWeight: 700 }}>{i.product?.name}</td>
+                            <td style={{ fontWeight: 700 }}>
+                              {i.product?.name}
+                              {i.lastPurchaseDate && (
+                                <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
+                                  Last buy: {new Date(i.lastPurchaseDate).toLocaleDateString('en-GB')} ({i.lastPurchaseQty ?? 0} {i.product?.defaultUnit})
+                                </div>
+                              )}
+                            </td>
                             <td style={{ fontSize: 14, color: 'var(--muted)', fontFamily: 'serif' }}>{i.product?.urduName ?? '—'}</td>
                             <td style={{ color: 'var(--muted)', fontSize: 12 }}>{i.product?.defaultUnit ?? 'KG'}</td>
                             <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: i.qty <= 0 ? 'var(--danger)' : undefined }}>
                               {i.qty.toFixed(2)}
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--primary)' }}>
+                              {i.availableQty.toFixed(2)}
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                              {i.previousBuyPrice > 0 ? `Rs ${i.previousBuyPrice.toFixed(2)}` : '—'}
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
+                              {i.currentBuyPrice > 0 ? `Rs ${i.currentBuyPrice.toFixed(2)}` : `Rs ${i.avgCost.toFixed(2)}`}
+                              {i.previousBuyPrice > 0 && priceDiff !== 0 && (
+                                <span style={{ fontSize: 10, marginLeft: 4, color: priceDiff > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                                  ({priceDiff > 0 ? `+${priceDiff.toFixed(1)}` : priceDiff.toFixed(1)})
+                                </span>
+                              )}
                             </td>
                             <td className="mono" style={{ textAlign: 'right' }}>Rs {i.avgCost.toFixed(2)}</td>
                             <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--forest)' }}>{fmtMoney(i.totalValue)}</td>
@@ -385,7 +494,11 @@ export default function InventoryPage() {
                     </tbody>
                     <tfoot>
                       <tr style={{ background: '#1F3D2B', color: '#fff', fontWeight: 700 }}>
-                        <td colSpan={6} style={{ color: '#fff', fontWeight: 700 }}>Total Stock Value ({filtered.length} products)</td>
+                        <td colSpan={5} style={{ color: '#fff', fontWeight: 700 }}>Total Stock Value ({filtered.length} products)</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#90CAF9', fontWeight: 800 }}>
+                          {filtered.reduce((s, i) => s + i.availableQty, 0).toFixed(1)}
+                        </td>
+                        <td colSpan={3}></td>
                         <td className="mono" style={{ textAlign: 'right', color: '#6FD89A', fontWeight: 800, fontSize: 15 }}>
                           {fmtMoney(filtered.reduce((s, i) => s + i.totalValue, 0))}
                         </td>
@@ -409,10 +522,12 @@ export default function InventoryPage() {
                         title={i.product?.name ?? 'Product'}
                         headerBadge={i.product?.urduName || (i.product?.defaultUnit ?? 'KG')}
                       >
-                        <MobileCardRow label="Current Quantity" value={`${i.qty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} isMono />
-                        <MobileCardRow label="Average Cost" value={`Rs ${i.avgCost.toFixed(2)}`} isMono />
-                        <MobileCardRow label="Total Stock Value" value={fmtMoney(i.totalValue)} valueColor="#166534" isMono />
-                        <MobileCardRow label="Stock Status">
+                        <MobileCardRow label="Total Stock" value={`${i.qty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} isMono />
+                        <MobileCardRow label="Available Qty" value={`${i.availableQty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} valueColor="var(--primary)" isMono />
+                        <MobileCardRow label="Current Buy Price" value={i.currentBuyPrice > 0 ? `Rs ${i.currentBuyPrice.toFixed(2)}` : '—'} isMono />
+                        <MobileCardRow label="Previous Buy Price" value={i.previousBuyPrice > 0 ? `Rs ${i.previousBuyPrice.toFixed(2)}` : '—'} isMono />
+                        <MobileCardRow label="Stock Value" value={fmtMoney(i.totalValue)} valueColor="#166534" isMono />
+                        <MobileCardRow label="Status">
                           <MobileCardBadge variant={sc.badge}>{sc.label}</MobileCardBadge>
                         </MobileCardRow>
                       </MobileCard>
@@ -426,11 +541,66 @@ export default function InventoryPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* VIEW: PURCHASE BUY PRICE HISTORY                                      */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {view === 'priceHistory' && (
+        <div className="va-panel">
+          <div className="va-panel-head">
+            <h3><Icon path={mdiHistory} size={0.8} style={{ verticalAlign: 'middle', marginRight: 6 }} /> Purchase Buy Price History</h3>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select value={histProdId} onChange={e => { setHistProdId(e.target.value); loadPriceHistory(e.target.value); }} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--line)', fontSize: 13 }}>
+                <option value="">All Products</option>
+                {inventory.map(i => <option key={i.productId} value={i.productId}>{i.product?.name}</option>)}
+              </select>
+              <button className="va-btn secondary small" onClick={() => loadPriceHistory(histProdId)}>↻ Refresh</button>
+            </div>
+          </div>
+
+          {histLoad ? <div className="va-loading">Loading price history…</div>
+          : priceHistory.length === 0 ? (
+            <div className="va-empty">
+              <div className="big">No purchase price history recorded</div>
+              <div>Historical buy prices will accumulate automatically as purchases are created</div>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="va-table">
+                <thead>
+                  <tr>
+                    <th>Purchase Date</th>
+                    <th>Product Name</th>
+                    <th>Supplier</th>
+                    <th style={{ textAlign: 'right' }}>Buy Price (Rs)</th>
+                    <th style={{ textAlign: 'right' }}>Purchase Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {priceHistory.map(entry => (
+                    <tr key={entry.id}>
+                      <td style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtDateTime(entry.date)}</td>
+                      <td style={{ fontWeight: 700 }}>{entry.product?.name ?? '—'}</td>
+                      <td>{entry.supplier?.name ?? 'Mandi / Direct'}</td>
+                      <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
+                        Rs {entry.buyPrice.toFixed(2)}
+                      </td>
+                      <td className="mono" style={{ textAlign: 'right' }}>
+                        {entry.qty.toFixed(2)} {entry.product?.defaultUnit ?? 'KG'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
       {/* VIEW: RECORD WASTAGE                                                   */}
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {view === 'wastage' && (
         <div className="va-panel" style={{ maxWidth: 640 }}>
-          <div className="va-panel-head"><h3>🗑 Record Wastage</h3></div>
+          <div className="va-panel-head"><h3>🗑 Record Stock Wastage</h3></div>
           <form onSubmit={handleWastage}>
             <div className="va-form-row">
               <div className="va-field">
@@ -475,12 +645,18 @@ export default function InventoryPage() {
                 </select>
               </div>
               <div className="va-field">
-                <label>Reason</label>
-                <input value={wReason} onChange={e => setWReason(e.target.value)}
-                  placeholder="Spoilage, damage, expiry…" />
+                <label>Reason *</label>
+                <select value={wReason} onChange={e => setWReason(e.target.value)}>
+                  {WASTAGE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
               </div>
             </div>
             <div className="va-form-row" style={{ marginTop: 12 }}>
+              <div className="va-field">
+                <label>Remarks / Notes</label>
+                <input value={wRemarks} onChange={e => setWRemarks(e.target.value)}
+                  placeholder="Additional details regarding wastage…" />
+              </div>
               <div className="va-field">
                 <label>Date (optional)</label>
                 <input type="datetime-local" value={wDate} onChange={e => setWDate(e.target.value)} />
@@ -501,7 +677,7 @@ export default function InventoryPage() {
         <div className="va-panel" style={{ maxWidth: 640 }}>
           <div className="va-panel-head"><h3>⚙ Manual Stock Adjustment</h3></div>
           <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 16px' }}>
-            Use this when your physical count differs from the system. A Stock Movement of type ADJUSTMENT will be created for full audit trail.
+            Adjust inventory count. Every adjustment records previous stock, new stock, and user details in the Stock Movement audit log.
           </p>
           <form onSubmit={handleAdjust}>
             <div className="va-form-row">
@@ -511,7 +687,7 @@ export default function InventoryPage() {
                   setAProdId(e.target.value);
                   const inv = inventory.find(i => i.productId === e.target.value);
                   setASysQty(inv?.qty ?? 0);
-                  setAPhysQty('');
+                  setAQtyVal('');
                 }} required>
                   <option value="">— Select product —</option>
                   {inventory.map(i => (
@@ -521,55 +697,61 @@ export default function InventoryPage() {
                   ))}
                 </select>
               </div>
+              <div className="va-field">
+                <label>Adjustment Mode *</label>
+                <select value={aType} onChange={e => setAType(e.target.value as any)}>
+                  <option value="SET">Physical Count Correction (Set Total)</option>
+                  <option value="INCREASE">Increase Stock (+ Add Qty)</option>
+                  <option value="DECREASE">Decrease Stock (- Deduct Qty)</option>
+                </select>
+              </div>
             </div>
 
             {aProdId && (
               <>
-                {/* Comparison panel */}
                 <div style={{ display: 'flex', gap: 12, margin: '16px 0', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, padding: '14px 16px', background: 'rgba(31,61,43,0.07)', borderRadius: 10, border: '1px solid var(--line)' }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>SYSTEM QTY</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>SYSTEM STOCK</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--forest)', fontFamily: 'monospace' }}>{aSysQty.toFixed(2)}</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{inventory.find(i => i.productId === aProdId)?.product?.defaultUnit ?? 'KG'}</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', fontSize: 24, color: 'var(--muted)' }}>→</div>
                   <div style={{ flex: 1, padding: '14px 16px', background: 'rgba(43,91,138,0.07)', borderRadius: 10, border: '1px solid var(--line)' }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>PHYSICAL COUNT</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>
+                      {aType === 'SET' ? 'NEW PHYSICAL COUNT' : aType === 'INCREASE' ? 'ADD QUANTITY' : 'DEDUCT QUANTITY'}
+                    </div>
                     <input
                       type="number" min="0" step="0.01" required
-                      value={aPhysQty}
-                      onChange={e => setAPhysQty(e.target.value === '' ? '' : +e.target.value)}
+                      value={aQtyVal}
+                      onChange={e => setAQtyVal(e.target.value === '' ? '' : +e.target.value)}
                       style={{ width: '100%', fontSize: 22, fontWeight: 800, fontFamily: 'monospace', border: 'none', background: 'transparent', color: 'var(--forest)', outline: 'none' }}
                       placeholder="0.00"
                     />
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{inventory.find(i => i.productId === aProdId)?.product?.defaultUnit ?? 'KG'}</div>
                   </div>
-                  {aPhysQty !== '' && (
-                    <div style={{ flex: 1, padding: '14px 16px', background: Number(aPhysQty) >= aSysQty ? 'rgba(31,61,43,0.07)' : 'rgba(168,62,62,0.07)', borderRadius: 10, border: '1px solid var(--line)' }}>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>DELTA</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'monospace', color: Number(aPhysQty) >= aSysQty ? 'var(--ok)' : 'var(--danger)' }}>
-                        {Number(aPhysQty) >= aSysQty ? '+' : ''}{(Number(aPhysQty) - aSysQty).toFixed(2)}
-                      </div>
-                      <div style={{ fontSize: 11, color: Number(aPhysQty) >= aSysQty ? 'var(--ok)' : 'var(--danger)' }}>
-                        {Number(aPhysQty) >= aSysQty ? 'Stock Gain' : 'Stock Loss'}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 <div className="va-form-row">
                   <div className="va-field">
                     <label>Reason *</label>
-                    <input value={aReason} onChange={e => setAReason(e.target.value)}
-                      placeholder="Physical count difference, damaged stock…" required />
+                    <select value={aReason} onChange={e => setAReason(e.target.value)}>
+                      {ADJUSTMENT_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="va-form-row" style={{ marginTop: 12 }}>
+                  <div className="va-field">
+                    <label>Remarks / Notes</label>
+                    <input value={aRemarks} onChange={e => setARemarks(e.target.value)}
+                      placeholder="Additional notes for stock adjustment log…" />
                   </div>
                 </div>
               </>
             )}
 
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button type="submit" className="va-btn" disabled={saving || !aProdId || aPhysQty === ''}>
-                {saving ? 'Saving…' : '⚙ Apply Adjustment'}
+              <button type="submit" className="va-btn" disabled={saving || !aProdId || aQtyVal === ''}>
+                {saving ? 'Saving…' : '⚙ Apply Stock Adjustment'}
               </button>
               <button type="button" className="va-btn secondary" onClick={() => setView('list')}>Cancel</button>
             </div>
@@ -614,15 +796,17 @@ export default function InventoryPage() {
               </div>
             ) : (
               <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <table className="va-table" style={{ minWidth: 700 }}>
+                <table className="va-table" style={{ minWidth: 800 }}>
                   <thead>
                     <tr>
                       <th>Date &amp; Time</th>
                       <th>Product</th>
                       <th style={{ textAlign: 'center' }}>Type</th>
-                      <th>Reference</th>
+                      <th style={{ textAlign: 'right' }}>Prev Stock</th>
                       <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Stock In</th>
                       <th style={{ textAlign: 'right', color: 'var(--danger)' }}>Stock Out</th>
+                      <th style={{ textAlign: 'right' }}>New Stock</th>
+                      <th>User</th>
                       <th>Note</th>
                     </tr>
                   </thead>
@@ -644,14 +828,20 @@ export default function InventoryPage() {
                             whiteSpace: 'nowrap',
                           }}>{typeLabels[m.type] ?? m.type}</span>
                         </td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>
-                          {m.refId ? <span style={{ background: 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: 4 }}>{m.refId.length > 20 ? m.refId.slice(0, 8) + '…' : m.refId}</span> : '—'}
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                          {m.previousStock?.toFixed(2) ?? '—'}
                         </td>
                         <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>
                           {m.stockIn > 0 ? `+${m.stockIn.toFixed(2)} ${m.unit}` : '—'}
                         </td>
                         <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
                           {m.stockOut > 0 ? `-${m.stockOut.toFixed(2)} ${m.unit}` : '—'}
+                        </td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 800 }}>
+                          {m.newStock?.toFixed(2) ?? '—'}
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--muted)' }}>
+                          {m.userName ?? 'System'}
                         </td>
                         <td style={{ fontSize: 12, color: 'var(--muted)', maxWidth: 260 }}>
                           <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>

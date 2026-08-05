@@ -28,6 +28,7 @@ interface Client {
 
 interface PriceItem {
   productId: string; itemName: string; unit: string; sellRate: number;
+  availableStock?: number; currentStock?: number;
   product?: { id: string; name: string; urduName?: string | null; category: string };
 }
 
@@ -403,6 +404,16 @@ export default function SalesPage() {
     if (!selClient)           return showToast('❌ Select a client first');
     if (!selEmpId)            return showToast('❌ Please select a Delivery Staff member');
     if (!items.some(i => i.itemName && i.qty > 0)) return showToast('❌ Add at least one item');
+
+    // Validate inventory stock availability before checkout
+    for (const item of items.filter(i => i.itemName && i.qty > 0)) {
+      const pItem = priceItems.find(p => (item.productId && p.productId === item.productId) || p.itemName.toLowerCase() === item.itemName.toLowerCase());
+      if (pItem && pItem.availableStock !== undefined) {
+        if (item.qty > pItem.availableStock) {
+          return showToast(`❌ Insufficient inventory stock for ${item.itemName}. Available: ${pItem.availableStock} ${item.unit}, Requested: ${item.qty} ${item.unit}`);
+        }
+      }
+    }
 
     const calcSubtotal = items.filter(i => i.itemName && i.qty > 0).reduce((s, i) => s + (Number(i.qty) * Number(i.rate)), 0);
     const calcTotal = Math.max(0, calcSubtotal - Number(discount) + Number(deliveryFee));

@@ -35,6 +35,10 @@ interface PriceItemRow {
   itemName:   string;
   unit:       string;
   buyRate:    number;
+  currentBuyPrice?: number;
+  previousBuyPrice?: number;
+  currentStock?: number;
+  availableStock?: number;
   sellRate:   number;
   notes?:     string;
   // reference/prefilled values to detect changes
@@ -967,7 +971,8 @@ export default function PriceListPage() {
                         <th>Product</th>
                         <th>Unit</th>
                         <th>Category</th>
-                        <th style={{ textAlign: 'right', width: 140 }}>Buy Rate (Mandi)</th>
+                        <th style={{ textAlign: 'right', width: 140 }}>Prev Buy Price</th>
+                        <th style={{ textAlign: 'right', width: 140 }}>Current Buy Price (Inventory)</th>
                         <th style={{ textAlign: 'right', width: 140 }}>Sell Rate (Customer)</th>
                         <th style={{ textAlign: 'right', width: 100 }}>Profit Margin</th>
                         <th style={{ minWidth: 110 }}>Margin %</th>
@@ -975,35 +980,34 @@ export default function PriceListPage() {
                     </thead>
                     <tbody>
                       {filteredEditItems.length === 0 ? (
-                        <tr><td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: 'var(--muted)' }}>No products in active master catalog</td></tr>
+                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: 'var(--muted)' }}>No products in active master catalog</td></tr>
                       ) : (
                         filteredEditItems.map((item, idx) => {
                           const realIndex = editItems.indexOf(item);
-                          const margin = item.sellRate - item.buyRate;
-                          const marginPct = item.buyRate > 0 ? (margin / item.buyRate) * 100 : 0;
-                          const buyChanged = item.origBuyRate !== undefined && item.buyRate !== item.origBuyRate;
+                          const buyRate = item.currentBuyPrice ?? item.buyRate ?? 0;
+                          const prevBuyRate = item.previousBuyPrice ?? 0;
+                          const margin = item.sellRate - buyRate;
+                          const marginPct = buyRate > 0 ? (margin / buyRate) * 100 : 0;
                           const sellChanged = item.origSellRate !== undefined && item.sellRate !== item.origSellRate;
 
                           return (
-                            <tr key={idx} style={{ background: (buyChanged || sellChanged) ? '#FFFBE6' : undefined }}>
+                            <tr key={idx} style={{ background: sellChanged ? '#FFFBE6' : undefined }}>
                               <td>
                                 <strong>{item.itemName}</strong>
                                 {item.product?.urduName && <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>({item.product.urduName})</span>}
+                                {item.availableStock !== undefined && (
+                                  <div style={{ fontSize: 11, color: item.availableStock > 0 ? 'var(--forest)' : 'var(--danger)' }}>
+                                    Stock: {item.availableStock.toFixed(2)} {item.unit}
+                                  </div>
+                                )}
                               </td>
                               <td style={{ color: 'var(--muted)' }}>{item.unit}</td>
                               <td style={{ textTransform: 'capitalize', fontSize: 12 }}>{item.product?.category}</td>
-                              <td style={{ textAlign: 'right' }}>
-                                {isEditing ? (
-                                  <input
-                                    type="number"
-                                    value={item.buyRate ?? ''}
-                                    onFocus={e => e.target.select()}
-                                    onChange={e => updateRate(realIndex, 'buyRate', e.target.value === '' ? 0 : Number(e.target.value))}
-                                    style={{ width: 100, textAlign: 'right', padding: '4px', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--paper)', color: 'var(--ink)' }}
-                                  />
-                                ) : (
-                                  <span className="mono">Rs {item.buyRate}</span>
-                                )}
+                              <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                                {prevBuyRate > 0 ? `Rs ${prevBuyRate.toFixed(2)}` : '—'}
+                              </td>
+                              <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
+                                {buyRate > 0 ? `Rs ${buyRate.toFixed(2)}` : '—'}
                               </td>
                               <td style={{ textAlign: 'right' }}>
                                 {isEditing ? (

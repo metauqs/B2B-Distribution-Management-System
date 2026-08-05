@@ -121,6 +121,25 @@ router.post('/', async (req: Request, res: Response) => {
       });
       const previousBalanceDate = lastLedger?.date ?? null;
 
+      // Validate inventory stock availability for all items with productId
+      for (const item of items) {
+        if (item.productId) {
+          const inv = await tx.inventory.findUnique({
+            where: { productId_branchId: { productId: item.productId, branchId } },
+            select: { qty: true, reservedQty: true },
+          });
+          const currentQty = inv?.qty ?? 0;
+          const reserved = inv?.reservedQty ?? 0;
+          const available = Math.max(0, currentQty - reserved);
+          const requestedQty = Number(item.qty);
+
+          if (requestedQty > available) {
+            const prodName = item.itemName ?? item.name ?? 'Product';
+            throw new Error(`Insufficient inventory stock for ${prodName}. Available: ${available} ${item.unit ?? 'KG'}, Requested: ${requestedQty} ${item.unit ?? 'KG'}`);
+          }
+        }
+      }
+
       const s = await tx.sale.create({
         data: {
           invoiceNo,
@@ -184,6 +203,7 @@ router.post('/', async (req: Request, res: Response) => {
                 refType: 'sale',
                 refId: s.id,
                 refNo: invoiceNo,
+                userId: validatedUserId ?? undefined,
                 date: s.date,
               })
             )
@@ -232,8 +252,6 @@ router.post('/', async (req: Request, res: Response) => {
         where: { id: clientId },
         data: { currentBalance: newClientBalance }
       });
-
-      await syncPriceListFromSale(tx, branchId, validatedUserId, s.date, s.items);
 
       return s;
     }, { maxWait: 10000, timeout: 30000 });
