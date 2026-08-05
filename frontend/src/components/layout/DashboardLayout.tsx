@@ -86,11 +86,29 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         zIndex: 99999,
         fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif"
       }}>
-        <div style={{ fontSize: 44, marginBottom: 14 }}>🥬</div>
+        <div style={{
+          width: '200px',
+          maxHeight: '80px',
+          marginBottom: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img 
+            src="/logo.png" 
+            alt="Halal Vegg Supplies Logo" 
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 6px 12px rgba(0, 0, 0, 0.4))',
+            }}
+          />
+        </div>
         <div style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#D99B26', fontWeight: 700, marginBottom: 4 }}>
           DAILY REGISTER
         </div>
-        <h1 style={{ margin: 0, fontSize: 24, color: '#FFFFFF', fontWeight: 800 }}>Halal Vegg Supplies</h1>
         
         <div style={{
           marginTop: 28,

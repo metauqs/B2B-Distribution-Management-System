@@ -184,15 +184,15 @@ export default function LoginPage() {
         {/* Brand Header */}
         <div style={{
           textAlign: 'center',
-          marginBottom: '24px',
+          marginBottom: '20px',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
         }}>
           {/* Logo with Dynamic Transparent Canvas Filter */}
           <div style={{
-            width: '120px',
-            height: '120px',
+            width: '200px',
+            maxHeight: '80px',
             marginBottom: '10px',
             display: 'flex',
             alignItems: 'center',
@@ -218,27 +218,16 @@ export default function LoginPage() {
             color: '#B87333',
             fontWeight: 700,
             display: 'block',
-            marginBottom: '4px',
+            marginBottom: '2px',
           }}>
             DAILY REGISTER
           </span>
 
-          <h1 style={{
-            fontSize: '28px',
-            fontWeight: 800,
-            color: '#1B432C',
-            margin: 0,
-            letterSpacing: '-0.5px',
-            lineHeight: 1.15,
-          }}>
-            Halal Vegg Supplies
-          </h1>
-
           <p style={{
             fontSize: '13px',
             color: '#4A6B56',
-            margin: '6px 0 0 0',
-            fontWeight: 500,
+            margin: '2px 0 0 0',
+            fontWeight: 600,
           }}>
             B2B Produce Distribution Management System
           </p>
