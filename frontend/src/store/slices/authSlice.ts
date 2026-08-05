@@ -74,19 +74,24 @@ export const fetchCurrentUser = createAsyncThunk(
       setCachedUser(user);
       return user;
     } catch {
+      // Don't log out user on temporary network disconnects
+      const cached = loadCachedUser();
+      if (cached) return cached;
       setCachedUser(null);
       return rejectWithValue('Network connection failure');
     }
   }
 );
 
-// ─── Initial State (Requires server session validation before granting access) ───
+// ─── Initial State (Hydrates from cache for instant 0ms load, validates silently in background) ───
+
+const initialCachedUser = loadCachedUser();
 
 const initialState: AuthState = {
-  user:              null,
-  isAuthenticated:   false,
+  user:              initialCachedUser,
+  isAuthenticated:   !!initialCachedUser,
   isLoading:         false,
-  isCheckingSession: true,
+  isCheckingSession: false,
   error:             null,
 };
 
@@ -130,7 +135,6 @@ const authSlice = createSlice({
         state.error             = null;
       })
       .addCase(fetchCurrentUser.pending, state => {
-        state.isCheckingSession = true;
         state.isLoading = true;
       })
       .addCase(fetchCurrentUser.fulfilled, (state, action) => {
@@ -140,11 +144,16 @@ const authSlice = createSlice({
         state.user              = action.payload as User;
       })
       .addCase(fetchCurrentUser.rejected, (state, action) => {
-        state.isLoading         = false;
-        state.isAuthenticated   = false;
-        state.isCheckingSession = false;
-        state.user              = null;
-        state.error             = action.payload as string;
+        state.isLoading = false;
+        const cached = loadCachedUser();
+        if (cached) {
+          state.user = cached;
+          state.isAuthenticated = true;
+        } else {
+          state.isAuthenticated = false;
+          state.user = null;
+          state.error = action.payload as string;
+        }
       });
   },
 });

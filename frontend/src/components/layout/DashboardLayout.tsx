@@ -18,22 +18,22 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const { user, isAuthenticated, isCheckingSession } = useAppSelector(state => state.auth);
+  const { user, isAuthenticated } = useAppSelector(state => state.auth);
 
-  // Perform session verification with HttpOnly cookie on initial mount
+  // Background silent session validation with server HttpOnly cookie
   useEffect(() => {
-    dispatch(fetchCurrentUser());
-  }, [dispatch]);
+    dispatch(fetchCurrentUser()).then((action) => {
+      if (fetchCurrentUser.rejected.match(action)) {
+        const payload = action.payload as string;
+        if (payload?.includes('expired') || payload?.includes('invalid')) {
+          console.warn('🔒 Session invalid or expired. Redirecting to login...');
+          router.replace('/login?expired=true');
+        }
+      }
+    });
+  }, [dispatch, router]);
 
-  // Auth Guard redirect if session is unauthenticated after verification check
-  useEffect(() => {
-    if (!isCheckingSession && (!isAuthenticated || !user)) {
-      console.warn('🔒 Unauthenticated or expired session. Redirecting to login...');
-      router.replace('/login?expired=true');
-    }
-  }, [isCheckingSession, isAuthenticated, user, router]);
-
-  // Periodic heartbeat & window focus revalidation
+  // Periodic background heartbeat & tab focus revalidation
   useEffect(() => {
     let lastChecked = 0;
     const CHECK_THROTTLE_MS = 15000;
@@ -71,72 +71,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     };
   }, [router]);
 
-  // Render Session Verification Loader while checking authentication with server
-  if (isCheckingSession) {
-    return (
-      <div style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'radial-gradient(circle at 50% 30%, #1F3D2B 0%, #152A1D 60%, #0D1B13 100%)',
-        color: '#FAF6EC',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 99999,
-        fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif"
-      }}>
-        <div style={{
-          width: '200px',
-          maxHeight: '80px',
-          marginBottom: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img 
-            src="/logo.png" 
-            alt="Halal Vegg Supplies Logo" 
-            style={{
-              maxWidth: '100%',
-              maxHeight: '100%',
-              objectFit: 'contain',
-              filter: 'drop-shadow(0 6px 12px rgba(0, 0, 0, 0.4))',
-            }}
-          />
-        </div>
-        <div style={{ fontSize: 11.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#D99B26', fontWeight: 700, marginTop: 2 }}>
-          FRESH FROM MANDI • DAILY DELIVERY
-        </div>
-        
-        <div style={{
-          marginTop: 28,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          background: 'rgba(255,255,255,0.07)',
-          padding: '9px 20px',
-          borderRadius: 30,
-          border: '1px solid rgba(255,255,255,0.12)',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
-        }}>
-          <div style={{
-            width: 15,
-            height: 15,
-            border: '2.5px solid #6FD89A',
-            borderTopColor: 'transparent',
-            borderRadius: '50%',
-            animation: 'spin 0.7s linear infinite'
-          }} />
-          <span style={{ fontSize: 13, color: 'rgba(250,246,236,0.9)', fontWeight: 600 }}>Verifying Authentication Session…</span>
-        </div>
-        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
-  }
-
-  // Render null while redirecting unauthenticated users to /login
+  // If unauthenticated, redirect smoothly to /login without visual blocking overlay
   if (!isAuthenticated || !user) {
     return null;
   }
