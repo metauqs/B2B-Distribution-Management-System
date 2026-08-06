@@ -201,8 +201,14 @@ export default function EmployeesPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         invalidateCache('/api/employees');
-        showToast(isEdit ? '✅ Employee updated successfully' : `✅ Employee created! ID: ${data.data?.employeeId ?? 'Assigned'}`);
-        setView('list');
+        if (targetId) invalidateCache(`/api/employees/${targetId}`);
+        showToast(isEdit ? '✅ Employee profile updated successfully' : `✅ Employee created! ID: ${data.data?.employeeId ?? 'Assigned'}`);
+        
+        if (isEdit && targetId) {
+          await loadProfile(targetId, true);
+        } else {
+          setView('list');
+        }
         await load(true);
       } else {
         showToast('❌ ' + (data.error ?? 'Save failed'));
@@ -651,9 +657,14 @@ export default function EmployeesPage() {
               <div className="va-panel-head" style={{ justifyContent: 'space-between' }}>
                 <h3>Employee Profile</h3>
                 {isAdmin && (
-                  <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(activeEmp)}>
-                    🗑️ Delete Profile
-                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="va-btn secondary small" style={{ fontWeight: 700 }} onClick={() => startEdit(activeEmp)}>
+                      ✏️ Edit Profile
+                    </button>
+                    <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(activeEmp)}>
+                      🗑️ Delete Profile
+                    </button>
+                  </div>
                 )}
               </div>
               
