@@ -19,6 +19,8 @@ interface ClientInfo {
   clientId?: string;
   phone?: string;
   whatsapp?: string;
+  openingBalance?: number;
+  currentBalance?: number;
 }
 
 interface DueStatementModalProps {
@@ -35,10 +37,14 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
   const [downloading, setDownloading] = useState(false);
   const statementRef = useRef<HTMLDivElement>(null);
 
+  const openBal = client.openingBalance ?? 0;
   const activeInvoices = invoices.filter(inv => inv.status !== 'CANCELLED');
   const totalInvoiceAmt = activeInvoices.reduce((sum, item) => sum + item.total, 0);
   const totalPaidAmt = activeInvoices.reduce((sum, item) => sum + item.paid, 0);
-  const totalOutstanding = activeInvoices.reduce((sum, item) => sum + item.balance, 0);
+  const invoiceOutstanding = activeInvoices.reduce((sum, item) => sum + item.balance, 0);
+  const totalOutstanding = (client.currentBalance !== undefined && client.currentBalance !== null)
+    ? client.currentBalance
+    : (openBal + invoiceOutstanding);
 
   const cleanPhone = client.whatsapp || client.phone || '';
   const formattedPhone = cleanPhone.replace(/[^0-9]/g, '');
@@ -56,6 +62,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
           clientId: client.clientId,
           phone: client.phone,
           whatsapp: client.whatsapp,
+          openingBalance: openBal,
           invoices: invoices.map(inv => ({
             invoiceNo: inv.invoiceNo,
             date: inv.date,
@@ -72,7 +79,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
       };
       prep();
     }
-  }, [mode, client, invoices, totalInvoiceAmt, totalPaidAmt, totalOutstanding]);
+  }, [mode, client, invoices, totalInvoiceAmt, totalPaidAmt, totalOutstanding, openBal]);
 
   // Non-blocking silent background image pre-rendering
   useEffect(() => {
@@ -108,8 +115,9 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
   };
 
   const handleSendWhatsApp = async () => {
+    const breakdownDetails = openBal > 0 ? `Opening Balance (Previous Due): Rs. ${openBal.toLocaleString()}\nUnpaid Invoices Total: Rs. ${invoiceOutstanding.toLocaleString()}\n` : '';
     const msg = encodeURIComponent(
-      `Dear ${client.name},\n\nPlease find your latest Outstanding Due Statement from HALAL VEGG SUPPLIES.\n\nYour current total outstanding balance is:\n*Rs. ${totalOutstanding.toLocaleString()}*\n\nKindly clear your pending dues at your earliest convenience.\n\nThank you.\nHALAL VEGG SUPPLIES`
+      `Dear ${client.name},\n\nPlease find your latest Outstanding Due Statement from HALAL VEGG SUPPLIES.\n\n${breakdownDetails}*Total Outstanding Balance: Rs. ${totalOutstanding.toLocaleString()}*\n\nKindly clear your pending dues at your earliest convenience.\n\nThank you.\nHALAL VEGG SUPPLIES`
     );
     const targetNo = formattedPhone ? formattedPhone : '';
     const waUrl = targetNo 

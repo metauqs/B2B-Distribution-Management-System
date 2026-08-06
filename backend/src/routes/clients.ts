@@ -33,7 +33,7 @@ router.get('/', async (req: Request, res: Response) => {
         select: {
           id: true, clientId: true, name: true, currentBalance: true, rating: true,
           phone: true, whatsapp: true, address: true, deliveryLocation: true,
-          type: true, creditLimit: true, paymentTerms: true
+          type: true, creditLimit: true, paymentTerms: true, openingBalance: true
         },
         orderBy: { name: 'asc' },
       });

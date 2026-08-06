@@ -218,7 +218,7 @@ export default function CollectionsPage() {
       const currentOrder        = sale.total;
       const totalPayable        = previousOutstanding + currentOrder;
       const collectedAmount     = sale.paid;
-      const dueBalance          = sale.balance;
+      const dueBalance          = Math.max(0, totalPayable - collectedAmount);
       runningDue = dueBalance;
 
       return {

@@ -1320,6 +1320,7 @@ export interface OutstandingDueData {
   clientId?: string | null;
   phone?: string | null;
   whatsapp?: string | null;
+  openingBalance?: number;
   invoices: OutstandingDueItem[];
   totalBilled: number;
   totalPaid: number;
@@ -1401,9 +1402,17 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
     </table>
   `;
 
+  const openBalRow = data.openingBalance && data.openingBalance > 0 ? `
+    <div class="doc-summary-row prev">
+      <span class="label">Opening Balance / <span class="urdu-inline-dark" style="color: #000000; font-size: 14px; font-weight: 700; margin-left: 5px;">سابقی بقایا</span></span>
+      <span class="val">Rs ${data.openingBalance.toLocaleString()}</span>
+    </div>
+  ` : '';
+
   const summary = `
     <div class="doc-summary-wrap">
       <div class="doc-summary-box">
+        ${openBalRow}
         <div class="doc-summary-row">
           <span class="label">Total Billed / <span class="urdu-inline-dark" style="color: #000000; font-size: 14px; font-weight: 700; margin-left: 5px;">کل بل</span></span>
           <span class="val">Rs ${data.totalBilled.toLocaleString()}</span>
