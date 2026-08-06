@@ -180,10 +180,16 @@ export default function EmployeesPage() {
       return showToast('❌ Password is required');
     }
 
+    const isEdit = view === 'edit';
+    const targetId = activeEmp?.id || form.employeeId;
+
+    if (isEdit && !targetId) {
+      return showToast('❌ Employee record ID not found');
+    }
+
     setSaving(true);
     try {
-      const isEdit = view === 'edit';
-      const url = isEdit ? `/api/employees/${activeEmp?.id}` : '/api/employees';
+      const url = isEdit ? `/api/employees/${targetId}` : '/api/employees';
       const method = isEdit ? 'PUT' : 'POST';
 
       const res = await apiFetch(url, {
@@ -307,6 +313,7 @@ export default function EmployeesPage() {
 
   const startAdd = () => {
     if (!isAdmin) return showToast('❌ Only Admins can add employee profiles');
+    setActiveEmp(null);
     setForm({ ...BLANK_FORM });
     setComputedEmployeeId('Auto-generated (e.g. 9001)');
     setView('add');
@@ -314,6 +321,7 @@ export default function EmployeesPage() {
 
   const startEdit = (emp: Employee) => {
     if (!isAdmin) return showToast('❌ Only Admins can edit employee profiles');
+    setActiveEmp(emp);
     setForm({
       employeeId: emp.employeeId || '',
       name: emp.name,

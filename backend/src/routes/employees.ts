@@ -85,8 +85,13 @@ router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const employee = await prisma.employee.findUnique({
-      where: { id },
+    const employee = await prisma.employee.findFirst({
+      where: {
+        OR: [
+          { id },
+          { employeeId: id },
+        ],
+      },
       select: {
         id: true,
         employeeId: true,
@@ -281,8 +286,13 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const original = await prisma.employee.findUnique({
-      where: { id },
+    const original = await prisma.employee.findFirst({
+      where: {
+        OR: [
+          { id },
+          { employeeId: id },
+        ],
+      },
     });
 
     if (!original) {
@@ -301,7 +311,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
 
     const updated = await prisma.employee.update({
-      where: { id },
+      where: { id: original.id },
       data: {
         employeeId: updatedEmployeeId,
         password: updatedPassword,
@@ -350,7 +360,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       branchId,
       action: 'UPDATE',
       entity: 'Employee',
-      entityId: id,
+      entityId: original.id,
       oldData: { name: original.name, role: original.role },
       newData: { name: updated.name, role: updated.role },
     });
@@ -372,13 +382,21 @@ router.patch('/:id/toggle', async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const original = await prisma.employee.findUnique({ where: { id } });
+    const original = await prisma.employee.findFirst({
+      where: {
+        OR: [
+          { id },
+          { employeeId: id },
+        ],
+      },
+    });
+
     if (!original) {
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
 
     const updated = await prisma.employee.update({
-      where: { id },
+      where: { id: original.id },
       data: { isActive: !original.isActive },
     });
 
@@ -403,32 +421,40 @@ router.delete('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const original = await prisma.employee.findUnique({ where: { id } });
+    const original = await prisma.employee.findFirst({
+      where: {
+        OR: [
+          { id },
+          { employeeId: id },
+        ],
+      },
+    });
+
     if (!original) {
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
 
     // Unlink sales and deliveries
-    await prisma.sale.updateMany({ where: { employeeId: id }, data: { employeeId: null } });
-    await prisma.delivery.updateMany({ where: { employeeId: id }, data: { employeeId: null } });
+    await prisma.sale.updateMany({ where: { employeeId: original.id }, data: { employeeId: null } });
+    await prisma.delivery.updateMany({ where: { employeeId: original.id }, data: { employeeId: null } });
 
     // Delete payments & attendance
-    await prisma.salaryPayment.deleteMany({ where: { employeeId: id } });
-    await prisma.attendance.deleteMany({ where: { employeeId: id } });
+    await prisma.salaryPayment.deleteMany({ where: { employeeId: original.id } });
+    await prisma.attendance.deleteMany({ where: { employeeId: original.id } });
 
     // Delete linked user account if present
     const userEmail = original.email?.trim() || `emp_${original.id}@sabziledger.com`;
     await prisma.user.deleteMany({ where: { email: userEmail } });
 
     // Delete employee record
-    await prisma.employee.delete({ where: { id } });
+    await prisma.employee.delete({ where: { id: original.id } });
 
     await writeAuditLog({
       userId: userId ?? undefined,
       branchId: original.branchId,
       action: 'DELETE',
       entity: 'Employee',
-      entityId: id,
+      entityId: original.id,
       oldData: { name: original.name, role: original.role },
     });
 
