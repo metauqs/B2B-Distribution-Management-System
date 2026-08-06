@@ -36,7 +36,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
   const [htmlContent, setHtmlContent] = useState<string>('');
   const [imageUrl, setImageUrl] = useState<string>('');
   const [downloading, setDownloading] = useState(false);
-  const [waShareModal, setWaShareModal] = useState<{ jpgBase64: string; whatsappUrl: string; filename: string } | null>(null);
+  const [waShareModal, setWaShareModal] = useState<{ jpgBase64: string; whatsappUrl: string; filename: string; displayPhone?: string } | null>(null);
   const statementRef = useRef<HTMLDivElement>(null);
 
   const openBal = client.openingBalance ?? 0;
@@ -138,6 +138,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
           jpgBase64:   result.jpgBase64,
           whatsappUrl: result.whatsappUrl ?? 'https://wa.me/',
           filename,
+          displayPhone: client.whatsapp || client.phone || undefined,
         });
       }
     } catch (err) {
@@ -320,6 +321,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
           imageBase64={waShareModal.jpgBase64}
           filename={waShareModal.filename}
           whatsappUrl={waShareModal.whatsappUrl}
+          displayPhone={waShareModal.displayPhone}
           onClose={() => setWaShareModal(null)}
           onToast={onToast}
         />

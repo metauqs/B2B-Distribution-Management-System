@@ -166,7 +166,7 @@ export default function SalesPage() {
   const [saving,         setSaving]         = useState(false);
   const [creditWarn,     setCreditWarn]     = useState(false);
   const [whatsappSharing, setWhatsappSharing] = useState(false);
-  const [waShareModal, setWaShareModal] = useState<{ jpgBase64: string; whatsappUrl: string; filename: string } | null>(null);
+  const [waShareModal, setWaShareModal] = useState<{ jpgBase64: string; whatsappUrl: string; filename: string; displayPhone?: string } | null>(null);
 
   // ── Employee & Delivery states ──
   const [employees, setEmployees] = useState<any[]>([]);
@@ -629,6 +629,7 @@ export default function SalesPage() {
           jpgBase64:    result.jpgBase64,
           whatsappUrl:  result.whatsappUrl ?? 'https://wa.me/',
           filename:     `Invoice_${s.invoiceNo}.jpg`,
+          displayPhone: s.client?.whatsapp ?? s.client?.phone ?? undefined,
         });
       }
     } catch (err) {
@@ -1754,6 +1755,7 @@ export default function SalesPage() {
           imageBase64={waShareModal.jpgBase64}
           filename={waShareModal.filename}
           whatsappUrl={waShareModal.whatsappUrl}
+          displayPhone={waShareModal.displayPhone}
           onClose={() => setWaShareModal(null)}
           onToast={showToast}
         />
