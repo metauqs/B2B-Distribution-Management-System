@@ -12,26 +12,40 @@ router.get('/dashboard', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const bWhere = branchId ? { branchId } : {};
+    const { date } = req.query;
 
-    const { start: todayStart, end: todayEnd, businessDateStr } = getCurrentBusinessDateRange();
+    const currentBusinessRange = getCurrentBusinessDateRange();
+    const targetRange = date && String(date).trim()
+      ? getBusinessDateRange(String(date).trim())
+      : currentBusinessRange;
+
+    const todayStart = targetRange.start;
+    const todayEnd = targetRange.end;
+    const businessDateStr = targetRange.businessDateStr;
+    const isToday = businessDateStr === currentBusinessRange.businessDateStr;
+
     const tWhere = { ...bWhere, date: { gte: todayStart, lte: todayEnd }, deletedAt: null };
     const l30Start = new Date(Date.now() - 30 * 86400000);
 
     const dbStart = Date.now();
     const [
       todaySalesAgg,
+      cashSalesAgg,
+      creditSalesAgg,
       todayPurchasesAgg,
       todayExpensesAgg,
       todayCollectionsAgg,
+      todayWastageAgg,
       totalReceivablesAgg,
       clientCount,
       supplierPurchasesArr,
       supplierPaymentsArr,
       allSuppliers,
       pendingDeliveries,
+      completedDeliveriesCount,
       failedDeliveriesCount,
       todayReturnedItemsArr,
-      lowStockItems,
+      inventoryItems,
       atRiskClients,
       recentSales,
       l30Sales,
@@ -40,20 +54,24 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       attentionRaw
     ] = await Promise.all([
       prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' } }, _sum: { total: true }, _count: true }),
+      prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' }, paymentMode: 'CASH' }, _sum: { total: true } }),
+      prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' }, paymentMode: 'CREDIT' }, _sum: { total: true } }),
       prisma.purchase.aggregate({ where: tWhere, _sum: { total: true } }),
       prisma.expense.aggregate({ where: { ...tWhere, deletedAt: undefined }, _sum: { amount: true } }),
       prisma.collection.aggregate({ where: { ...tWhere, deletedAt: undefined }, _sum: { amount: true } }),
+      prisma.wastage.aggregate({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } }, _sum: { qty: true }, _count: true }),
       prisma.client.aggregate({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, _sum: { currentBalance: true } }),
       prisma.client.count({ where: { ...bWhere, deletedAt: null } }),
       prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
       prisma.supplierPayment.groupBy({ by: ['supplierId'], where: branchId ? { branchId } : {}, _sum: { amount: true } }),
       prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } }),
       prisma.delivery.count({ where: { ...bWhere, status: { notIn: ['DELIVERED', 'FAILED'] } } }),
+      prisma.delivery.count({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd }, status: 'DELIVERED' } }),
       prisma.delivery.count({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd }, status: 'FAILED' } }),
       prisma.saleItem.findMany({ where: { sale: tWhere, returnedQty: { gt: 0 } }, select: { returnedQty: true, rate: true } }),
       prisma.inventory.findMany({ where: bWhere, include: { product: { select: { minStock: true } } } }),
       prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
-      prisma.sale.findMany({ where: { ...bWhere, deletedAt: null }, include: { client: { select: { name: true } } }, orderBy: { date: 'desc' }, take: 5 }),
+      prisma.sale.findMany({ where: { ...tWhere }, include: { client: { select: { name: true } } }, orderBy: { date: 'desc' }, take: 5 }),
       prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, status: { not: 'CANCELLED' }, deletedAt: null }, _sum: { total: true } }),
       prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
       prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
@@ -62,10 +80,14 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const dbDuration = Date.now() - dbStart;
 
     const todaySales = todaySalesAgg._sum.total ?? 0;
+    const cashSales = cashSalesAgg._sum.total ?? 0;
+    const creditSales = creditSalesAgg._sum.total ?? 0;
     const todayPurchases = todayPurchasesAgg._sum.total ?? 0;
     const todayExpenses = todayExpensesAgg._sum.amount ?? 0;
     const todayCollections = todayCollectionsAgg._sum.amount ?? 0;
-    const todayProfit = todaySales - todayPurchases - todayExpenses;
+    const grossProfit = todaySales - todayPurchases;
+    const netProfit = grossProfit - todayExpenses;
+    const todayProfit = netProfit;
     const cashPosition = todayCollections - todayExpenses - todayPurchases;
     const totalReceivables = totalReceivablesAgg._sum.currentBalance ?? 0;
 
@@ -80,7 +102,11 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       return s + Math.max(0, bal);
     }, 0);
 
-    const lowStockCount = lowStockItems.filter(inv => inv.qty <= (inv.product?.minStock ?? 0)).length;
+    const lowStockCount = inventoryItems.filter(inv => inv.qty <= (inv.product?.minStock ?? 0)).length;
+    const totalInventoryValue = inventoryItems.reduce((s, inv) => {
+      const rate = inv.avgCost > 0 ? inv.avgCost : inv.currentBuyPrice;
+      return s + (Math.max(0, inv.qty) * rate);
+    }, 0);
 
     const l30Rev = l30Sales._sum.total ?? 0;
     const l30Cost = (l30Purchases._sum.total ?? 0) + (l30Expenses._sum.amount ?? 0);
@@ -103,33 +129,52 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       data: {
+        selectedBusinessDate: businessDateStr,
+        isToday,
         today: {
-          sales: todaySales, salesCount: todaySalesAgg._count,
-          purchases: todayPurchases, expenses: todayExpenses,
-          collections: todayCollections, profit: todayProfit, cashPosition,
+          sales: todaySales,
+          salesCount: todaySalesAgg._count,
+          cashSales,
+          creditSales,
+          avgOrderValue: todaySalesAgg._count > 0 ? Math.round(todaySales / todaySalesAgg._count) : 0,
+          purchases: todayPurchases,
+          expenses: todayExpenses,
+          collections: todayCollections,
+          grossProfit,
+          netProfit,
+          profit: todayProfit,
+          cashPosition,
+          completedDeliveries: completedDeliveriesCount,
           failedDeliveries: failedDeliveriesCount,
+          pendingDeliveries: pendingDeliveries,
           returnedProducts: returnedProductsToday,
           returnValue: returnValueToday,
           netSales: netSalesToday,
+          wastageCount: todayWastageAgg._count,
+          wastageQty: todayWastageAgg._sum.qty ?? 0,
+        },
+        inventory: {
+          totalValue: totalInventoryValue,
+          lowStockCount,
         },
         totals: {
-          receivables:       totalReceivables,
-          payables:          totalPayables,
-          clientCount:       clientCount,
+          receivables: totalReceivables,
+          payables: totalPayables,
+          clientCount,
           pendingDeliveries,
           lowStockCount,
           atRiskClients,
           healthScore,
         },
-        recentSales: recentSales.map(s => ({
-          id:        s.id,
-          invoiceNo: s.invoiceNo,
-          client:    s.client?.name ?? '—',
-          total:     s.total,
-          status:    s.status,
-          date:      s.date.toISOString(),
-        })),
         attention,
+        recentSales: recentSales.map(s => ({
+          id: s.id,
+          invoiceNo: s.invoiceNo,
+          client: s.client?.name ?? '—',
+          total: s.total,
+          status: s.status,
+          date: s.date.toISOString(),
+        })),
       }
     });
   } catch (err: any) {
