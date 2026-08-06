@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { recordCustomerLedgerEntry, writeAuditLog } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
+import { getBusinessDateRange } from '../lib/businessDate';
 
 const router = Router();
 
@@ -12,8 +13,8 @@ router.get('/', async (req: Request, res: Response) => {
     const { clientId, from, to, limit: limitQuery } = req.query;
     const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 500) : 100;
 
-    const dateFrom = from ? new Date(String(from)) : undefined;
-    const dateTo = to ? new Date(String(to)) : undefined;
+    const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
+    const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
 
     if (dateFrom && isNaN(dateFrom.getTime())) {
       return res.status(400).json({ success: false, error: 'Invalid from date' });

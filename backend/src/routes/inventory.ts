@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { recordWastage, manualAdjust } from '../lib/inventoryService';
+import { getCurrentBusinessDateRange } from '../lib/businessDate';
 
 const router = Router();
 
@@ -75,10 +76,7 @@ router.get('/', async (req: Request, res: Response) => {
       };
     });
 
-    const todayStart = new Date(Date.now() - 5 * 60 * 60 * 1000);
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(todayStart);
-    todayEnd.setHours(23, 59, 59, 999);
+    const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
 
     const todayMoves = await prisma.stockMovement.findMany({
       where: {

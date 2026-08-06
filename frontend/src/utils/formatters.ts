@@ -39,22 +39,17 @@ export function fmtDateTime(d: string | Date | null | undefined): string {
 }
 
 
+import { getTodayBusinessDateString } from './businessDate';
+
 // ─── Today as YYYY-MM-DD in Pakistan Time (Asia/Karachi, UTC+05:00) ──────────
-// Daily reset boundary shifted from 12:00 A.M. to 5:00 A.M. (subtract 5 hours)
+// Daily reset boundary shifted from 12:00 A.M. to 5:00 A.M. (5:00 AM cutoff)
 export function todayStr(dateObj: Date = new Date()): string {
-  const shiftedDate = new Date(dateObj.getTime() - 5 * 60 * 60 * 1000);
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: PKT_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  return formatter.format(shiftedDate); // Format: "YYYY-MM-DD"
+  return getTodayBusinessDateString(dateObj);
 }
 
 // ─── Today for <input type="date"> in PKT ─────────────────────────────────────
 export function todayInputDate(): string {
-  return todayStr();
+  return getTodayBusinessDateString();
 }
 
 // ─── Today & Current Time for <input type="datetime-local"> in PKT ───────────

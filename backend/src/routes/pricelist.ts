@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { writeAuditLog, getValidUserId } from '../lib/business';
+import { getCurrentBusinessDateRange } from '../lib/businessDate';
 
 const router = Router();
 
@@ -9,8 +10,7 @@ router.get('/active', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
 
-    const todayStart = new Date(Date.now() - 5 * 60 * 60 * 1000); todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(todayStart); todayEnd.setHours(23, 59, 59, 999);
+    const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
 
     // Fetch active price list header
     let list = await prisma.priceList.findFirst({

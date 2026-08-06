@@ -4,6 +4,8 @@ import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, rec
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { stockOut } from '../lib/inventoryService';
 
+import { getBusinessDateRange } from '../lib/businessDate';
+
 const router = Router();
 
 // GET /api/sales
@@ -13,8 +15,8 @@ router.get('/', async (req: Request, res: Response) => {
     const { clientId, status, mode, search, from, to, limit: limitQuery } = req.query;
     const limit = Math.min(parseInt(String(limitQuery ?? '100')), 500);
 
-    const dateFrom = from ? new Date(String(from)) : undefined;
-    const dateTo = to ? new Date(String(to)) : undefined;
+    const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
+    const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
 
     if (dateFrom && isNaN(dateFrom.getTime())) {
       return res.status(400).json({ success: false, error: 'Invalid from date', data: [] });

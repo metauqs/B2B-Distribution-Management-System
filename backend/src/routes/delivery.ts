@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { stockReturn } from '../lib/inventoryService';
+import { getBusinessDateRange } from '../lib/businessDate';
 
 const router = Router();
 
@@ -36,11 +37,9 @@ router.get('/', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { status, employeeId, date } = req.query;
 
-    const filterDate = date ? new Date(String(date)) : undefined;
-    const dayStart = filterDate ? new Date(filterDate) : undefined;
-    if (dayStart) dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = filterDate ? new Date(filterDate) : undefined;
-    if (dayEnd) dayEnd.setHours(23, 59, 59, 999);
+    const filterRange = date ? getBusinessDateRange(String(date)) : undefined;
+    const dayStart = filterRange?.start;
+    const dayEnd = filterRange?.end;
 
     // ── Auto-Dispatch Logic for PENDING deliveries ──
     const pendingDeliveries = await prisma.delivery.findMany({

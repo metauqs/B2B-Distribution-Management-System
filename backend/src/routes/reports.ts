@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import prisma from '../lib/prisma';
+import { getCurrentBusinessDateRange, getBusinessDateRange } from '../lib/businessDate';
 
 const router = Router();
 
@@ -12,8 +13,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const bWhere = branchId ? { branchId } : {};
 
-    const todayStart = new Date(Date.now() - 5 * 60 * 60 * 1000); todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(todayStart); todayEnd.setHours(23, 59, 59, 999);
+    const { start: todayStart, end: todayEnd, businessDateStr } = getCurrentBusinessDateRange();
     const tWhere = { ...bWhere, date: { gte: todayStart, lte: todayEnd }, deletedAt: null };
     const l30Start = new Date(Date.now() - 30 * 86400000);
 
@@ -151,10 +151,8 @@ router.get('/pnl', async (req: Request, res: Response) => {
     const bWhere = branchId ? { branchId } : {};
     const { from, to } = req.query;
 
-    const fromDate = from ? new Date(String(from)) : new Date(Date.now() - 30 * 86400000);
-    const toDate = to ? new Date(String(to)) : new Date();
-    fromDate.setHours(0, 0, 0, 0);
-    toDate.setHours(23, 59, 59, 999);
+    const fromDate = from ? getBusinessDateRange(String(from)).start : getBusinessDateRange(new Date(Date.now() - 30 * 86400000)).start;
+    const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
 
     const dateRange = { gte: fromDate, lte: toDate };
 
@@ -264,10 +262,8 @@ router.get('/cashflow', async (req: Request, res: Response) => {
     const bWhere = branchId ? { branchId } : {};
     const { from, to } = req.query;
 
-    const fromDate = from ? new Date(String(from)) : new Date(Date.now() - 30 * 86400000);
-    const toDate = to ? new Date(String(to)) : new Date();
-    fromDate.setHours(0, 0, 0, 0);
-    toDate.setHours(23, 59, 59, 999);
+    const fromDate = from ? getBusinessDateRange(String(from)).start : getBusinessDateRange(new Date(Date.now() - 30 * 86400000)).start;
+    const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
     const dateRange = { gte: fromDate, lte: toDate };
 
     const [collectionsAgg, salesCashAgg] = await Promise.all([

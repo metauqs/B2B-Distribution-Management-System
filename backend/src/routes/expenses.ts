@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
+import { getBusinessDateRange, getCurrentBusinessDateRange } from '../lib/businessDate';
 
 const router = Router();
 
@@ -11,8 +12,8 @@ router.get('/summary', async (req: Request, res: Response) => {
     if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
 
     const { from, to } = req.query;
-    const fromDate = from ? new Date(String(from)) : undefined;
-    const toDate = to ? new Date(String(to)) : undefined;
+    const fromDate = from ? getBusinessDateRange(String(from)).start : undefined;
+    const toDate = to ? getBusinessDateRange(String(to)).end : undefined;
 
     const summary = await ExpenseService.getExpenseSummary(branchId, fromDate, toDate);
     return res.json({ success: true, data: summary });
@@ -31,15 +32,16 @@ router.get('/', async (req: Request, res: Response) => {
       employeeId, vehicleId, supplierId, search,
     } = req.query;
 
-    let dateFrom: Date | undefined = from ? new Date(String(from)) : undefined;
-    let dateTo: Date | undefined = to ? new Date(String(to)) : undefined;
+    let dateFrom: Date | undefined = from ? getBusinessDateRange(String(from)).start : undefined;
+    let dateTo: Date | undefined = to ? getBusinessDateRange(String(to)).end : undefined;
 
     // Range helpers
     if (range) {
       const now = new Date();
       if (range === 'today') {
-        dateFrom = new Date(now.setHours(0, 0, 0, 0));
-        dateTo = new Date(now.setHours(23, 59, 59, 999));
+        const { start, end } = getCurrentBusinessDateRange();
+        dateFrom = start;
+        dateTo = end;
       } else if (range === 'yesterday') {
         const yest = new Date(now.setDate(now.getDate() - 1));
         dateFrom = new Date(yest.setHours(0, 0, 0, 0));
