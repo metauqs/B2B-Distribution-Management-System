@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { writeAuditLog, generateClientId, recordCustomerLedgerEntry } from '../lib/business';
+import { writeAuditLog, generateClientId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance } from '../lib/business';
 import { Prisma } from '@prisma/client';
 import { calculateClientCreditRisk, updateClientCreditRating } from '../lib/creditRisk';
 import { calculateCollectionBehaviour } from '../lib/collectionBehaviour';
@@ -236,12 +236,24 @@ router.get('/:id', async (req: Request, res: Response) => {
     const lastOrderDate = sales[0]?.date ?? null;
     const outstandingInvoices = sales.filter(s => s.balance > 0 && s.status !== 'CANCELLED');
 
-    // Build ledger entries formatted for UI
-    const ledgerEntries: any[] = [];
-    
-    // Add opening balance entry if non-zero
-    if (client.openingBalance !== 0) {
-      ledgerEntries.push({
+    // Build ledger entries formatted for UI from DB customerLedger
+    const sortedDbLedger = ledger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const mappedLedger = sortedDbLedger.map(entry => ({
+      id: entry.id,
+      type: entry.type.toLowerCase(),
+      date: entry.date.toISOString(),
+      description: entry.description,
+      ref: entry.referenceNo || '—',
+      debit: entry.debit,
+      credit: entry.credit,
+      runningBalance: entry.balance,
+    }));
+
+    let finalLedger = mappedLedger;
+    if (mappedLedger.length === 0 && client.openingBalance !== 0) {
+      finalLedger = [{
+        id: 'opening-bal',
         type: 'opening',
         date: client.createdAt.toISOString(),
         description: 'Opening Balance',
@@ -249,32 +261,8 @@ router.get('/:id', async (req: Request, res: Response) => {
         debit: client.openingBalance > 0 ? client.openingBalance : 0,
         credit: client.openingBalance < 0 ? Math.abs(client.openingBalance) : 0,
         runningBalance: client.openingBalance,
-      });
+      }];
     }
-
-    // Add sales/invoices and payment entries
-    let runningBalance = client.openingBalance;
-    const sortedDbLedger = ledger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    const mappedLedger = sortedDbLedger.map(entry => {
-      if (entry.type === 'INVOICE') {
-        runningBalance += entry.debit;
-      } else if (entry.type === 'PAYMENT') {
-        runningBalance -= entry.credit;
-      } else {
-        runningBalance = runningBalance + entry.debit - entry.credit;
-      }
-      return {
-        id: entry.id,
-        type: entry.type.toLowerCase(),
-        date: entry.date.toISOString(),
-        description: entry.description,
-        ref: entry.referenceNo || '—',
-        debit: entry.debit,
-        credit: entry.credit,
-        runningBalance,
-      };
-    });
 
     return res.json({
       success: true,
@@ -288,7 +276,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         sales,
         collections,
         deliveries,
-        ledger: [...ledgerEntries, ...mappedLedger].reverse(), // newest first for ledger list
+        ledger: finalLedger.reverse(), // newest first for ledger list
         creditRisk: await calculateClientCreditRisk(id),
         collectionBehaviour: await calculateCollectionBehaviour(id),
       }
@@ -361,14 +349,31 @@ router.put('/:id', async (req: Request, res: Response) => {
       });
 
       if (diff !== 0) {
-        await recordCustomerLedgerEntry(tx, {
-          clientId: id,
-          branchId,
-          type: 'ADJUSTMENT',
-          description: `Opening Balance Adjustment (${diff > 0 ? '+' : ''}${diff})`,
-          debit: diff > 0 ? diff : 0,
-          credit: diff < 0 ? Math.abs(diff) : 0,
+        const openingEntry = await tx.customerLedger.findFirst({
+          where: { clientId: id, type: 'ADJUSTMENT', description: { contains: 'Opening Balance', mode: 'insensitive' } },
+          orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
         });
+
+        if (openingEntry) {
+          await tx.customerLedger.update({
+            where: { id: openingEntry.id },
+            data: {
+              debit: newOpeningBalance > 0 ? newOpeningBalance : 0,
+              credit: newOpeningBalance < 0 ? Math.abs(newOpeningBalance) : 0,
+            }
+          });
+        } else if (newOpeningBalance !== 0) {
+          await recordCustomerLedgerEntry(tx, {
+            clientId: id,
+            branchId,
+            type: 'ADJUSTMENT',
+            description: 'Opening Balance',
+            debit: newOpeningBalance > 0 ? newOpeningBalance : 0,
+            credit: newOpeningBalance < 0 ? Math.abs(newOpeningBalance) : 0,
+          });
+        }
+
+        await recalculateClientLedgerAndBalance(id, tx);
       }
 
       await updateClientCreditRating(id, tx);
@@ -468,14 +473,31 @@ router.patch('/:id', async (req: Request, res: Response) => {
       });
 
       if (diff !== 0) {
-        await recordCustomerLedgerEntry(tx, {
-          clientId: id,
-          branchId: original.branchId,
-          type: 'ADJUSTMENT',
-          description: `Opening Balance Adjustment (${diff > 0 ? '+' : ''}${diff})`,
-          debit: diff > 0 ? diff : 0,
-          credit: diff < 0 ? Math.abs(diff) : 0,
+        const openingEntry = await tx.customerLedger.findFirst({
+          where: { clientId: id, type: 'ADJUSTMENT', description: { contains: 'Opening Balance', mode: 'insensitive' } },
+          orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
         });
+
+        if (openingEntry) {
+          await tx.customerLedger.update({
+            where: { id: openingEntry.id },
+            data: {
+              debit: newOpeningBalance > 0 ? newOpeningBalance : 0,
+              credit: newOpeningBalance < 0 ? Math.abs(newOpeningBalance) : 0,
+            }
+          });
+        } else if (newOpeningBalance !== 0) {
+          await recordCustomerLedgerEntry(tx, {
+            clientId: id,
+            branchId: original.branchId,
+            type: 'ADJUSTMENT',
+            description: 'Opening Balance',
+            debit: newOpeningBalance > 0 ? newOpeningBalance : 0,
+            credit: newOpeningBalance < 0 ? Math.abs(newOpeningBalance) : 0,
+          });
+        }
+
+        await recalculateClientLedgerAndBalance(id, tx);
       }
 
       await updateClientCreditRating(id, tx);

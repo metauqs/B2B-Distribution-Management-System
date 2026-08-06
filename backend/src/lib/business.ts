@@ -187,12 +187,19 @@ export async function recordCustomerLedgerEntry(
   if (predecessor) {
     previousBalance = predecessor.balance;
   } else {
-    // Fallback to client openingBalance if no ledger entry exists yet
-    const client = await db.client.findUnique({
-      where: { id: params.clientId },
-      select: { openingBalance: true }
-    });
-    previousBalance = client?.openingBalance ?? 0;
+    // If no predecessor ledger entry exists yet:
+    // If this entry IS the Opening Balance entry itself (debiting/crediting initial dues),
+    // starting balance BEFORE this entry is 0 (since the entry ITSELF represents opening balance).
+    const isOpeningEntry = params.type === 'ADJUSTMENT' && (params.description?.toLowerCase().includes('opening balance') ?? false);
+    if (isOpeningEntry) {
+      previousBalance = 0;
+    } else {
+      const client = await db.client.findUnique({
+        where: { id: params.clientId },
+        select: { openingBalance: true }
+      });
+      previousBalance = client?.openingBalance ?? 0;
+    }
   }
 
   const debitAmt  = Number(params.debit || 0);
@@ -250,6 +257,51 @@ export async function recordCustomerLedgerEntry(
   });
 
   return { ledger, balance: newBalance };
+}
+
+export async function recalculateClientLedgerAndBalance(clientId: string, tx?: any): Promise<number> {
+  const db = tx || prisma;
+  const client = await db.client.findUnique({
+    where: { id: clientId },
+    select: { id: true, openingBalance: true, currentBalance: true }
+  });
+  if (!client) return 0;
+
+  const ledgerEntries = await db.customerLedger.findMany({
+    where: { clientId },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
+  });
+
+  if (ledgerEntries.length === 0) {
+    await db.client.update({
+      where: { id: clientId },
+      data: { currentBalance: client.openingBalance }
+    });
+    return client.openingBalance;
+  }
+
+  // Determine starting balance before first ledger entry
+  const firstEntry = ledgerEntries[0];
+  const isFirstOpening = firstEntry.type === 'ADJUSTMENT' && (firstEntry.description?.toLowerCase().includes('opening balance') ?? false);
+
+  let running = isFirstOpening ? 0 : client.openingBalance;
+
+  for (const entry of ledgerEntries) {
+    running = running + entry.debit - entry.credit;
+    if (entry.balance !== running) {
+      await db.customerLedger.update({
+        where: { id: entry.id },
+        data: { balance: running }
+      });
+    }
+  }
+
+  await db.client.update({
+    where: { id: clientId },
+    data: { currentBalance: running }
+  });
+
+  return running;
 }
 
 export async function getClientBalance(clientId: string, tx?: any): Promise<number> {

@@ -106,7 +106,10 @@ app.use('/api/employees', employeesRouter);
 app.use('/api/cash-accounts', cashAccountsRouter);
 app.use('/api/bank-accounts', bankAccountsRouter);
 
+import { recalculateAllClientsOnStartup } from './lib/recalculateAllClients';
+
 // Start server
 app.listen(Number(port), '0.0.0.0', () => {
   console.log(`🚀 Server running on http://127.0.0.1:${port}`);
+  recalculateAllClientsOnStartup().catch(err => console.error('[STARTUP RECALC ERROR]', err));
 });
