@@ -1836,4 +1836,104 @@ export async function generateTemplateImageBase64(html: string): Promise<string>
 }
 
 
+// ─── WhatsApp Image Sharing ────────────────────────────────────────────────────
 
+export interface WhatsAppImageShareOptions {
+  /** Pre-generated JPG base64 dataUrl (optional — if provided, skips image generation). */
+  jpgBase64?: string;
+  /** Document HTML to render if jpgBase64 is not provided. */
+  html?: string;
+  /** Filename for the downloaded image (e.g. "Invoice_IN-0001.jpg"). */
+  filename: string;
+  /** Client WhatsApp/phone number (e.g. "923001234567" or "03001234567"). */
+  phone?: string;
+  /** Short contextual text message to pre-fill in WhatsApp (used on desktop fallback only). */
+  textMessage?: string;
+}
+
+/**
+ * Shares a document (invoice / due statement) as a high-quality JPG image via WhatsApp.
+ *
+ * Priority strategy:
+ *   1. Mobile native Web Share API with file attachment (Android / iOS Chrome & Safari).
+ *   2. Desktop fallback: download JPG automatically + open WhatsApp with a short caption text.
+ *
+ * @returns { success: boolean; method: 'native' | 'download' | 'error'; }
+ */
+export async function shareDocumentAsImageOnWhatsApp(
+  opts: WhatsAppImageShareOptions,
+  onProgress?: (msg: string) => void,
+): Promise<{ success: boolean; method: 'native' | 'download' | 'error' }> {
+  const notify = (msg: string) => { if (onProgress) onProgress(msg); };
+
+  // ── Step 1: Obtain JPG ──────────────────────────────────────────────────────
+  let jpgBase64 = opts.jpgBase64 || '';
+
+  if (!jpgBase64 && opts.html) {
+    notify('⏳ Generating image...');
+    try {
+      jpgBase64 = await generateTemplateJpgBase64(opts.html);
+    } catch (err) {
+      console.error('generateTemplateJpgBase64 failed:', err);
+    }
+  }
+
+  if (!jpgBase64) {
+    notify('❌ Unable to generate the image. Please try again.');
+    return { success: false, method: 'error' };
+  }
+
+  // ── Step 2: Build phone number URL ──────────────────────────────────────────
+  let ph = (opts.phone || '').replace(/[^0-9]/g, '');
+  if (ph.startsWith('0') && ph.length === 11) ph = `92${ph.slice(1)}`;
+  else if (ph.length === 10) ph = `92${ph}`;
+
+  const waUrl = ph
+    ? `https://wa.me/${ph}`
+    : 'https://wa.me/';
+
+  // ── Step 3: Try native Web Share API (mobile) ────────────────────────────────
+  if (
+    typeof navigator !== 'undefined' &&
+    typeof navigator.share === 'function' &&
+    typeof navigator.canShare === 'function'
+  ) {
+    try {
+      // Convert base64 → Blob → File
+      const base64Data = jpgBase64.includes(',') ? jpgBase64.split(',')[1] : jpgBase64;
+      const binaryStr = atob(base64Data);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'image/jpeg' });
+      const file = new File([blob], opts.filename, { type: 'image/jpeg' });
+
+      const shareData: ShareData = { files: [file], title: opts.filename };
+
+      if (navigator.canShare(shareData)) {
+        notify('📤 Opening share sheet...');
+        await navigator.share(shareData);
+        notify('✅ Image shared successfully!');
+        return { success: true, method: 'native' };
+      }
+    } catch (shareErr: any) {
+      // User cancelled (AbortError) or share failed — fall through to desktop fallback
+      if (shareErr?.name === 'AbortError') {
+        notify('');
+        return { success: false, method: 'error' };
+      }
+      console.warn('Web Share API failed, falling back to download:', shareErr);
+    }
+  }
+
+  // ── Step 4: Desktop / fallback — Download + open WhatsApp ────────────────────
+  notify('📦 Downloading image...');
+  downloadImage(jpgBase64, opts.filename);
+
+  await new Promise(r => setTimeout(r, 800));
+
+  notify('💬 Opening WhatsApp...');
+  window.open(waUrl, '_blank');
+
+  notify('✅ Image saved! Attach it in WhatsApp to send.');
+  return { success: true, method: 'download' };
+}

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { fmtMoney } from '@/utils/formatters';
-import { loadBrandConfigWithLogo, generateOutstandingDueStatementHTML, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
+import { loadBrandConfigWithLogo, generateOutstandingDueStatementHTML, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
 
 interface InvoiceItem {
   invoiceNo: string;
@@ -115,21 +115,26 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
   };
 
   const handleSendWhatsApp = async () => {
-    const breakdownDetails = openBal > 0 ? `Opening Balance (Previous Due): Rs. ${openBal.toLocaleString()}\nUnpaid Invoices Total: Rs. ${invoiceOutstanding.toLocaleString()}\n` : '';
-    const msg = encodeURIComponent(
-      `Dear ${client.name},\n\nPlease find your latest Outstanding Due Statement from HALAL VEGG SUPPLIES.\n\n${breakdownDetails}*Total Outstanding Balance: Rs. ${totalOutstanding.toLocaleString()}*\n\nKindly clear your pending dues at your earliest convenience.\n\nThank you.\nHALAL VEGG SUPPLIES`
-    );
-    const targetNo = formattedPhone ? formattedPhone : '';
-    const waUrl = targetNo 
-      ? `https://wa.me/${targetNo.startsWith('92') || targetNo.startsWith('0') ? '' : '92'}${targetNo.replace(/^0/, '')}?text=${msg}`
-      : `https://wa.me/?text=${msg}`;
+    setDownloading(true);
+    showToast('⏳ Generating statement image...');
+    try {
+      const phone = client.whatsapp || client.phone || '';
+      const filename = `Due_Statement_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.jpg`;
 
-    // Download statement first so they can attach it easily
-    await handleDownload();
-
-    // Open WhatsApp in new tab
-    if (typeof window !== 'undefined') {
-      window.open(waUrl, '_blank');
+      await shareDocumentAsImageOnWhatsApp(
+        {
+          jpgBase64: imageUrl || undefined,
+          html: !imageUrl ? htmlContent : undefined,
+          filename,
+          phone,
+        },
+        (msg) => { if (msg) showToast(msg); },
+      );
+    } catch (err) {
+      console.error('handleSendWhatsApp error:', err);
+      showToast('❌ Unable to share. Please try again.');
+    } finally {
+      setDownloading(false);
     }
   };
 

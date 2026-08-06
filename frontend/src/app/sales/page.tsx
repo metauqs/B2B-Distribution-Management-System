@@ -9,7 +9,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
-import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
 import { usePreservedState } from '@/hooks/usePreservedState';
@@ -162,8 +162,9 @@ export default function SalesPage() {
   const [payMode,     setPayMode]     = useState('CREDIT');
   const [invNotes,    setInvNotes]    = useState('');
   const [invDate,     setInvDate]     = useState(() => todayInputDate());
-  const [saving,      setSaving]      = useState(false);
-  const [creditWarn,  setCreditWarn]  = useState(false);
+  const [saving,         setSaving]         = useState(false);
+  const [creditWarn,     setCreditWarn]     = useState(false);
+  const [whatsappSharing, setWhatsappSharing] = useState(false);
 
   // ── Employee & Delivery states ──
   const [employees, setEmployees] = useState<any[]>([]);
@@ -569,29 +570,63 @@ export default function SalesPage() {
     writeAndPrint(w, html, `Invoice #${s.invoiceNo}`);
   };
 
-  // ── WhatsApp share ────────────────────────────────────────────────────────────
-  const shareWhatsApp = (s: Sale) => {
-    let ph = (s.client?.whatsapp ?? s.client?.phone ?? '').replace(/[^0-9]/g, '');
-    if (ph.startsWith('0')) ph = `92${ph.slice(1)}`;
-    else if (ph.length === 10) ph = `92${ph}`;
-    const prevBal = s.previousBalance > 0 ? s.previousBalance : 0;
-    const grandTotal = prevBal + s.total;
-    const remaining = grandTotal - s.paid;
-    const msg = encodeURIComponent(
-      `*HALAL VEGG SUPPLIES*\n` +
-      `*Invoice #${s.invoiceNo}*\n` +
-      `Date: ${new Date(s.date).toLocaleDateString('en-GB', { timeZone: 'Asia/Karachi' })}\n` +
-      `Client: ${s.client?.name ?? '—'}\n\n` +
-      s.items.map(i => `• ${i.itemName}: ${i.qty} ${i.unit} × Rs ${i.rate.toLocaleString()} = *Rs ${i.amount.toLocaleString()}*`).join('\n') +
-      (prevBal > 0 ? `\n\nPrevious Outstanding (بقایا): Rs ${prevBal.toLocaleString()}` : '') +
-      `\nCurrent Bill (آج کا بل): Rs ${s.total.toLocaleString()}` +
-      `\nTotal Payable (کل واجب الادا): *Rs ${grandTotal.toLocaleString()}*` +
-      (s.paid > 0 ? `\nAmount Paid: Rs ${s.paid.toLocaleString()}` : '') +
-      (remaining > 0 ? `\n*Remaining Balance: Rs ${remaining.toLocaleString()}*` : '\n✅ Fully Paid') +
-      `\n\nFor Payments & WhatsApp Orders\nContact: 03061110041`
-    );
-    const url = ph ? `https://wa.me/${ph}?text=${msg}` : `https://wa.me/?text=${msg}`;
-    window.open(url, '_blank');
+  // ── WhatsApp share (Image-based) ─────────────────────────────────────────────
+  const shareWhatsApp = async (s: Sale) => {
+    if (whatsappSharing) return;
+    setWhatsappSharing(true);
+    showToast('⏳ Generating invoice image...');
+    try {
+      const brand = await loadBrandConfigWithLogo();
+      const html = generateInvoiceHTML(
+        {
+          invoiceNo:           s.invoiceNo,
+          date:                s.date,
+          paymentMode:         s.paymentMode,
+          status:              s.status,
+          clientName:          s.client?.name ?? '—',
+          clientId:            s.client?.clientId,
+          clientPhone:         s.client?.phone,
+          clientWhatsapp:      s.client?.whatsapp,
+          clientType:          s.client?.type,
+          clientAddress:       s.client?.address,
+          deliveryLocation:    s.client?.deliveryLocation,
+          employeeName:        s.employee?.name,
+          employeePhone:       s.employee?.phone,
+          deliveryDate:        s.deliveryDate,
+          deliveryTime:        s.deliveryTime,
+          items: s.items.map(i => ({
+            itemName: i.itemName,
+            qty:      i.qty,
+            unit:     i.unit,
+            rate:     i.rate,
+            amount:   i.amount,
+            urduName: i.product?.urduName,
+          })),
+          previousBalance:     s.previousBalance,
+          previousBalanceDate: s.previousBalanceDate,
+          total:               s.total,
+          paid:                s.paid,
+          balance:             s.balance,
+          notes:               s.notes,
+        },
+        brand,
+        window.location.origin,
+      );
+
+      await shareDocumentAsImageOnWhatsApp(
+        {
+          html,
+          filename: `Invoice_${s.invoiceNo}.jpg`,
+          phone:    s.client?.whatsapp ?? s.client?.phone ?? '',
+        },
+        (msg) => { if (msg) showToast(msg); },
+      );
+    } catch (err) {
+      console.error('shareWhatsApp error:', err);
+      showToast('❌ Unable to share. Please try again.');
+    } finally {
+      setWhatsappSharing(false);
+    }
   };
 
   // ── Download Invoice as PDF ───────────────────────────────────────────────────────
@@ -807,7 +842,7 @@ export default function SalesPage() {
                           <td>
                             <div style={{ display: 'flex', gap: 4 }}>
                               <button className="va-btn secondary small" onClick={() => openDetail(s)}>🧾 View</button>
-                              <button className="va-btn secondary small" onClick={() => shareWhatsApp(s)} style={{ background: '#25D366', color: '#fff', border: 'none' }}>📲</button>
+                              <button className="va-btn secondary small" onClick={() => shareWhatsApp(s)} disabled={whatsappSharing} style={{ background: whatsappSharing ? '#94d3a2' : '#25D366', color: '#fff', border: 'none', opacity: whatsappSharing ? 0.7 : 1 }}>📲</button>
                             </div>
                           </td>
                         </tr>
@@ -1313,7 +1348,7 @@ export default function SalesPage() {
                   <button className="va-btn secondary small" onClick={() => printInvoice(detailSale)}>🖨️ Print</button>
                   <button className="va-btn secondary small" onClick={() => downloadInvoice(detailSale)}>💾 Download PDF</button>
                   <button className="va-btn secondary small" onClick={() => downloadInvoiceJPG(detailSale)}>🖼️ Download JPG</button>
-                  <button className="va-btn secondary small" onClick={() => shareWhatsApp(detailSale)} style={{ background: '#25D366', color: '#fff', border: 'none' }}>📲 WhatsApp</button>
+                  <button className="va-btn secondary small" onClick={() => shareWhatsApp(detailSale)} disabled={whatsappSharing} style={{ background: whatsappSharing ? '#94d3a2' : '#25D366', color: '#fff', border: 'none', opacity: whatsappSharing ? 0.7 : 1 }}>{whatsappSharing ? '⏳ Generating...' : '📲 WhatsApp'}</button>
                 </div>
               )}
             </div>
@@ -1477,8 +1512,9 @@ export default function SalesPage() {
                           boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
                         }}
                         onClick={() => shareWhatsApp(detailSale)}
+                        disabled={whatsappSharing}
                       >
-                        📲 Send WhatsApp
+                        {whatsappSharing ? '⏳ Generating...' : '📲 Send WhatsApp'}
                       </button>
                       <button
                         style={{
