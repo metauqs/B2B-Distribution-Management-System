@@ -467,13 +467,7 @@ export default function SalesPage() {
           employeeId: selEmpId || undefined,
           deliveryDate: delivDate || undefined,
           deliveryTime: delivTime || undefined,
-          date: (() => {
-            if (!invDate) return new Date().toISOString();
-            const d = new Date(invDate);
-            const now = new Date();
-            d.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-            return d.toISOString();
-          })(),
+          date: (!invDate || invDate === todayInputDate()) ? new Date().toISOString() : invDate,
         }),
       });
       const data = await res.json();
