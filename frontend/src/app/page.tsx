@@ -372,38 +372,112 @@ export default function DashboardPage() {
             Business Day Financial Summary ({fmtBusinessDate(selectedDate)})
           </h3>
         </div>
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table className="va-table">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th className="mono" style={{ textAlign: 'right' }}>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                ['Total Sales',        today.sales,       false],
-                ['Cash Sales',         today.cashSales ?? 0, false],
-                ['Credit Sales',       today.creditSales ?? 0, false],
-                ['Purchases',          today.purchases,   false],
-                ['Expenses',           today.expenses,    false],
-                ['Collections',        today.collections, false],
-                ['Gross Profit',       grossProf,         grossProf < 0],
-                ['Net Profit',         netProf,           netProf < 0],
-              ].map(([label, val, isNeg]) => (
-                <tr key={label as string}>
-                  <td style={{ fontWeight: label === 'Gross Profit' || label === 'Net Profit' ? 700 : 500 }}>{label as string}</td>
-                  <td className="mono" style={{
-                    textAlign: 'right',
-                    fontWeight: 700,
-                    color: (isNeg as boolean) ? 'var(--danger)' : label === 'Net Profit' || label === 'Gross Profit' ? 'var(--forest)' : undefined
-                  }}>
-                    {fmtMoney(val as number)}
-                  </td>
+
+        {/* Desktop View Table */}
+        <div className="hide-mobile">
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table className="va-table va-table-fit">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th className="mono" style={{ textAlign: 'right' }}>Amount</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {[
+                  ['Total Sales',        today.sales,       false],
+                  ['Cash Sales',         today.cashSales ?? 0, false],
+                  ['Credit Sales',       today.creditSales ?? 0, false],
+                  ['Purchases',          today.purchases,   false],
+                  ['Expenses',           today.expenses,    false],
+                  ['Collections',        today.collections, false],
+                  ['Gross Profit',       grossProf,         grossProf < 0],
+                  ['Net Profit',         netProf,           netProf < 0],
+                ].map(([label, val, isNeg]) => (
+                  <tr key={label as string} style={{ background: label === 'Gross Profit' || label === 'Net Profit' ? '#F8FAFC' : undefined }}>
+                    <td style={{ fontWeight: label === 'Gross Profit' || label === 'Net Profit' ? 700 : 500 }}>{label as string}</td>
+                    <td className="mono" style={{
+                      textAlign: 'right',
+                      fontWeight: 700,
+                      color: (isNeg as boolean) ? 'var(--danger)' : label === 'Net Profit' || label === 'Gross Profit' ? 'var(--forest)' : undefined
+                    }}>
+                      {fmtMoney(val as number)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Mobile View Card List */}
+        <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '8px', width: '100%' }}>
+          {[
+            { label: 'Total Sales', icon: '📈', val: today.sales, isProf: false },
+            { label: 'Cash Sales', icon: '💵', val: today.cashSales ?? 0, isProf: false },
+            { label: 'Credit Sales', icon: '💳', val: today.creditSales ?? 0, isProf: false },
+            { label: 'Purchases', icon: '🛒', val: today.purchases, isProf: false },
+            { label: 'Expenses', icon: '💸', val: today.expenses, isProf: false, isExp: true },
+            { label: 'Collections', icon: '📥', val: today.collections, isProf: false },
+            { label: 'Gross Profit', icon: '📊', val: grossProf, isProf: true, isHighlight: true },
+            { label: 'Net Profit', icon: '🏆', val: netProf, isProf: true, isHighlight: true, isAccent: true },
+          ].map(item => {
+            const isNeg = item.val < 0;
+            return (
+              <div
+                key={item.label}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: item.isAccent
+                    ? (isNeg ? '#FEF2F2' : '#F0FDF4')
+                    : item.isHighlight
+                    ? '#F8FAFC'
+                    : '#FFFFFF',
+                  border: `1px solid ${
+                    item.isAccent
+                      ? (isNeg ? '#FCA5A5' : '#86EFAC')
+                      : item.isHighlight
+                      ? '#CBD5E1'
+                      : '#E2E8F0'
+                  }`,
+                  boxShadow: item.isAccent ? '0 2px 6px rgba(0,0,0,0.03)' : 'none',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>{item.icon}</span>
+                  <span style={{
+                    fontSize: 13,
+                    fontWeight: item.isProf ? 700 : 600,
+                    color: item.isAccent
+                      ? (isNeg ? '#991B1B' : '#166534')
+                      : '#0F172A'
+                  }}>
+                    {item.label}
+                  </span>
+                </div>
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: isNeg
+                      ? '#DC2626'
+                      : item.isProf
+                      ? '#166534'
+                      : item.isExp && item.val > 0
+                      ? '#C5221F'
+                      : '#0F172A',
+                  }}
+                >
+                  {fmtMoney(item.val)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -904,12 +904,13 @@ button.va-icon:hover { color: var(--danger); }
   .va-item-row > button.va-icon { grid-column: 1 / -1; justify-self: end; padding: 6px 8px; }
 
   /* Tables: contained in .va-table-wrap divs; standalone tables scroll */
-  .va-panel > table.va-table,
-  .va-panel > div > table.va-table {
+  .va-panel > table.va-table:not(.va-table-fit),
+  .va-panel > div > table.va-table:not(.va-table-fit) {
     min-width: 480px;
   }
   /* When a table is not wrapped, make the parent panel itself scrollable */
-  table.va-table { min-width: 480px; }
+  table.va-table:not(.va-table-fit) { min-width: 480px; }
+  table.va-table.va-table-fit { min-width: 100% !important; width: 100% !important; table-layout: auto !important; }
 
   /* Tab bars — modern segmented pill navigation on mobile */
   .va-tabs-inline {
