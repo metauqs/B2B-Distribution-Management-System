@@ -23,6 +23,24 @@ router.get('/summary', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/expenses/integrated
+router.get('/integrated', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
+
+    const { from, to } = req.query;
+    const fromDate = from ? getBusinessDateRange(String(from)).start : undefined;
+    const toDate = to ? getBusinessDateRange(String(to)).end : undefined;
+
+    const integrated = await ExpenseService.getIntegratedExpenses(branchId, fromDate, toDate);
+    return res.json({ success: true, data: integrated });
+  } catch (err: any) {
+    console.error('Error in GET /api/expenses/integrated:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load integrated expenses' });
+  }
+});
+
 // GET /api/expenses
 router.get('/', async (req: Request, res: Response) => {
   try {

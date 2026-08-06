@@ -27,10 +27,15 @@ import {
 // ─── Constants & Types ────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-  'TRANSPORT', 'LABOUR', 'FUEL', 'RENT', 'ELECTRICITY', 'PACKAGING', 'VEHICLE', 'SALARY', 'MISC'
+  'PURCHASE', 'INVENTORY_WASTAGE', 'SALARY', 'TRANSPORT', 'LABOUR', 'FUEL',
+  'RENT', 'ELECTRICITY', 'PACKAGING', 'VEHICLE', 'OFFICE', 'MAINTENANCE',
+  'MARKETING', 'BAD_DEBT', 'TAX', 'BANK_CHARGES', 'EQUIPMENT', 'REPAIR', 'MISC'
 ];
 
 const CAT_EMOJI: Record<string, string> = {
+  PURCHASE: '🛒',
+  INVENTORY_WASTAGE: '🥬',
+  SALARY: '💼',
   TRANSPORT: '🚚',
   LABOUR: '👷',
   FUEL: '⛽',
@@ -38,7 +43,14 @@ const CAT_EMOJI: Record<string, string> = {
   ELECTRICITY: '⚡',
   PACKAGING: '📦',
   VEHICLE: '🔧',
-  SALARY: '💼',
+  OFFICE: '🖥️',
+  MAINTENANCE: '🛠️',
+  MARKETING: '📢',
+  BAD_DEBT: '⚠️',
+  TAX: '🏛️',
+  BANK_CHARGES: '🏦',
+  EQUIPMENT: '⚙️',
+  REPAIR: '🛠️',
   MISC: '💸',
 };
 
@@ -71,6 +83,19 @@ interface Expense {
   branch?: { id: string; name: string } | null;
 }
 
+interface IntegratedExpense {
+  id: string;
+  source: 'MANUAL' | 'PURCHASE' | 'INVENTORY_WASTAGE';
+  reference: string;
+  category: string;
+  amount: number;
+  date: string;
+  description: string;
+  paidBy: string;
+  accountName: string;
+  entityName?: string | null;
+}
+
 interface ExpenseSummary {
   today: number;
   todayCount: number;
@@ -83,6 +108,18 @@ interface ExpenseSummary {
   cash: number;
   bank: number;
   online: number;
+  purchasesTotal?: number;
+  purchasesCount?: number;
+  purchasesTransport?: number;
+  wastageLoss?: number;
+  wastageCount?: number;
+  salariesTotal?: number;
+  salariesCount?: number;
+  totalRevenue?: number;
+  grossProfit?: number;
+  netProfit?: number;
+  operatingCost?: number;
+  totalBusinessExpenses?: number;
   categoryBreakdown: { category: string; total: number; count: number }[];
 }
 
@@ -105,6 +142,9 @@ const BLANK_FORM = {
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>(() => {
     return getCachedData<Expense[]>('/api/expenses?range=this_month') || [];
+  });
+  const [integratedExpenses, setIntegratedExpenses] = useState<IntegratedExpense[]>(() => {
+    return getCachedData<IntegratedExpense[]>('/api/expenses/integrated?range=this_month') || [];
   });
   const [summary, setSummary] = useState<ExpenseSummary | null>(() => {
     return getCachedData<ExpenseSummary>('/api/expenses/summary?range=this_month') || null;
@@ -133,6 +173,7 @@ export default function ExpensesPage() {
 
   // UI state
   const [view, setView] = useState<'list' | 'add' | 'edit'>('list');
+  const [activeTab, setActiveTab] = useState<'integrated' | 'manual' | 'analytics'>('integrated');
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -184,7 +225,7 @@ export default function ExpensesPage() {
     }
   }, []);
 
-  // Fetch Expenses List & Summary analytics
+  // Fetch Expenses List, Integrated Timeline & Summary analytics
   const loadExpenses = useCallback(async (isBackground = false) => {
     if (!isBackground && expenses.length === 0) setLoading(true);
     try {
@@ -204,14 +245,17 @@ export default function ExpensesPage() {
 
       const expKey = `/api/expenses?${params.toString()}`;
       const sumKey = `/api/expenses/summary?${params.toString()}`;
+      const intKey = `/api/expenses/integrated?${params.toString()}`;
 
-      const [expData, sumData] = await Promise.all([
+      const [expData, sumData, intData] = await Promise.all([
         fetchWithCache<Expense[]>(expKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
         fetchWithCache<ExpenseSummary>(sumKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<IntegratedExpense[]>(intKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
 
       if (expData) setExpenses(expData);
       if (sumData) setSummary(sumData);
+      if (intData) setIntegratedExpenses(intData);
     } catch (err) {
       console.error('Error loading expenses:', err);
     } finally {
@@ -415,33 +459,98 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Dashboard Analytics Cards (Section 7) */}
+      {/* Executive Financial KPI Strip */}
       {view === 'list' && summary && (
-        <div className="va-cards" style={{ marginTop: 14 }}>
+        <div className="va-cards" style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
           <div className="va-card accent">
-            <div className="label">Expenses Today</div>
-            <div className="value">{fmtMoney(summary.today)}</div>
-            <div className="foot">{summary.todayCount} records recorded today</div>
+            <div className="label">Total Business Expenses</div>
+            <div className="value" style={{ color: '#991B1B' }}>
+              {fmtMoney(summary.totalBusinessExpenses ?? (summary.total + (summary.purchasesTotal ?? 0) + (summary.wastageLoss ?? 0)))}
+            </div>
+            <div className="foot">All ERP Outflows (Purchases, Wastage, Manual, Salaries)</div>
           </div>
           <div className="va-card">
-            <div className="label">Expenses This Week</div>
-            <div className="value">{fmtMoney(summary.thisWeek)}</div>
-            <div className="foot">{summary.thisWeekCount} records this week</div>
+            <div className="label">Purchases Outflow</div>
+            <div className="value" style={{ color: '#166534' }}>
+              {fmtMoney(summary.purchasesTotal ?? 0)}
+            </div>
+            <div className="foot">{summary.purchasesCount ?? 0} Mandi / Supplier Purchases</div>
           </div>
           <div className="va-card">
-            <div className="label">Expenses This Month</div>
-            <div className="value" style={{ color: '#991B1B' }}>{fmtMoney(summary.thisMonth)}</div>
-            <div className="foot">{summary.thisMonthCount} records this month</div>
-          </div>
-          <div className="va-card">
-            <div className="label">Total Paid (Cash / Bank)</div>
+            <div className="label">Operational & Manual Costs</div>
             <div className="value">
-              {fmtMoney(summary.cash + summary.bank + summary.online)}
+              {fmtMoney(summary.total)}
             </div>
-            <div className="foot">
-              Cash: {fmtMoney(summary.cash)} · Bank: {fmtMoney(summary.bank)}
-            </div>
+            <div className="foot">Rent, Utilities, Fuel, Packaging & Supplies</div>
           </div>
+          <div className="va-card">
+            <div className="label">Inventory Wastage Loss</div>
+            <div className="value" style={{ color: '#C5221F' }}>
+              {fmtMoney(summary.wastageLoss ?? 0)}
+            </div>
+            <div className="foot">{summary.wastageCount ?? 0} Stock Losses & Damage</div>
+          </div>
+          <div className="va-card">
+            <div className="label">Net Profit & Margin</div>
+            <div className="value" style={{ color: (summary.netProfit ?? 0) >= 0 ? '#137333' : '#C5221F' }}>
+              {fmtMoney(summary.netProfit ?? 0)}
+            </div>
+            <div className="foot">Revenue: {fmtMoney(summary.totalRevenue ?? 0)}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Module Navigation Tabs */}
+      {view === 'list' && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 14, borderBottom: '2px solid #E2E8F0', paddingBottom: 2 }}>
+          <button
+            onClick={() => setActiveTab('integrated')}
+            style={{
+              padding: '8px 16px',
+              fontSize: 13,
+              fontWeight: 700,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              color: activeTab === 'integrated' ? '#1F3D2B' : '#64748B',
+              borderBottom: activeTab === 'integrated' ? '3px solid #1F3D2B' : '3px solid transparent',
+              marginBottom: -2,
+            }}
+          >
+            🌐 Integrated Outflows ({integratedExpenses.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('manual')}
+            style={{
+              padding: '8px 16px',
+              fontSize: 13,
+              fontWeight: 700,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              color: activeTab === 'manual' ? '#1F3D2B' : '#64748B',
+              borderBottom: activeTab === 'manual' ? '3px solid #1F3D2B' : '3px solid transparent',
+              marginBottom: -2,
+            }}
+          >
+            ✏️ Manual Expenses ({expenses.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('analytics')}
+            style={{
+              padding: '8px 16px',
+              fontSize: 13,
+              fontWeight: 700,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              color: activeTab === 'analytics' ? '#1F3D2B' : '#64748B',
+              borderBottom: activeTab === 'analytics' ? '3px solid #1F3D2B' : '3px solid transparent',
+              marginBottom: -2,
+            }}
+          >
+            📊 Category Outflow Analytics
+          </button>
         </div>
       )}
 
@@ -725,10 +834,106 @@ export default function ExpensesPage() {
             </div>
           </div>
 
-          {/* Expense Data List (Section 5) */}
+          {/* Active Tab View Renderer */}
+          {activeTab === 'integrated' ? (
+            <div className="va-panel" style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', marginTop: 12, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+              <div className="va-panel-head" style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>Integrated ERP Financial Outflows</h3>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748B' }}>Automated timeline aggregating Purchases, Inventory Wastages, and Manual Operational Expenses.</p>
+                </div>
+                <span style={{ fontSize: 13, color: '#64748B', fontWeight: 600 }}>Showing {integratedExpenses.length} outflows</span>
+              </div>
+
+              {loading && integratedExpenses.length === 0 ? (
+                <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={6} /></div>
+              ) : integratedExpenses.length === 0 ? (
+                <div className="va-empty" style={{ padding: '40px 0', textAlign: 'center' }}>
+                  <div className="big" style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>No integrated outflows found</div>
+                  <div style={{ color: '#64748B', fontSize: '13px', marginTop: 4 }}>Purchases, wastage loss, and manual expenses will automatically appear here.</div>
+                </div>
+              ) : (
+                <div style={{ padding: '16px 20px' }}>
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <table className="va-table" style={{ width: '100%', minWidth: 900, borderCollapse: 'separate', borderSpacing: '0 6px' }}>
+                      <thead>
+                        <tr style={{ background: '#F8FAFC' }}>
+                          <th style={{ padding: '10px 14px', borderRadius: '6px 0 0 6px' }}>Ref / Date</th>
+                          <th style={{ padding: '10px 14px' }}>ERP Source</th>
+                          <th style={{ padding: '10px 14px' }}>Category</th>
+                          <th style={{ padding: '10px 14px' }}>Description</th>
+                          <th style={{ padding: '10px 14px' }}>Account / Entity</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'right', borderRadius: '0 6px 6px 0' }}>Outflow Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {integratedExpenses.map(item => (
+                          <tr key={`${item.source}-${item.id}`} style={{ background: '#FFFFFF', borderBottom: '1px solid #F1F5F9' }}>
+                            <td style={{ padding: '12px 14px' }}>
+                              <div className="mono" style={{ fontWeight: 700, color: '#1B4D2E', fontSize: '13px' }}>
+                                {item.reference}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>{fmtDate(item.date)}</div>
+                            </td>
+
+                            <td style={{ padding: '12px 14px' }}>
+                              <span style={{
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                background: item.source === 'PURCHASE' ? '#F0FDF4' : item.source === 'INVENTORY_WASTAGE' ? '#FEF2F2' : '#EFF6FF',
+                                color: item.source === 'PURCHASE' ? '#166534' : item.source === 'INVENTORY_WASTAGE' ? '#991B1B' : '#1D4ED8',
+                                border: `1px solid ${item.source === 'PURCHASE' ? '#86EFAC' : item.source === 'INVENTORY_WASTAGE' ? '#FCA5A5' : '#BFDBFE'}`
+                              }}>
+                                {item.source === 'PURCHASE' ? '🛒 PURCHASES' : item.source === 'INVENTORY_WASTAGE' ? '⚠️ WASTAGE' : '✏️ MANUAL'}
+                              </span>
+                            </td>
+
+                            <td style={{ padding: '12px 14px', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                              {CAT_EMOJI[item.category] ?? '💸'} {item.category}
+                            </td>
+
+                            <td style={{ padding: '12px 14px', fontSize: '13px', color: '#334155', fontWeight: 600 }}>
+                              {item.description}
+                            </td>
+
+                            <td style={{ padding: '12px 14px', fontSize: '12px', color: '#0F172A', fontWeight: 600 }}>
+                              {item.accountName} {item.entityName && <span style={{ color: '#64748B', marginLeft: 4 }}>({item.entityName})</span>}
+                            </td>
+
+                            <td className="mono" style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, color: '#991B1B', fontSize: '14px' }}>
+                              {fmtMoney(item.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{
+                    marginTop: '16px',
+                    padding: '14px 20px',
+                    background: '#F8FAFC',
+                    borderRadius: '10px',
+                    border: '1px solid #E2E8F0',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <span style={{ fontWeight: 700, fontSize: '14px', color: '#0F172A' }}>Total Integrated Business Outflows</span>
+                    <span className="mono" style={{ fontWeight: 700, color: '#991B1B', fontSize: '18px' }}>
+                      {fmtMoney(integratedExpenses.reduce((sum, i) => sum + i.amount, 0))}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'manual' ? (
+          /* Manual Expense Register */
           <div className="va-panel" style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', marginTop: 12, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
             <div className="va-panel-head" style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>Expense Register</h3>
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>Manual Expense Register</h3>
               <span style={{ fontSize: 13, color: '#64748B', fontWeight: 600 }}>Showing {expenses.length} records</span>
             </div>
 
@@ -898,6 +1103,43 @@ export default function ExpensesPage() {
               </div>
             )}
           </div>
+          ) : (
+            /* Category Analytics Tab */
+            <div className="va-panel" style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', marginTop: 12, padding: 20, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+              <h3 style={{ margin: '0 0 16px', fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>📊 Category Outflow Breakdown & Profitability Analytics</h3>
+              
+              {summary?.categoryBreakdown && summary.categoryBreakdown.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {summary.categoryBreakdown.map((item) => {
+                    const totalAll = summary.totalBusinessExpenses || summary.total || 1;
+                    const pct = Math.round((item.total / totalAll) * 100);
+                    return (
+                      <div key={item.category} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '12px 16px', borderRadius: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>{CAT_EMOJI[item.category] ?? '💸'}</span>
+                            <span>{item.category}</span>
+                            <span style={{ fontSize: 11, color: '#64748B', fontWeight: 500 }}>({item.count} records)</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span className="mono" style={{ fontWeight: 700, fontSize: 14, color: '#991B1B' }}>{fmtMoney(item.total)}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#1B4D2E', background: '#DCFCE7', padding: '2px 8px', borderRadius: 12 }}>{pct}%</span>
+                          </div>
+                        </div>
+                        <div style={{ width: '100%', height: 8, background: '#E2E8F0', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: '#1B4D2E', borderRadius: 4 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '30px 0', color: '#64748B' }}>
+                  No category analytics available for the selected period.
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 

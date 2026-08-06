@@ -34,7 +34,11 @@ export interface UpdateExpenseInput {
   notes?: string;
 }
 
-const VALID_CATEGORIES: string[] = ['TRANSPORT', 'LABOUR', 'FUEL', 'RENT', 'ELECTRICITY', 'PACKAGING', 'VEHICLE', 'SALARY', 'MISC'];
+const VALID_CATEGORIES: string[] = [
+  'TRANSPORT', 'LABOUR', 'FUEL', 'RENT', 'ELECTRICITY', 'PACKAGING',
+  'VEHICLE', 'SALARY', 'MISC', 'PURCHASE', 'INVENTORY_WASTAGE', 'OFFICE',
+  'MAINTENANCE', 'MARKETING', 'BAD_DEBT', 'TAX', 'BANK_CHARGES', 'EQUIPMENT', 'REPAIR'
+];
 
 export class ExpenseService {
   /**
@@ -327,10 +331,11 @@ export class ExpenseService {
   }
 
   /**
-   * Compute dynamic summary metrics & category-wise expense breakdown directly from the database.
+   * Compute dynamic summary metrics & category-wise expense breakdown directly from the database across all ERP modules.
    */
   static async getExpenseSummary(branchId: string, fromDate?: Date, toDate?: Date) {
     const bWhere = branchId ? { branchId, deletedAt: null } : { deletedAt: null };
+    const dateFilter = fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : undefined;
 
     // Today range
     const todayStart = new Date();
@@ -357,6 +362,10 @@ export class ExpenseService {
       bankAgg,
       onlineAgg,
       categoryGroup,
+      purchasesAgg,
+      salesAgg,
+      wastageList,
+      salariesAgg,
     ] = await Promise.all([
       prisma.expense.aggregate({
         where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } },
@@ -373,28 +382,28 @@ export class ExpenseService {
       prisma.expense.aggregate({
         where: {
           ...bWhere,
-          ...(fromDate || toDate ? { date: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}),
+          ...(dateFilter ? { date: dateFilter } : {}),
         },
         _sum: { amount: true }, _count: true,
       }),
       prisma.expense.aggregate({
         where: {
           ...bWhere, paidBy: 'CASH',
-          ...(fromDate || toDate ? { date: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}),
+          ...(dateFilter ? { date: dateFilter } : {}),
         },
         _sum: { amount: true },
       }),
       prisma.expense.aggregate({
         where: {
           ...bWhere, paidBy: 'BANK',
-          ...(fromDate || toDate ? { date: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}),
+          ...(dateFilter ? { date: dateFilter } : {}),
         },
         _sum: { amount: true },
       }),
       prisma.expense.aggregate({
         where: {
           ...bWhere, paidBy: 'ONLINE',
-          ...(fromDate || toDate ? { date: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}),
+          ...(dateFilter ? { date: dateFilter } : {}),
         },
         _sum: { amount: true },
       }),
@@ -402,18 +411,99 @@ export class ExpenseService {
         by: ['category'],
         where: {
           ...bWhere,
-          ...(fromDate || toDate ? { date: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } } : {}),
+          ...(dateFilter ? { date: dateFilter } : {}),
         },
         _sum: { amount: true },
         _count: true,
       }),
+      // Automated Sources Aggregations
+      prisma.purchase.aggregate({
+        where: {
+          ...(branchId ? { branchId } : {}),
+          ...(dateFilter ? { date: dateFilter } : {}),
+        },
+        _sum: { total: true, transportCost: true },
+        _count: true,
+      }),
+      prisma.sale.aggregate({
+        where: {
+          ...(branchId ? { branchId } : {}),
+          status: { not: 'CANCELLED' },
+          ...(dateFilter ? { date: dateFilter } : {}),
+        },
+        _sum: { total: true },
+        _count: true,
+      }),
+      prisma.wastage.findMany({
+        where: {
+          ...(branchId ? { branchId } : {}),
+          ...(dateFilter ? { date: dateFilter } : {}),
+        },
+        include: {
+          product: {
+            include: {
+              inventory: branchId ? { where: { branchId } } : true,
+            },
+          },
+        },
+      }),
+      prisma.employee.aggregate({
+        where: {
+          isActive: true,
+        },
+        _sum: { salary: true },
+        _count: true,
+      }),
     ]);
 
-    const categoryBreakdown = categoryGroup.map((item) => ({
+    // Calculate wastage financial loss
+    const wastageLoss = wastageList.reduce((sum, w) => {
+      const inv = w.product?.inventory?.[0];
+      const cost = (inv?.avgCost && inv.avgCost > 0) ? inv.avgCost : (inv?.currentBuyPrice ?? 0);
+      return sum + (w.qty * cost);
+    }, 0);
+
+    const manualExpensesTotal = totalAgg._sum.amount ?? 0;
+    const purchasesTotal = purchasesAgg._sum.total ?? 0;
+    const purchasesTransport = purchasesAgg._sum.transportCost ?? 0;
+    const salariesTotal = salariesAgg._sum?.salary ?? 0;
+    const totalRevenue = salesAgg._sum.total ?? 0;
+
+    const totalBusinessExpenses = manualExpensesTotal + purchasesTotal + wastageLoss + salariesTotal;
+    const grossProfit = totalRevenue - purchasesTotal;
+    const operatingCost = manualExpensesTotal + purchasesTransport + salariesTotal;
+    const netProfit = grossProfit - (manualExpensesTotal + wastageLoss + salariesTotal);
+
+    // Build unified category breakdown
+    const categoryBreakdown: any[] = categoryGroup.map((item) => ({
       category: item.category,
       total: item._sum.amount ?? 0,
       count: item._count,
     }));
+
+    if (purchasesTotal > 0) {
+      categoryBreakdown.push({
+        category: 'PURCHASE',
+        total: purchasesTotal,
+        count: purchasesAgg._count ?? 0,
+      });
+    }
+
+    if (wastageLoss > 0) {
+      categoryBreakdown.push({
+        category: 'INVENTORY_WASTAGE',
+        total: wastageLoss,
+        count: wastageList.length,
+      });
+    }
+
+    if (salariesTotal > 0) {
+      categoryBreakdown.push({
+        category: 'SALARY',
+        total: salariesTotal,
+        count: (salariesAgg._count && typeof salariesAgg._count === 'number') ? salariesAgg._count : 0,
+      });
+    }
 
     return {
       today: todayAgg._sum.amount ?? 0,
@@ -422,12 +512,134 @@ export class ExpenseService {
       thisWeekCount: weekAgg._count ?? 0,
       thisMonth: monthAgg._sum.amount ?? 0,
       thisMonthCount: monthAgg._count ?? 0,
-      total: totalAgg._sum.amount ?? 0,
+      total: manualExpensesTotal,
       totalCount: totalAgg._count ?? 0,
       cash: cashAgg._sum.amount ?? 0,
       bank: bankAgg._sum.amount ?? 0,
       online: onlineAgg._sum.amount ?? 0,
+      // Automated Cross-Module Analytics
+      purchasesTotal,
+      purchasesCount: purchasesAgg._count ?? 0,
+      purchasesTransport,
+      wastageLoss,
+      wastageCount: wastageList.length,
+      salariesTotal,
+      salariesCount: salariesAgg._count ?? 0,
+      totalRevenue,
+      salesCount: salesAgg._count ?? 0,
+      grossProfit,
+      netProfit,
+      operatingCost,
+      totalBusinessExpenses,
       categoryBreakdown,
     };
+  }
+
+  /**
+   * Get integrated timeline of all financial outflows across the ERP
+   */
+  static async getIntegratedExpenses(branchId: string, fromDate?: Date, toDate?: Date) {
+    const bWhere = branchId ? { branchId, deletedAt: null } : { deletedAt: null };
+    const dateFilter = fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : undefined;
+
+    const [manualExpenses, purchases, wastages] = await Promise.all([
+      prisma.expense.findMany({
+        where: {
+          ...bWhere,
+          ...(dateFilter ? { date: dateFilter } : {}),
+        },
+        include: {
+          vehicle: { select: { id: true, plateNo: true, type: true } },
+          employee: { select: { id: true, name: true, employeeId: true, role: true } },
+          supplier: { select: { id: true, name: true, phone: true } },
+          cashAccount: { select: { id: true, name: true, balance: true } },
+          bankAccount: { select: { id: true, name: true, bankName: true, accountNo: true, balance: true } },
+        },
+        orderBy: { date: 'desc' },
+      }),
+      prisma.purchase.findMany({
+        where: {
+          ...(branchId ? { branchId } : {}),
+          ...(dateFilter ? { date: dateFilter } : {}),
+        },
+        include: {
+          supplier: { select: { id: true, name: true } },
+          items: true,
+        },
+        orderBy: { date: 'desc' },
+      }),
+      prisma.wastage.findMany({
+        where: {
+          ...(branchId ? { branchId } : {}),
+          ...(dateFilter ? { date: dateFilter } : {}),
+        },
+        include: {
+          product: {
+            include: {
+              inventory: branchId ? { where: { branchId } } : true,
+            },
+          },
+        },
+        orderBy: { date: 'desc' },
+      }),
+    ]);
+
+    const integrated: any[] = [];
+
+    // 1. Manual Expenses
+    manualExpenses.forEach((exp) => {
+      integrated.push({
+        id: exp.id,
+        source: 'MANUAL',
+        reference: exp.reference || `EXP-${exp.id.slice(-6).toUpperCase()}`,
+        category: exp.category,
+        amount: exp.amount,
+        date: exp.date.toISOString(),
+        description: exp.description || 'Manual Expense',
+        paidBy: exp.paidBy || 'CASH',
+        accountName: exp.paidBy === 'CASH' ? (exp.cashAccount?.name ?? 'Main Cash') : (exp.bankAccount?.name ?? 'Bank Account'),
+        entityName: exp.vehicle ? `🚚 ${exp.vehicle.plateNo}` : exp.employee ? `💼 ${exp.employee.name}` : exp.supplier ? `🏪 ${exp.supplier.name}` : null,
+      });
+    });
+
+    // 2. Purchases as Automated Purchase Expenses
+    purchases.forEach((p) => {
+      integrated.push({
+        id: p.id,
+        source: 'PURCHASE',
+        reference: `PUR-${p.id.slice(-6).toUpperCase()}`,
+        category: 'PURCHASE',
+        amount: p.total,
+        date: p.date.toISOString(),
+        description: `Mandi / Supplier Purchase (${p.items?.length ?? 0} items)`,
+        paidBy: p.paid > 0 ? 'CASH/CREDIT' : 'CREDIT',
+        accountName: p.supplier?.name ?? 'Supplier',
+        entityName: p.supplier?.name ? `🏪 ${p.supplier.name}` : null,
+      });
+    });
+
+    // 3. Inventory Wastage Losses
+    wastages.forEach((w) => {
+      const inv = w.product?.inventory?.[0];
+      const cost = (inv?.avgCost && inv.avgCost > 0) ? inv.avgCost : (inv?.currentBuyPrice ?? 0);
+      const lossAmount = w.qty * cost;
+      integrated.push({
+        id: w.id,
+        source: 'INVENTORY_WASTAGE',
+        reference: `WAST-${w.id.slice(-6).toUpperCase()}`,
+        category: 'INVENTORY_WASTAGE',
+        amount: lossAmount,
+        date: w.date.toISOString(),
+        description: `Wastage Loss: ${w.product?.name ?? 'Product'} (${w.qty} ${w.product?.defaultUnit ?? 'KG'})`,
+        paidBy: 'STOCK_LOSS',
+        accountName: 'Inventory Asset Loss',
+        entityName: w.reason ? `⚠️ ${w.reason}` : null,
+      });
+    });
+
+    // Sort timeline descending by date
+    integrated.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return integrated;
   }
 }
