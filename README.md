@@ -410,4 +410,4 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 ## 📄 License & Credits
 
 Copyright © 2026 **HALAL VEGG SUPPLIES**. All Rights Reserved.  
-Built & maintained by the **B2B ERP Engineering Team**.
+Built & maintained by the **Tauqir Hayat & Muhammad Tayyab Nawaz & Usama Rasheed**.
