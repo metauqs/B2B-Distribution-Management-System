@@ -5,7 +5,7 @@ import prisma from './prisma';
 interface AuditParams {
   userId?:   string;
   branchId?: string;
-  action:    'CREATE' | 'UPDATE' | 'DELETE';
+  action:    'CREATE' | 'UPDATE' | 'DELETE' | string;
   entity:    string;
   entityId?: string;
   oldData?:  object;

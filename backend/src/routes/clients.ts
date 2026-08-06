@@ -311,7 +311,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   const {
     name, ownerName, phone, whatsapp, address, deliveryLocation,
-    type, creditLimit, paymentTerms, notes, rating
+    type, creditLimit, paymentTerms, openingBalance, openingBalanceReason, notes, rating
   } = req.body;
 
   if (!name?.trim()) {
@@ -324,33 +324,88 @@ router.put('/:id', async (req: Request, res: Response) => {
     });
     if (!original) return res.status(404).json({ success: false, error: 'Client not found' });
 
-    const updated = await prisma.client.update({
-      where: { id },
-      data: {
-        name: name.trim(),
-        ownerName: ownerName?.trim() || null,
-        phone: phone?.trim() || null,
-        whatsapp: whatsapp?.trim() || null,
-        address: address?.trim() || null,
-        deliveryLocation: deliveryLocation?.trim() || null,
-        type: type ?? original.type,
-        creditLimit: creditLimit ?? original.creditLimit,
-        paymentTerms: paymentTerms ?? original.paymentTerms,
-        notes: notes?.trim() || null,
-        rating: rating ?? original.rating,
+    let newOpeningBalance = original.openingBalance;
+    let diff = 0;
+    let updatedCurrentBalance = original.currentBalance;
+
+    if (openingBalance !== undefined && openingBalance !== null) {
+      newOpeningBalance = Number(openingBalance);
+      if (isNaN(newOpeningBalance) || newOpeningBalance < 0) {
+        return res.status(400).json({ success: false, error: 'Opening balance cannot be negative' });
       }
+      diff = newOpeningBalance - original.openingBalance;
+    }
+
+    if (diff !== 0) {
+      updatedCurrentBalance = Math.max(0, original.currentBalance + diff);
+    }
+
+    const updated = await prisma.$transaction(async tx => {
+      const c = await tx.client.update({
+        where: { id },
+        data: {
+          name: name.trim(),
+          ownerName: ownerName?.trim() || null,
+          phone: phone?.trim() || null,
+          whatsapp: whatsapp?.trim() || null,
+          address: address?.trim() || null,
+          deliveryLocation: deliveryLocation?.trim() || null,
+          type: type ?? original.type,
+          creditLimit: creditLimit ?? original.creditLimit,
+          paymentTerms: paymentTerms ?? original.paymentTerms,
+          openingBalance: newOpeningBalance,
+          currentBalance: updatedCurrentBalance,
+          notes: notes?.trim() || null,
+          rating: rating ?? original.rating,
+        }
+      });
+
+      if (diff !== 0) {
+        await recordCustomerLedgerEntry(tx, {
+          clientId: id,
+          branchId,
+          type: 'ADJUSTMENT',
+          description: `Opening Balance Adjustment (${diff > 0 ? '+' : ''}${diff})`,
+          debit: diff > 0 ? diff : 0,
+          credit: diff < 0 ? Math.abs(diff) : 0,
+        });
+      }
+
+      await updateClientCreditRating(id, tx);
+      return c;
     });
 
-    await writeAuditLog({
-      userId: userId ?? undefined,
-      branchId,
-      action: 'UPDATE',
-      entity: 'Client',
-      entityId: id,
-      newData: { name }
-    });
-
-    await updateClientCreditRating(id);
+    if (diff !== 0) {
+      const reasonStr = openingBalanceReason ? String(openingBalanceReason).trim() : 'Manual Opening Balance Adjustment';
+      await writeAuditLog({
+        userId: userId ?? undefined,
+        branchId,
+        action: 'UPDATE_OPENING_BALANCE',
+        entity: 'ClientOpeningBalance',
+        entityId: id,
+        oldData: {
+          clientName: original.name,
+          openingBalance: original.openingBalance,
+          currentBalance: original.currentBalance,
+        },
+        newData: {
+          clientName: updated.name,
+          openingBalance: newOpeningBalance,
+          currentBalance: updatedCurrentBalance,
+          difference: diff,
+          reason: reasonStr,
+        }
+      });
+    } else {
+      await writeAuditLog({
+        userId: userId ?? undefined,
+        branchId,
+        action: 'UPDATE',
+        entity: 'Client',
+        entityId: id,
+        newData: { name: updated.name }
+      });
+    }
 
     return res.json({ success: true, data: updated });
   } catch (err: any) {
@@ -367,7 +422,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   const {
     name, ownerName, phone, whatsapp, address, deliveryLocation,
-    type, creditLimit, paymentTerms, notes, rating, status
+    type, creditLimit, paymentTerms, openingBalance, openingBalanceReason, notes, rating, status
   } = req.body;
 
   try {
@@ -376,40 +431,114 @@ router.patch('/:id', async (req: Request, res: Response) => {
     });
     if (!original) return res.status(404).json({ success: false, error: 'Client not found' });
 
-    const updated = await prisma.client.update({
-      where: { id },
-      data: {
-        ...(name !== undefined ? { name: name.trim() } : {}),
-        ...(ownerName !== undefined ? { ownerName: ownerName?.trim() || null } : {}),
-        ...(phone !== undefined ? { phone: phone?.trim() || null } : {}),
-        ...(whatsapp !== undefined ? { whatsapp: whatsapp?.trim() || null } : {}),
-        ...(address !== undefined ? { address: address?.trim() || null } : {}),
-        ...(deliveryLocation !== undefined ? { deliveryLocation: deliveryLocation?.trim() || null } : {}),
-        ...(type !== undefined ? { type } : {}),
-        ...(creditLimit !== undefined ? { creditLimit: Number(creditLimit) } : {}),
-        ...(paymentTerms !== undefined ? { paymentTerms: Number(paymentTerms) } : {}),
-        ...(notes !== undefined ? { notes: notes?.trim() || null } : {}),
-        ...(rating !== undefined ? { rating } : {}),
-        ...(status !== undefined ? { status } : {}),
+    let newOpeningBalance = original.openingBalance;
+    let diff = 0;
+    let updatedCurrentBalance = original.currentBalance;
+
+    if (openingBalance !== undefined && openingBalance !== null) {
+      newOpeningBalance = Number(openingBalance);
+      if (isNaN(newOpeningBalance) || newOpeningBalance < 0) {
+        return res.status(400).json({ success: false, error: 'Opening balance cannot be negative' });
       }
+      diff = newOpeningBalance - original.openingBalance;
+    }
+
+    if (diff !== 0) {
+      updatedCurrentBalance = Math.max(0, original.currentBalance + diff);
+    }
+
+    const updated = await prisma.$transaction(async tx => {
+      const c = await tx.client.update({
+        where: { id },
+        data: {
+          ...(name !== undefined ? { name: name.trim() } : {}),
+          ...(ownerName !== undefined ? { ownerName: ownerName?.trim() || null } : {}),
+          ...(phone !== undefined ? { phone: phone?.trim() || null } : {}),
+          ...(whatsapp !== undefined ? { whatsapp: whatsapp?.trim() || null } : {}),
+          ...(address !== undefined ? { address: address?.trim() || null } : {}),
+          ...(deliveryLocation !== undefined ? { deliveryLocation: deliveryLocation?.trim() || null } : {}),
+          ...(type !== undefined ? { type } : {}),
+          ...(creditLimit !== undefined ? { creditLimit: Number(creditLimit) } : {}),
+          ...(paymentTerms !== undefined ? { paymentTerms: Number(paymentTerms) } : {}),
+          ...(openingBalance !== undefined ? { openingBalance: newOpeningBalance, currentBalance: updatedCurrentBalance } : {}),
+          ...(notes !== undefined ? { notes: notes?.trim() || null } : {}),
+          ...(rating !== undefined ? { rating } : {}),
+          ...(status !== undefined ? { status } : {}),
+        }
+      });
+
+      if (diff !== 0) {
+        await recordCustomerLedgerEntry(tx, {
+          clientId: id,
+          branchId: original.branchId,
+          type: 'ADJUSTMENT',
+          description: `Opening Balance Adjustment (${diff > 0 ? '+' : ''}${diff})`,
+          debit: diff > 0 ? diff : 0,
+          credit: diff < 0 ? Math.abs(diff) : 0,
+        });
+      }
+
+      await updateClientCreditRating(id, tx);
+      return c;
     });
 
-    // Recalculate credit rating on any update
-    await updateClientCreditRating(id);
-
-    await writeAuditLog({
-      userId: userId ?? undefined,
-      branchId: branchId || updated.branchId,
-      action: 'UPDATE',
-      entity: 'Client',
-      entityId: id,
-      newData: { rating, status, creditLimit, paymentTerms }
-    });
+    if (diff !== 0) {
+      const reasonStr = openingBalanceReason ? String(openingBalanceReason).trim() : 'Manual Opening Balance Adjustment';
+      await writeAuditLog({
+        userId: userId ?? undefined,
+        branchId: branchId || original.branchId,
+        action: 'UPDATE_OPENING_BALANCE',
+        entity: 'ClientOpeningBalance',
+        entityId: id,
+        oldData: {
+          clientName: original.name,
+          openingBalance: original.openingBalance,
+          currentBalance: original.currentBalance,
+        },
+        newData: {
+          clientName: updated.name,
+          openingBalance: newOpeningBalance,
+          currentBalance: updatedCurrentBalance,
+          difference: diff,
+          reason: reasonStr,
+        }
+      });
+    } else {
+      await writeAuditLog({
+        userId: userId ?? undefined,
+        branchId: branchId || updated.branchId,
+        action: 'UPDATE',
+        entity: 'Client',
+        entityId: id,
+        newData: { rating, status, creditLimit, paymentTerms }
+      });
+    }
 
     return res.json({ success: true, data: updated });
   } catch (err: any) {
     console.error('[PATCH /api/clients/:id]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to update client' });
+  }
+});
+
+// GET /api/clients/:id/audit-trail (Opening Balance Audit Trail)
+router.get('/:id/audit-trail', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const logs = await prisma.auditLog.findMany({
+      where: {
+        entityId: id,
+        entity: { in: ['Client', 'ClientOpeningBalance'] }
+      },
+      include: {
+        user: { select: { id: true, name: true, role: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    return res.json({ success: true, data: logs });
+  } catch (err: any) {
+    console.error('[GET /api/clients/:id/audit-trail]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load audit logs' });
   }
 });
 

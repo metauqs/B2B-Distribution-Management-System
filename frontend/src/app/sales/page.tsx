@@ -1196,14 +1196,16 @@ export default function SalesPage() {
                   {/* Totals box */}
                   <div style={{ margin: '14px 0', padding: '12px 14px', background: 'var(--line-soft)', borderRadius: 8, fontSize: 13 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span>Previous Dues {selClient.currentBalance > 0 && selClient.lastOrderDate ? `(as of ${fmtDate(selClient.lastOrderDate)})` : ''}</span>
-                      <span className="mono">{fmtMoney(selClient.currentBalance > 0 ? selClient.currentBalance : 0)}</span>
+                      <span style={{ fontWeight: 600 }}>Previous Outstanding <span style={{ fontSize: 11, color: 'var(--muted)' }}>(بقایا)</span></span>
+                      <span className="mono" style={{ fontWeight: 700, color: selClient.currentBalance > 0 ? 'var(--clay)' : 'var(--muted)' }}>{fmtMoney(selClient.currentBalance)}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span>Current Order</span><span className="mono">{fmtMoney(total)}</span>
+                      <span style={{ fontWeight: 600 }}>Current Bill <span style={{ fontSize: 11, color: 'var(--muted)' }}>(آج کا بل)</span></span>
+                      <span className="mono" style={{ fontWeight: 700 }}>{fmtMoney(total)}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, borderTop: '1px solid var(--line)', paddingTop: 6, fontWeight: 700 }}>
-                      <span>Total Due</span><span className="mono">{fmtMoney((selClient.currentBalance > 0 ? selClient.currentBalance : 0) + total)}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, borderTop: '2px dashed var(--line)', paddingTop: 8, fontWeight: 700, fontSize: 14 }}>
+                      <span style={{ color: 'var(--forest)' }}>Total Payable Amount <span style={{ fontSize: 11, color: 'var(--forest)' }}>(کل واجب الادا)</span></span>
+                      <span className="mono" style={{ color: 'var(--forest)', fontSize: 16 }}>{fmtMoney(selClient.currentBalance + total)}</span>
                     </div>
                   </div>
 

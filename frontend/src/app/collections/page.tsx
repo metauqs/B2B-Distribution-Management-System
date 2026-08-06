@@ -308,12 +308,45 @@ export default function CollectionsPage() {
               </div>
             </div>
 
-            {form.clientId && (
+            {form.clientId && (() => {
+              const selectedC = clients.find(c => c.id === form.clientId);
+              if (!selectedC) return null;
+              const openBal = selectedC.openingBalance ?? 0;
+              const invoicesOutstanding = Math.max(0, selectedC.currentBalance - openBal);
+              return (
+                <div style={{
+                  margin: '12px 0 16px',
+                  padding: '12px 14px',
+                  background: '#F4F8F0',
+                  borderRadius: 10,
+                  border: '1px solid #D4E6CC',
+                  fontSize: 13
+                }}>
+                  <div style={{ fontWeight: 700, color: 'var(--forest)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>💰 Client Financial Summary — {selectedC.name}</span>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>{selectedC.clientId || 'WH-0000'}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700 }}>Opening Balance</div>
+                      <div className="mono" style={{ fontWeight: 700, color: openBal > 0 ? 'var(--clay)' : 'var(--muted)' }}>{fmtMoney(openBal)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700 }}>Invoices Outstanding</div>
+                      <div className="mono" style={{ fontWeight: 700 }}>{fmtMoney(invoicesOutstanding)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--forest)', textTransform: 'uppercase', fontWeight: 700 }}>Total Due / Outstanding</div>
+                      <div className="mono" style={{ fontWeight: 700, color: 'var(--forest)', fontSize: 15 }}>{fmtMoney(selectedC.currentBalance)}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
               <div className="va-form-row" style={{ marginTop: 12 }}>
                 <div className="va-field">
                   <label>Invoice to Settle (Optional)</label>
                   <select value={form.saleId} onChange={e => setForm(p => ({ ...p, saleId: e.target.value }))}>
-                    <option value="">— FIFO (Oldest First) —</option>
                     {clientInvoices.map(s => (
                       <option key={s.id} value={s.id}>
                         {s.invoiceNo} (Total: {fmtMoney(s.total)}, Due: {fmtMoney(s.balance)})
@@ -322,7 +355,6 @@ export default function CollectionsPage() {
                   </select>
                 </div>
               </div>
-            )}
 
             <div className="va-form-row" style={{ marginTop: 12 }}>
               <div className="va-field">

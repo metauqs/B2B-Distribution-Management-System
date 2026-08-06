@@ -763,7 +763,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     </table>
   `;
 
-  const prevBalRow = prevBal > 0 ? `
+  const prevBalRow = `
     <div class="doc-summary-row prev">
       <span class="label">
         Previous Outstanding
@@ -771,7 +771,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
       </span>
       <span class="val">Rs ${prevBal.toLocaleString()}</span>
     </div>
-  ` : '';
+  `;
 
   const summary = `
     <div class="doc-summary-wrap">

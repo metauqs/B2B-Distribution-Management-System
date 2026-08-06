@@ -137,7 +137,7 @@ const BLANK_FORM = {
   name: '', ownerName: '', phone: '', whatsapp: '',
   address: '', deliveryLocation: '', type: 'RETAIL',
   creditLimit: 0, paymentTerms: 0, openingBalance: 0,
-  notes: '', rating: 'NEW',
+  openingBalanceReason: '', notes: '', rating: 'NEW',
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -304,18 +304,19 @@ export default function ClientsPage() {
 
   const openEdit = (c: Client) => {
     setForm({
-      name:             c.name,
-      ownerName:        c.ownerName ?? '',
-      phone:            c.phone ?? '',
-      whatsapp:         c.whatsapp ?? '',
-      address:          c.address ?? '',
-      deliveryLocation: c.deliveryLocation ?? '',
-      type:             c.type,
-      creditLimit:      c.creditLimit,
-      paymentTerms:     c.paymentTerms,
-      openingBalance:   c.openingBalance,
-      notes:            c.notes ?? '',
-      rating:           c.rating,
+      name:                 c.name,
+      ownerName:            c.ownerName ?? '',
+      phone:                c.phone ?? '',
+      whatsapp:             c.whatsapp ?? '',
+      address:              c.address ?? '',
+      deliveryLocation:     c.deliveryLocation ?? '',
+      type:                 c.type,
+      creditLimit:          c.creditLimit,
+      paymentTerms:         c.paymentTerms,
+      openingBalance:       c.openingBalance ?? 0,
+      openingBalanceReason: '',
+      notes:                c.notes ?? '',
+      rating:               c.rating,
     });
     setEditId(c.id);
     setView('edit');
@@ -324,6 +325,7 @@ export default function ClientsPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return showToast('Business name is required');
+    if (form.openingBalance < 0) return showToast('Opening balance cannot be negative');
     setSaving(true);
     try {
       const isEdit = view === 'edit' && editId;
@@ -337,7 +339,8 @@ export default function ClientsPage() {
       if (res.ok && data.success) {
         invalidateCache('/api/clients');
         invalidateCache('/api/reports');
-        showToast(isEdit ? '✅ Client updated' : '✅ Client created');
+        if (editId) invalidateCache(`/api/clients/${editId}`);
+        showToast(isEdit ? '✅ Client updated successfully' : '✅ Client created with opening balance');
         setView('list');
         await loadClients(true);
       } else {
@@ -1662,7 +1665,7 @@ export default function ClientsPage() {
               <div className="va-form-row">
                 <div className="va-field">
                   <label>Credit Limit (Rs)</label>
-                  <input type="number" min="0" value={form.creditLimit} onChange={e => setForm(p => ({ ...p, creditLimit: +e.target.value }))} />
+                  <input type="number" min="0" value={form.creditLimit} onChange={e => setForm(p => ({ ...p, creditLimit: Math.max(0, +e.target.value) }))} />
                 </div>
                 <div className="va-field">
                   <label>Payment Terms</label>
@@ -1671,8 +1674,20 @@ export default function ClientsPage() {
                   </select>
                 </div>
                 <div className="va-field">
-                  <label>Opening Balance (Rs)</label>
-                  <input type="number" value={form.openingBalance} onChange={e => setForm(p => ({ ...p, openingBalance: +e.target.value }))} />
+                  <label style={{ fontWeight: 700, color: 'var(--forest)' }}>Opening Balance (Previous Due)</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span style={{ position: 'absolute', left: 10, fontSize: 13, fontWeight: 700, color: 'var(--muted)' }}>Rs.</span>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      step="1" 
+                      style={{ paddingLeft: 36, fontWeight: 700 }}
+                      value={form.openingBalance} 
+                      onChange={e => setForm(p => ({ ...p, openingBalance: Math.max(0, +e.target.value) }))} 
+                      placeholder="0"
+                    />
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Enter existing outstanding dues prior to using ERP</span>
                 </div>
                 <div className="va-field">
                   <label>Initial Risk Rating</label>
@@ -1681,6 +1696,20 @@ export default function ClientsPage() {
                   </select>
                 </div>
               </div>
+
+              {view === 'edit' && (
+                <div className="va-field" style={{ marginTop: 12 }}>
+                  <label>Reason for Balance Adjustment (Optional)</label>
+                  <input
+                    type="text"
+                    value={form.openingBalanceReason}
+                    onChange={e => setForm(p => ({ ...p, openingBalanceReason: e.target.value }))}
+                    placeholder="e.g. Corrected previous dues record"
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Adjustments are saved to the permanent Opening Balance Audit Trail</span>
+                </div>
+              )}
 
               {/* Notes */}
               <div className="va-field" style={{ marginTop: 16 }}>
