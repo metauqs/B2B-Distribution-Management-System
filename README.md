@@ -379,22 +379,22 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 ## 📸 UI Screenshots
 
 ### Dashboard
-*(Add Screenshot Here)*
+<img width="1510" height="828" alt="Screenshot 2026-08-06 at 4 53 38 PM" src="https://github.com/user-attachments/assets/663b1f04-27f3-4b68-8b5b-b03dec287c52" />
 
 ### Sales & Billing
-*(Add Screenshot Here)*
+<img width="1512" height="824" alt="Screenshot 2026-08-06 at 4 54 20 PM" src="https://github.com/user-attachments/assets/05cf53e9-9a1a-4f6e-92d7-5c42728c8880" />
 
 ### Inventory Valuation
-*(Add Screenshot Here)*
+<img width="1511" height="824" alt="Screenshot 2026-08-06 at 4 54 46 PM" src="https://github.com/user-attachments/assets/4e70cd56-1912-4cf1-99dc-3e11208ec91c" />
 
 ### Customer Price List
-*(Add Screenshot Here)*
+<img width="1512" height="824" alt="Screenshot 2026-08-06 at 4 55 10 PM" src="https://github.com/user-attachments/assets/c95e9fd0-b0cc-46bf-963e-de656e0068d4" />
 
 ### Collections & Due Bills
-*(Add Screenshot Here)*
+<img width="1512" height="824" alt="Screenshot 2026-08-06 at 4 56 55 PM" src="https://github.com/user-attachments/assets/38a53133-01ba-4b54-ba86-352bad79b15c" />
 
 ### Mandi Procurement
-*(Add Screenshot Here)*
+<img width="1511" height="825" alt="Screenshot 2026-08-06 at 4 57 13 PM" src="https://github.com/user-attachments/assets/4444dcad-10d9-423a-818e-0cd1ba0ba809" />
 
 ---
 
