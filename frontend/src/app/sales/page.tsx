@@ -1059,6 +1059,17 @@ export default function SalesPage() {
                           placeholder="Product name"
                           required
                         />
+                        {(() => {
+                          const pItem = priceItems.find(p => (item.productId && p.productId === item.productId) || p.itemName.toLowerCase() === item.itemName.trim().toLowerCase());
+                          const avail = pItem?.availableStock ?? pItem?.currentStock;
+                          if (avail === undefined || !item.itemName.trim()) return null;
+                          return (
+                            <div style={{ fontSize: 11, marginTop: 4, fontWeight: 700, color: avail > 0 ? '#166534' : '#DC2626', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span>{avail > 0 ? '📦 Available Stock:' : '⚠️ Out of Stock:'}</span>
+                              <span className="mono">{avail} {item.unit}</span>
+                            </div>
+                          );
+                        })()}
                     </div>
                     <div className="va-field" style={{ flex: 1 }}>
                       <label className={i > 0 ? 'show-mobile' : ''}>Qty</label>

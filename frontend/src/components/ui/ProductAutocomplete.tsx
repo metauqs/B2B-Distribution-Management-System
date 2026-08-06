@@ -55,7 +55,8 @@ export function ProductAutocomplete({
     const unit = p?.unit || p?.defaultUnit || 'KG';
     const rate = p?.sellRate ?? p?.rate ?? p?.buyRate ?? 0;
     const productId = p?.productId || p?.id || '';
-    return { itemName, prodName, urdu, unit, rate, productId };
+    const availableStock = p?.availableStock ?? p?.currentStock ?? p?.stock ?? p?.qty ?? undefined;
+    return { itemName, prodName, urdu, unit, rate, productId, availableStock };
   };
 
   // 1. Prefix matches (itemName, product name, or urduName starts with query)
@@ -202,7 +203,7 @@ export function ProductAutocomplete({
           {suggestions.length > 0 ? (
             suggestions.map((item, index) => {
               const isHighlighted = index === highlightedIndex;
-              const { itemName, urdu, unit, rate, productId } = getSearchFields(item);
+              const { itemName, urdu, unit, rate, productId, availableStock } = getSearchFields(item);
               return (
                 <div
                   key={productId || `${itemName}-${index}`}
@@ -235,15 +236,30 @@ export function ProductAutocomplete({
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {rate > 0 && (
-                      <span className="mono" style={{ fontWeight: 700, color: '#166534', marginRight: 3 }}>
-                        Rs {rate.toLocaleString()}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', whiteSpace: 'nowrap' }}>
+                    <div>
+                      {rate > 0 && (
+                        <span className="mono" style={{ fontWeight: 700, color: '#166534', marginRight: 3 }}>
+                          Rs {rate.toLocaleString()}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 11, color: '#64748B' }}>
+                        / {unit}
+                      </span>
+                    </div>
+                    {availableStock !== undefined && (
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        marginTop: 2,
+                        background: availableStock > 0 ? '#E6F4EA' : '#FCE8E6',
+                        color: availableStock > 0 ? '#137333' : '#C5221F',
+                      }}>
+                        {availableStock > 0 ? `Stock: ${availableStock} ${unit}` : 'Out of Stock'}
                       </span>
                     )}
-                    <span style={{ fontSize: 11, color: '#64748B' }}>
-                      / {unit}
-                    </span>
                   </div>
                 </div>
               );
