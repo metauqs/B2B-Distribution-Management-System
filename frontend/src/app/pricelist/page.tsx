@@ -980,10 +980,10 @@ export default function PriceListPage() {
                         <th>Product</th>
                         <th>Unit</th>
                         <th>Category</th>
-                        <th style={{ textAlign: 'right', width: 140, color: 'var(--forest)', fontWeight: 700 }}>Average Buy Cost</th>
-                        <th style={{ textAlign: 'right', width: 140 }}>Latest Purchase Price</th>
+                        <th style={{ textAlign: 'right', width: 120, color: 'var(--primary)', fontWeight: 700 }}>Stock</th>
+                        <th style={{ textAlign: 'right', width: 130, color: 'var(--forest)', fontWeight: 700 }}>Buy Rate</th>
                         <th style={{ textAlign: 'right', width: 140, fontWeight: 700 }}>Sell Rate (Customer)</th>
-                        <th style={{ textAlign: 'right', width: 100 }}>Profit Margin</th>
+                        <th style={{ textAlign: 'right', width: 110 }}>Profit Margin</th>
                         <th style={{ minWidth: 110 }}>Margin %</th>
                       </tr>
                     </thead>
@@ -993,10 +993,10 @@ export default function PriceListPage() {
                       ) : (
                         filteredEditItems.map((item, idx) => {
                           const realIndex = editItems.indexOf(item);
-                          const avgCostVal = item.avgBuyCost ?? item.buyRate ?? 0;
-                          const latestPrice = item.latestPurchasePrice ?? item.currentBuyPrice ?? avgCostVal;
-                          const margin = item.sellRate - (avgCostVal > 0 ? avgCostVal : latestPrice);
-                          const marginPct = (avgCostVal > 0) ? (margin / avgCostVal) * 100 : 0;
+                          const buyRate = item.avgBuyCost && item.avgBuyCost > 0 ? item.avgBuyCost : (item.buyRate ?? 0);
+                          const availStock = item.availableStock ?? item.currentStock ?? 0;
+                          const margin = item.sellRate - buyRate;
+                          const marginPct = (buyRate > 0) ? (margin / buyRate) * 100 : 0;
                           const sellChanged = item.origSellRate !== undefined && item.sellRate !== item.origSellRate;
 
                           return (
@@ -1004,19 +1004,14 @@ export default function PriceListPage() {
                               <td>
                                 <strong>{item.itemName}</strong>
                                 {item.product?.urduName && <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>({item.product.urduName})</span>}
-                                {item.availableStock !== undefined && (
-                                  <div style={{ fontSize: 11, color: item.availableStock > 0 ? 'var(--forest)' : 'var(--danger)' }}>
-                                    Stock: {item.availableStock.toFixed(2)} {item.unit}
-                                  </div>
-                                )}
                               </td>
                               <td style={{ color: 'var(--muted)' }}>{item.unit}</td>
                               <td style={{ textTransform: 'capitalize', fontSize: 12 }}>{item.product?.category}</td>
-                              <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
-                                {avgCostVal > 0 ? `Rs ${avgCostVal.toFixed(2)}` : '—'}
+                              <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: availStock > 0 ? 'var(--primary)' : 'var(--danger)' }}>
+                                {availStock.toFixed(2)} {item.unit}
                               </td>
-                              <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
-                                {latestPrice > 0 ? `Rs ${latestPrice.toFixed(2)}` : '—'}
+                              <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
+                                {buyRate > 0 ? `Rs ${buyRate.toFixed(2)}` : '—'}
                               </td>
                               <td style={{ textAlign: 'right' }}>
                                 {isEditing ? (
