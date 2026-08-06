@@ -52,7 +52,10 @@ router.get('/active', async (req: Request, res: Response) => {
 
       const draftItems = activeProducts.map((prod) => {
         const inv = inventoryMap.get(prod.id);
-        const currentBuyPrice = inv?.currentBuyPrice ?? 0;
+        const avgBuyCost = (inv?.avgCost && inv.avgCost > 0)
+          ? inv.avgCost
+          : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
+        const latestPurchasePrice = inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
         const previousBuyPrice = inv?.previousBuyPrice ?? 0;
         const currentStock = inv?.qty ?? 0;
         const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
@@ -62,9 +65,11 @@ router.get('/active', async (req: Request, res: Response) => {
           productId: prod.id,
           itemName: prod.name,
           unit: prod.defaultUnit,
-          buyRate: currentBuyPrice,
+          buyRate: avgBuyCost,
+          avgBuyCost,
+          latestPurchasePrice,
           previousBuyPrice,
-          currentBuyPrice,
+          currentBuyPrice: latestPurchasePrice,
           currentStock,
           availableStock,
           sellRate: 0,
@@ -103,15 +108,20 @@ router.get('/active', async (req: Request, res: Response) => {
     // Enrich existing price items with live Inventory buy rates and stock
     const enrichedItems = list.items.map(item => {
       const inv = item.productId ? inventoryMap.get(item.productId) : null;
-      const currentBuyPrice = inv?.currentBuyPrice ?? item.buyRate;
+      const avgBuyCost = (inv?.avgCost && inv.avgCost > 0)
+        ? inv.avgCost
+        : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : item.buyRate);
+      const latestPurchasePrice = inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
       const previousBuyPrice = inv?.previousBuyPrice ?? 0;
       const currentStock = inv?.qty ?? 0;
       const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
 
       return {
         ...item,
-        buyRate: currentBuyPrice,
-        currentBuyPrice,
+        buyRate: avgBuyCost,
+        avgBuyCost,
+        latestPurchasePrice,
+        currentBuyPrice: latestPurchasePrice,
         previousBuyPrice,
         currentStock,
         availableStock,

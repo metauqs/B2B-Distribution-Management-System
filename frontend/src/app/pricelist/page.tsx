@@ -36,6 +36,8 @@ interface PriceItemRow {
   itemName:   string;
   unit:       string;
   buyRate:    number;
+  avgBuyCost?: number;
+  latestPurchasePrice?: number;
   currentBuyPrice?: number;
   previousBuyPrice?: number;
   currentStock?: number;
@@ -978,9 +980,9 @@ export default function PriceListPage() {
                         <th>Product</th>
                         <th>Unit</th>
                         <th>Category</th>
-                        <th style={{ textAlign: 'right', width: 140 }}>Prev Buy Price</th>
-                        <th style={{ textAlign: 'right', width: 140 }}>Current Buy Price (Inventory)</th>
-                        <th style={{ textAlign: 'right', width: 140 }}>Sell Rate (Customer)</th>
+                        <th style={{ textAlign: 'right', width: 140, color: 'var(--forest)', fontWeight: 700 }}>Average Buy Cost</th>
+                        <th style={{ textAlign: 'right', width: 140 }}>Latest Purchase Price</th>
+                        <th style={{ textAlign: 'right', width: 140, fontWeight: 700 }}>Sell Rate (Customer)</th>
                         <th style={{ textAlign: 'right', width: 100 }}>Profit Margin</th>
                         <th style={{ minWidth: 110 }}>Margin %</th>
                       </tr>
@@ -991,10 +993,10 @@ export default function PriceListPage() {
                       ) : (
                         filteredEditItems.map((item, idx) => {
                           const realIndex = editItems.indexOf(item);
-                          const buyRate = item.currentBuyPrice ?? item.buyRate ?? 0;
-                          const prevBuyRate = item.previousBuyPrice ?? 0;
-                          const margin = item.sellRate - buyRate;
-                          const marginPct = buyRate > 0 ? (margin / buyRate) * 100 : 0;
+                          const avgCostVal = item.avgBuyCost ?? item.buyRate ?? 0;
+                          const latestPrice = item.latestPurchasePrice ?? item.currentBuyPrice ?? avgCostVal;
+                          const margin = item.sellRate - (avgCostVal > 0 ? avgCostVal : latestPrice);
+                          const marginPct = (avgCostVal > 0) ? (margin / avgCostVal) * 100 : 0;
                           const sellChanged = item.origSellRate !== undefined && item.sellRate !== item.origSellRate;
 
                           return (
@@ -1010,11 +1012,11 @@ export default function PriceListPage() {
                               </td>
                               <td style={{ color: 'var(--muted)' }}>{item.unit}</td>
                               <td style={{ textTransform: 'capitalize', fontSize: 12 }}>{item.product?.category}</td>
-                              <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
-                                {prevBuyRate > 0 ? `Rs ${prevBuyRate.toFixed(2)}` : '—'}
-                              </td>
                               <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
-                                {buyRate > 0 ? `Rs ${buyRate.toFixed(2)}` : '—'}
+                                {avgCostVal > 0 ? `Rs ${avgCostVal.toFixed(2)}` : '—'}
+                              </td>
+                              <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                                {latestPrice > 0 ? `Rs ${latestPrice.toFixed(2)}` : '—'}
                               </td>
                               <td style={{ textAlign: 'right' }}>
                                 {isEditing ? (

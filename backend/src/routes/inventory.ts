@@ -103,12 +103,21 @@ router.get('/', async (req: Request, res: Response) => {
           ? 'LOW'
           : 'OK';
         
+        const avgBuyCost = (inv.avgCost && inv.avgCost > 0)
+          ? inv.avgCost
+          : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
+        const latestPurchasePrice = inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
+        const totalValue = Math.max(0, inv.qty) * avgBuyCost;
+
         return {
           ...inv,
+          avgCost: avgBuyCost,
+          currentBuyPrice: latestPurchasePrice,
+          latestPurchasePrice,
           availableQty,
           stockStatus,
           effectiveMinStock,
-          totalValue: inv.qty * (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : inv.avgCost),
+          totalValue,
         };
       });
 
@@ -276,6 +285,7 @@ router.post('/buy-price', async (req: Request, res: Response) => {
       update: {
         previousBuyPrice: oldBuyPrice > 0 ? oldBuyPrice : (existing?.previousBuyPrice ?? 0),
         currentBuyPrice: price,
+        avgCost: price,
       },
       create: {
         productId,

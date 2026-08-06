@@ -22,6 +22,7 @@ interface InventoryItem {
   availableQty: number;
   avgCost: number;
   currentBuyPrice: number;
+  latestPurchasePrice?: number;
   previousBuyPrice: number;
   lastPurchaseDate?: string;
   lastPurchaseQty?: number;
@@ -786,10 +787,9 @@ export default function InventoryPage() {
                         <th>Unit</th>
                         <th style={{ textAlign: 'right' }}>Total Stock</th>
                         <th style={{ textAlign: 'right', color: 'var(--primary)' }}>Available Qty</th>
-                        <th style={{ textAlign: 'right' }}>Prev Buy Price</th>
-                        <th style={{ textAlign: 'right', color: 'var(--forest)' }}>Current Buy Price</th>
-                        <th style={{ textAlign: 'right' }}>Avg Cost</th>
-                        <th style={{ textAlign: 'right' }}>Stock Value</th>
+                        <th style={{ textAlign: 'right', color: 'var(--forest)', fontWeight: 700 }}>Average Buy Cost</th>
+                        <th style={{ textAlign: 'right' }}>Latest Purchase Price</th>
+                        <th style={{ textAlign: 'right', fontWeight: 700 }}>Inventory Value</th>
                         <th style={{ textAlign: 'center' }}>Status</th>
                         <th style={{ textAlign: 'center' }}>Actions</th>
                       </tr>
@@ -802,7 +802,9 @@ export default function InventoryPage() {
                           ? { bg: '#FFFBF0', badge: '#B87333', label: 'Low Stock' }
                           : { bg: undefined, badge: 'var(--ok)', label: 'Available' };
 
-                        const priceDiff = i.currentBuyPrice - i.previousBuyPrice;
+                        const latestRate = i.currentBuyPrice > 0 ? i.currentBuyPrice : (i.latestPurchasePrice ?? i.avgCost);
+                        const avgCostVal = i.avgCost > 0 ? i.avgCost : latestRate;
+                        const priceDiff = latestRate - (i.previousBuyPrice > 0 ? i.previousBuyPrice : avgCostVal);
 
                         return (
                           <tr key={i.id} style={{ background: sc.bg }}>
@@ -823,18 +825,17 @@ export default function InventoryPage() {
                             <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--primary)' }}>
                               {i.availableQty.toFixed(2)}
                             </td>
-                            <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
-                              {i.previousBuyPrice > 0 ? `Rs ${i.previousBuyPrice.toFixed(2)}` : '—'}
-                            </td>
                             <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
-                              {i.currentBuyPrice > 0 ? `Rs ${i.currentBuyPrice.toFixed(2)}` : `Rs ${i.avgCost.toFixed(2)}`}
+                              Rs {avgCostVal.toFixed(2)}
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                              {latestRate > 0 ? `Rs ${latestRate.toFixed(2)}` : '—'}
                               {i.previousBuyPrice > 0 && priceDiff !== 0 && (
                                 <span style={{ fontSize: 10, marginLeft: 4, color: priceDiff > 0 ? 'var(--danger)' : 'var(--ok)' }}>
                                   ({priceDiff > 0 ? `+${priceDiff.toFixed(1)}` : priceDiff.toFixed(1)})
                                 </span>
                               )}
                             </td>
-                            <td className="mono" style={{ textAlign: 'right' }}>Rs {i.avgCost.toFixed(2)}</td>
                             <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--forest)' }}>{fmtMoney(i.totalValue)}</td>
                             <td style={{ textAlign: 'center' }}>
                               <span style={{
@@ -862,11 +863,11 @@ export default function InventoryPage() {
                     </tbody>
                     <tfoot>
                       <tr style={{ background: '#1F3D2B', color: '#fff', fontWeight: 700 }}>
-                        <td colSpan={5} style={{ color: '#fff', fontWeight: 700 }}>Total Stock Value ({filtered.length} products)</td>
+                        <td colSpan={5} style={{ color: '#fff', fontWeight: 700 }}>Total Inventory Value ({filtered.length} products)</td>
                         <td className="mono" style={{ textAlign: 'right', color: '#90CAF9', fontWeight: 800 }}>
                           {filtered.reduce((s, i) => s + i.availableQty, 0).toFixed(1)}
                         </td>
-                        <td colSpan={4}></td>
+                        <td colSpan={2}></td>
                         <td className="mono" style={{ textAlign: 'right', color: '#6FD89A', fontWeight: 800, fontSize: 15 }}>
                           {fmtMoney(filtered.reduce((s, i) => s + i.totalValue, 0))}
                         </td>
@@ -884,6 +885,8 @@ export default function InventoryPage() {
                       : i.stockStatus === 'LOW'
                       ? { badge: 'yellow' as const, label: 'Low Stock' }
                       : { badge: 'green' as const, label: 'Available' };
+                    const latestRate = i.currentBuyPrice > 0 ? i.currentBuyPrice : (i.latestPurchasePrice ?? i.avgCost);
+                    const avgCostVal = i.avgCost > 0 ? i.avgCost : latestRate;
                     return (
                       <MobileCard
                         key={i.id}
@@ -892,9 +895,9 @@ export default function InventoryPage() {
                       >
                         <MobileCardRow label="Total Stock" value={`${i.qty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} isMono />
                         <MobileCardRow label="Available Qty" value={`${i.availableQty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} valueColor="var(--primary)" isMono />
-                        <MobileCardRow label="Current Buy Price" value={i.currentBuyPrice > 0 ? `Rs ${i.currentBuyPrice.toFixed(2)}` : '—'} isMono />
-                        <MobileCardRow label="Previous Buy Price" value={i.previousBuyPrice > 0 ? `Rs ${i.previousBuyPrice.toFixed(2)}` : '—'} isMono />
-                        <MobileCardRow label="Stock Value" value={fmtMoney(i.totalValue)} valueColor="#166534" isMono />
+                        <MobileCardRow label="Average Buy Cost" value={`Rs ${avgCostVal.toFixed(2)} / ${i.product?.defaultUnit ?? 'KG'}`} valueColor="var(--forest)" isMono />
+                        <MobileCardRow label="Latest Purchase Price" value={latestRate > 0 ? `Rs ${latestRate.toFixed(2)}` : '—'} isMono />
+                        <MobileCardRow label="Inventory Value" value={fmtMoney(i.totalValue)} valueColor="#166534" isMono />
                         <MobileCardRow label="Status">
                           <MobileCardBadge variant={sc.badge}>{sc.label}</MobileCardBadge>
                         </MobileCardRow>
