@@ -359,6 +359,8 @@ export default function DeliveryPage() {
 
   const activeEmpName = availableStaff.find(e => e.id === selectedEmpId)?.name || loggedInUser?.name || 'Delivery Employee';
 
+  const isDeliveryStaff = loggedInUser?.role === 'DELIVERY_STAFF' || loggedInUser?.role === 'DELIVERY' || loggedInUser?.role === 'DELIVERY_BOY';
+
   return (
     <DashboardLayout>
       {toast && (
@@ -372,7 +374,7 @@ export default function DeliveryPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>View Mode:</span>
-            {loggedInUser?.role !== 'DELIVERY_STAFF' && (
+            {!isDeliveryStaff && (
               <button 
                 className={`va-btn small ${!isEmployeeMode ? '' : 'secondary'}`} 
                 style={{ fontWeight: 700, borderRadius: '6px' }}
