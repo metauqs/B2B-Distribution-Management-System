@@ -323,6 +323,20 @@ export default function SalesPage() {
     loadEmployees();
   };
 
+  const cancelInvoiceDraft = () => {
+    setSelClient(null);
+    setStep(1);
+    setItems([blankItem()]);
+    setDiscount(0);
+    setDeliveryFee(0);
+    setPaid(0);
+    setPayMode('CREDIT');
+    setInvNotes('');
+    setSelEmpId('');
+    setCreditWarn(false);
+    setView('list');
+  };
+
   // Re-load clients whenever search term changes while on the new-invoice view
   useEffect(() => {
     if (view === 'new') loadClients();
@@ -871,7 +885,7 @@ export default function SalesPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* Top Row: Cancel + Title */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                <button className="va-btn secondary small" onClick={() => setView('list')}>← Cancel</button>
+                <button className="va-btn secondary small" onClick={cancelInvoiceDraft}>← Cancel</button>
                 <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>+ New Invoice</h3>
               </div>
 
@@ -1196,15 +1210,15 @@ export default function SalesPage() {
                   {/* Totals box */}
                   <div style={{ margin: '14px 0', padding: '12px 14px', background: 'var(--line-soft)', borderRadius: 8, fontSize: 13 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontWeight: 600 }}>Previous Outstanding <span style={{ fontSize: 11, color: 'var(--muted)' }}>(بقایا)</span></span>
+                      <span style={{ fontWeight: 600 }}>Committed Dues (سابقہ بقایا جات)</span>
                       <span className="mono" style={{ fontWeight: 700, color: selClient.currentBalance > 0 ? 'var(--clay)' : 'var(--muted)' }}>{fmtMoney(selClient.currentBalance)}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontWeight: 600 }}>Current Bill <span style={{ fontSize: 11, color: 'var(--muted)' }}>(آج کا بل)</span></span>
+                      <span style={{ fontWeight: 600 }}>New Invoice Draft (نیا بل)</span>
                       <span className="mono" style={{ fontWeight: 700 }}>{fmtMoney(total)}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, borderTop: '2px dashed var(--line)', paddingTop: 8, fontWeight: 700, fontSize: 14 }}>
-                      <span style={{ color: 'var(--forest)' }}>Total Payable Amount <span style={{ fontSize: 11, color: 'var(--forest)' }}>(کل واجب الادا)</span></span>
+                      <span style={{ color: 'var(--forest)' }}>Estimated Total After Generation (کل واجب الادا)</span>
                       <span className="mono" style={{ color: 'var(--forest)', fontSize: 16 }}>{fmtMoney(selClient.currentBalance + total)}</span>
                     </div>
                   </div>

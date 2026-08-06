@@ -98,12 +98,12 @@ router.post('/', async (req: Request, res: Response) => {
   const balance = Math.max(0, total - paidAmt);
   const status = paidAmt >= total ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING';
 
-  const invoiceNo = await generateInvoiceNo(clientId, branchId);
-  const validatedUserId = await getValidUserId(userId);
-
   const startTime = Date.now();
   try {
     const sale = await prisma.$transaction(async tx => {
+      const invoiceNo = await generateInvoiceNo(clientId, branchId, tx);
+      const validatedUserId = await getValidUserId(userId, tx);
+
       const cRecord = await tx.client.findUnique({
         where: { id: clientId },
         select: { currentBalance: true }
@@ -263,7 +263,7 @@ router.post('/', async (req: Request, res: Response) => {
       console.warn('[POST /api/sales] Async credit rating update warning:', err)
     );
 
-    await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Sale', entityId: sale.id, newData: { invoiceNo, total } });
+    await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Sale', entityId: sale.id, newData: { invoiceNo: sale.invoiceNo, total } });
     return res.status(201).json({ success: true, data: sale });
   } catch (error: any) {
     const durationMs = Date.now() - startTime;
@@ -271,7 +271,6 @@ router.post('/', async (req: Request, res: Response) => {
       endpoint: 'POST /api/sales',
       durationMs,
       clientId,
-      invoiceNo: invoiceNo ?? 'N/A',
       error: error.message ?? String(error),
       stack: error.stack,
     });
