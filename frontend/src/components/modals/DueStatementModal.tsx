@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { fmtMoney } from '@/utils/formatters';
 import { loadBrandConfigWithLogo, generateOutstandingDueStatementHTML, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
+import { WhatsAppShareModal } from '@/components/modals/WhatsAppShareModal';
 
 interface InvoiceItem {
   invoiceNo: string;
@@ -35,6 +36,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
   const [htmlContent, setHtmlContent] = useState<string>('');
   const [imageUrl, setImageUrl] = useState<string>('');
   const [downloading, setDownloading] = useState(false);
+  const [waShareModal, setWaShareModal] = useState<{ jpgBase64: string; whatsappUrl: string; filename: string } | null>(null);
   const statementRef = useRef<HTMLDivElement>(null);
 
   const openBal = client.openingBalance ?? 0;
@@ -121,7 +123,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
       const phone = client.whatsapp || client.phone || '';
       const filename = `Due_Statement_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.jpg`;
 
-      await shareDocumentAsImageOnWhatsApp(
+      const result = await shareDocumentAsImageOnWhatsApp(
         {
           jpgBase64: imageUrl || undefined,
           html: !imageUrl ? htmlContent : undefined,
@@ -130,6 +132,14 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
         },
         (msg) => { if (msg) showToast(msg); },
       );
+
+      if (result.method === 'modal' && result.jpgBase64) {
+        setWaShareModal({
+          jpgBase64:   result.jpgBase64,
+          whatsappUrl: result.whatsappUrl ?? 'https://wa.me/',
+          filename,
+        });
+      }
     } catch (err) {
       console.error('handleSendWhatsApp error:', err);
       showToast('❌ Unable to share. Please try again.');
@@ -297,12 +307,23 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
                 {downloading ? '⏳ Generating JPG...' : '⬇ Download JPG'}
               </button>
               <button className="va-btn small" onClick={handleSendWhatsApp} disabled={downloading}>
-                💬 Send via WhatsApp
+                {downloading ? '⏳ Generating...' : '💬 Send via WhatsApp'}
               </button>
             </>
           )}
         </div>
       </div>
+
+      {/* WhatsApp Image Share Modal (desktop fallback) */}
+      {waShareModal && (
+        <WhatsAppShareModal
+          imageBase64={waShareModal.jpgBase64}
+          filename={waShareModal.filename}
+          whatsappUrl={waShareModal.whatsappUrl}
+          onClose={() => setWaShareModal(null)}
+          onToast={onToast}
+        />
+      )}
     </div>
   );
 }

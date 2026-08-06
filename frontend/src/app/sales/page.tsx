@@ -13,6 +13,7 @@ import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrin
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { WhatsAppShareModal } from '@/components/modals/WhatsAppShareModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,6 +166,7 @@ export default function SalesPage() {
   const [saving,         setSaving]         = useState(false);
   const [creditWarn,     setCreditWarn]     = useState(false);
   const [whatsappSharing, setWhatsappSharing] = useState(false);
+  const [waShareModal, setWaShareModal] = useState<{ jpgBase64: string; whatsappUrl: string; filename: string } | null>(null);
 
   // ── Employee & Delivery states ──
   const [employees, setEmployees] = useState<any[]>([]);
@@ -613,7 +615,7 @@ export default function SalesPage() {
         window.location.origin,
       );
 
-      await shareDocumentAsImageOnWhatsApp(
+      const result = await shareDocumentAsImageOnWhatsApp(
         {
           html,
           filename: `Invoice_${s.invoiceNo}.jpg`,
@@ -621,6 +623,14 @@ export default function SalesPage() {
         },
         (msg) => { if (msg) showToast(msg); },
       );
+
+      if (result.method === 'modal' && result.jpgBase64) {
+        setWaShareModal({
+          jpgBase64:    result.jpgBase64,
+          whatsappUrl:  result.whatsappUrl ?? 'https://wa.me/',
+          filename:     `Invoice_${s.invoiceNo}.jpg`,
+        });
+      }
     } catch (err) {
       console.error('shareWhatsApp error:', err);
       showToast('❌ Unable to share. Please try again.');
@@ -1736,6 +1746,17 @@ export default function SalesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* WhatsApp Image Share Modal (desktop fallback) */}
+      {waShareModal && (
+        <WhatsAppShareModal
+          imageBase64={waShareModal.jpgBase64}
+          filename={waShareModal.filename}
+          whatsappUrl={waShareModal.whatsappUrl}
+          onClose={() => setWaShareModal(null)}
+          onToast={showToast}
+        />
       )}
     </DashboardLayout>
   );

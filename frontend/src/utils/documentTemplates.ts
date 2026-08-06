@@ -1847,8 +1847,17 @@ export interface WhatsAppImageShareOptions {
   filename: string;
   /** Client WhatsApp/phone number (e.g. "923001234567" or "03001234567"). */
   phone?: string;
-  /** Short contextual text message to pre-fill in WhatsApp (used on desktop fallback only). */
-  textMessage?: string;
+}
+
+export interface WhatsAppShareResult {
+  /** Whether the share operation completed without error */
+  success: boolean;
+  /** 'native' = Web Share API used (mobile). 'modal' = caller should show WhatsAppShareModal. 'error' = failed to generate image. */
+  method: 'native' | 'modal' | 'error';
+  /** Generated JPG base64 (set when method === 'modal') */
+  jpgBase64?: string;
+  /** Formatted WhatsApp URL for the modal to use */
+  whatsappUrl?: string;
 }
 
 /**
@@ -1856,14 +1865,15 @@ export interface WhatsAppImageShareOptions {
  *
  * Priority strategy:
  *   1. Mobile native Web Share API with file attachment (Android / iOS Chrome & Safari).
- *   2. Desktop fallback: download JPG automatically + open WhatsApp with a short caption text.
+ *   2. Desktop / unsupported — returns { method: 'modal', jpgBase64, whatsappUrl } so the
+ *      caller can render <WhatsAppShareModal> which lets the user copy the image and open WhatsApp.
  *
- * @returns { success: boolean; method: 'native' | 'download' | 'error'; }
+ * @returns WhatsAppShareResult
  */
 export async function shareDocumentAsImageOnWhatsApp(
   opts: WhatsAppImageShareOptions,
   onProgress?: (msg: string) => void,
-): Promise<{ success: boolean; method: 'native' | 'download' | 'error' }> {
+): Promise<WhatsAppShareResult> {
   const notify = (msg: string) => { if (onProgress) onProgress(msg); };
 
   // ── Step 1: Obtain JPG ──────────────────────────────────────────────────────
@@ -1888,11 +1898,9 @@ export async function shareDocumentAsImageOnWhatsApp(
   if (ph.startsWith('0') && ph.length === 11) ph = `92${ph.slice(1)}`;
   else if (ph.length === 10) ph = `92${ph}`;
 
-  const waUrl = ph
-    ? `https://wa.me/${ph}`
-    : 'https://wa.me/';
+  const whatsappUrl = ph ? `https://wa.me/${ph}` : 'https://wa.me/';
 
-  // ── Step 3: Try native Web Share API (mobile) ────────────────────────────────
+  // ── Step 3: Try native Web Share API (mobile Chrome/Safari) ─────────────────
   if (
     typeof navigator !== 'undefined' &&
     typeof navigator.share === 'function' &&
@@ -1916,24 +1924,16 @@ export async function shareDocumentAsImageOnWhatsApp(
         return { success: true, method: 'native' };
       }
     } catch (shareErr: any) {
-      // User cancelled (AbortError) or share failed — fall through to desktop fallback
+      // User cancelled (AbortError) — stop silently
       if (shareErr?.name === 'AbortError') {
         notify('');
         return { success: false, method: 'error' };
       }
-      console.warn('Web Share API failed, falling back to download:', shareErr);
+      console.warn('Web Share API failed, falling back to modal:', shareErr);
     }
   }
 
-  // ── Step 4: Desktop / fallback — Download + open WhatsApp ────────────────────
-  notify('📦 Downloading image...');
-  downloadImage(jpgBase64, opts.filename);
-
-  await new Promise(r => setTimeout(r, 800));
-
-  notify('💬 Opening WhatsApp...');
-  window.open(waUrl, '_blank');
-
-  notify('✅ Image saved! Attach it in WhatsApp to send.');
-  return { success: true, method: 'download' };
+  // ── Step 4: Desktop / fallback — return image data for caller to show modal ──
+  notify('');
+  return { success: true, method: 'modal', jpgBase64, whatsappUrl };
 }
