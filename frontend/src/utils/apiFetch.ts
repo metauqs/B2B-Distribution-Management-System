@@ -12,8 +12,8 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  // Setup abort controller for timeout handling (15 seconds default timeout)
-  const timeoutMs = 15000;
+  // Setup abort controller for timeout handling (45 seconds default timeout for multi-item transactions)
+  const timeoutMs = 45000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 

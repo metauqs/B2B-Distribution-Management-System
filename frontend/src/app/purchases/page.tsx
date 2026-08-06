@@ -467,17 +467,21 @@ export default function PurchasesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalSupplierId = source === 'MANDI' ? 'mandi' : supplierId;
-    if (!finalSupplierId) return showToast('Please select a supplier');
-    if (!date) return showToast('Purchase date is required');
-    if (items.some(i => !i.itemName || i.qty <= 0 || i.rate <= 0)) return showToast('All items need name, qty > 0 & rate > 0');
+    if (!finalSupplierId) return showToast('❌ Please select a supplier');
+    if (!date) return showToast('❌ Purchase date is required');
+
+    const validItems = items.filter(i => (i.itemName || (i as any).name) && Number(i.qty) > 0 && Number(i.rate) > 0);
+    if (validItems.length === 0) {
+      return showToast('❌ Please add at least one product with valid quantity (>0) and buy rate (>0)');
+    }
     
-    const subtotalCalc = items.reduce((s, i) => s + (i.qty * i.rate), 0);
+    const subtotalCalc = validItems.reduce((s, i) => s + (i.qty * i.rate), 0);
     const totalCalc = subtotalCalc + (transportCost ?? 0);
     if (source !== 'MANDI' && paid > totalCalc) {
       return showToast(`❌ Amount paid (Rs ${paid.toLocaleString()}) cannot exceed total purchase amount (Rs ${totalCalc.toLocaleString()})`);
     }
     
-    checkAndSave(items);
+    checkAndSave(validItems);
   };
 
   // Filter logic
@@ -595,7 +599,14 @@ export default function PurchasesPage() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--forest)' }}>
                   🛒 Select Products &amp; Enter Rates
-                  {items.length > 0 && <span style={{ marginLeft: 10, background: 'var(--forest)', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>{items.length} selected</span>}
+                  {(() => {
+                    const validCount = items.filter(i => (i.itemName || (i as any).name) && Number(i.qty) > 0).length;
+                    return validCount > 0 ? (
+                      <span style={{ marginLeft: 10, background: 'var(--forest)', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>
+                        {validCount} selected
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
                 <input
                   value={catalogSearch}
