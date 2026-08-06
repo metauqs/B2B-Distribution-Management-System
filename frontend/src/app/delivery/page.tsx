@@ -178,11 +178,13 @@ export default function DeliveryPage() {
   // Detect logged-in user role & auto-select delivery staff
   useEffect(() => {
     try {
-      const rawUser = localStorage.getItem('user');
+      const rawUser = localStorage.getItem('sabzi_user') || localStorage.getItem('user');
       if (rawUser) {
         const u = JSON.parse(rawUser);
         setLoggedInUser(u);
-        if (u.role === 'DELIVERY_STAFF' || u.employeeId) {
+        const r = (u.role || '').toUpperCase();
+        const isDelivery = r === 'DELIVERY_STAFF' || r === 'DELIVERY' || r === 'DELIVERY_BOY' || (Boolean(u.employeeId) && !['OWNER', 'MANAGER', 'ADMIN', 'ACCOUNTANT', 'PURCHASE_STAFF'].includes(r));
+        if (isDelivery) {
           setIsEmployeeMode(true);
           if (u.employeeId) setSelectedEmpId(u.employeeId);
         }
@@ -359,7 +361,12 @@ export default function DeliveryPage() {
 
   const activeEmpName = availableStaff.find(e => e.id === selectedEmpId)?.name || loggedInUser?.name || 'Delivery Employee';
 
-  const isDeliveryStaff = loggedInUser?.role === 'DELIVERY_STAFF' || loggedInUser?.role === 'DELIVERY' || loggedInUser?.role === 'DELIVERY_BOY';
+  const userRole = (loggedInUser?.role || '').toUpperCase();
+  const isDeliveryStaff = 
+    userRole === 'DELIVERY_STAFF' || 
+    userRole === 'DELIVERY' || 
+    userRole === 'DELIVERY_BOY' || 
+    (Boolean(loggedInUser?.employeeId) && !['OWNER', 'MANAGER', 'ADMIN', 'ACCOUNTANT', 'PURCHASE_STAFF', 'PURCHASE'].includes(userRole));
 
   return (
     <DashboardLayout>
