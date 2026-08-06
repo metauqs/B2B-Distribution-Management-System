@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { recordCustomerLedgerEntry, writeAuditLog } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
-import { getBusinessDateRange } from '../lib/businessDate';
+import { getBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
 
 const router = Router();
 
@@ -99,7 +99,7 @@ router.post('/', async (req: Request, res: Response) => {
           branchId,
           amount,
           method: validMethod as any,
-          date: date ? new Date(date) : new Date(),
+          date: date ? parseInputDateToUtc(date) : new Date(),
           reference: reference || (targetSale ? `INV-${targetSale.invoiceNo}` : undefined),
           notes: notes || (targetSale ? `Payment for Invoice ${targetSale.invoiceNo}` : undefined),
         },

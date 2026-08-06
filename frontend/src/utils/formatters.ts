@@ -54,15 +54,7 @@ export function todayInputDate(): string {
 
 // ─── Today & Current Time for <input type="datetime-local"> in PKT ───────────
 export function todayInputDateTime(dateObj: Date = new Date()): string {
-  const dateShifted = new Date(dateObj.getTime() - 5 * 60 * 60 * 1000);
-  const datePartFormatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: PKT_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const datePart = datePartFormatter.format(dateShifted);
-
+  const bDate = getTodayBusinessDateString(dateObj);
   const timeFormatter = new Intl.DateTimeFormat('en-GB', {
     timeZone: PKT_TIMEZONE,
     hour: '2-digit',
@@ -70,13 +62,12 @@ export function todayInputDateTime(dateObj: Date = new Date()): string {
     hour12: false,
   });
   const timePart = timeFormatter.format(dateObj);
-
-  return `${datePart}T${timePart}`;
+  return `${bDate}T${timePart}`;
 }
 
 // ─── Date offset in PKT ──────────────────────────────────────────────────────
 export function dateOffset(n: number): string {
-  const d = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const d = new Date();
   d.setDate(d.getDate() + n);
   return todayStr(d);
 }

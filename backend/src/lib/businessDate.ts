@@ -17,20 +17,27 @@ const PKT_OFFSET_HOURS = 5;
 export function toPKTDate(input?: Date | string | number): Date {
   const d = input ? new Date(input) : new Date();
   if (isNaN(d.getTime())) return new Date();
-  // Get UTC timestamp and shift by +5 hours for PKT
   const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
   return new Date(utcMs + PKT_OFFSET_HOURS * 3600000);
 }
 
 /**
  * Returns the Business Date string (YYYY-MM-DD) in PKT for any given instant.
+ * If input is already formatted as YYYY-MM-DD, it is returned directly as it is already a business date string.
  * If PKT time hour is < 5 AM, it falls into the previous calendar day's business date.
  */
 export function getBusinessDateString(input?: Date | string | number): string {
-  const d = input ? new Date(input) : new Date();
+  if (!input) input = new Date();
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+  }
+
+  const d = new Date(input);
   if (isNaN(d.getTime())) return getBusinessDateString(new Date());
 
-  // Extract PKT components using Intl format or timezone offset
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Karachi',
     year: 'numeric',
@@ -76,9 +83,25 @@ export interface BusinessDateRange {
  * and end (04:59:59.999 AM PKT next day) as UTC Date objects suitable for Prisma queries.
  */
 export function getBusinessDateRange(dateInput?: Date | string): BusinessDateRange {
-  const businessDateStr = typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)
-    ? dateInput
-    : getBusinessDateString(dateInput);
+  let businessDateStr: string;
+
+  if (typeof dateInput === 'string') {
+    const trimmed = dateInput.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      businessDateStr = trimmed;
+    } else if (trimmed.includes('T') || trimmed.includes(' ')) {
+      const datePart = trimmed.slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+        businessDateStr = datePart;
+      } else {
+        businessDateStr = getBusinessDateString(dateInput);
+      }
+    } else {
+      businessDateStr = getBusinessDateString(dateInput);
+    }
+  } else {
+    businessDateStr = getBusinessDateString(dateInput);
+  }
 
   const [yStr, mStr, dStr] = businessDateStr.split('-');
   const year = parseInt(yStr, 10);
@@ -99,6 +122,23 @@ export function getBusinessDateRange(dateInput?: Date | string): BusinessDateRan
  */
 export function getCurrentBusinessDateRange(): BusinessDateRange {
   return getBusinessDateRange(new Date());
+}
+
+/**
+ * Safely parse a date string or timestamp into a Date object suitable for saving in database.
+ * If input is a bare YYYY-MM-DD string, saves it at 12:00 PM PKT (07:00 AM UTC) to position it safely within the Business Day range.
+ */
+export function parseInputDateToUtc(dateInput?: Date | string | number): Date {
+  if (!dateInput) return new Date();
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    const [yStr, mStr, dStr] = dateInput.trim().split('-');
+    const year = parseInt(yStr, 10);
+    const month = parseInt(mStr, 10) - 1;
+    const day = parseInt(dStr, 10);
+    return new Date(Date.UTC(year, month, day, 7, 0, 0, 0));
+  }
+  const d = new Date(dateInput);
+  return isNaN(d.getTime()) ? new Date() : d;
 }
 
 /**

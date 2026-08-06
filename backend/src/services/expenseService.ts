@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma';
 import { writeAuditLog, getValidUserId } from '../lib/business';
+import { parseInputDateToUtc } from '../lib/businessDate';
 import { ExpenseCategory, PaymentMethod } from '@prisma/client';
 
 export interface CreateExpenseInput {
@@ -114,7 +115,7 @@ export class ExpenseService {
           reference: expRef,
           category: validCategory,
           amount,
-          date: date ? new Date(date) : new Date(),
+          date: date ? parseInputDateToUtc(date) : new Date(),
           description: description || undefined,
           paidBy: paymentMethod || undefined,
           cashAccountId: paymentMethod === 'CASH' ? cashAccountId : undefined,

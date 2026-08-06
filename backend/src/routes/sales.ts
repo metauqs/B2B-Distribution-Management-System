@@ -4,7 +4,7 @@ import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, rec
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { stockOut } from '../lib/inventoryService';
 
-import { getBusinessDateRange } from '../lib/businessDate';
+import { getBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
 
 const router = Router();
 
@@ -148,7 +148,7 @@ router.post('/', async (req: Request, res: Response) => {
           clientId,
           branchId,
           userId: validatedUserId ?? undefined,
-          date: date ? new Date(date) : new Date(),
+          date: date ? parseInputDateToUtc(date) : new Date(),
           subtotal,
           discount: Number(discount),
           deliveryCharge: Number(deliveryCharge),

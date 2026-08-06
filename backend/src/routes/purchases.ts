@@ -3,6 +3,8 @@ import prisma from '../lib/prisma';
 import { writeAuditLog, syncPriceListFromPurchase, PurchaseItemForSync } from '../lib/business';
 import { stockIn } from '../lib/inventoryService';
 
+import { parseInputDateToUtc } from '../lib/businessDate';
+
 const router = Router();
 
 // GET /api/purchases
@@ -104,8 +106,7 @@ router.post('/', async (req: Request, res: Response) => {
     const balance = total - finalPaid;
     const status = finalPaid >= total ? 'PAID' : finalPaid > 0 ? 'PARTIAL' : 'PENDING';
 
-    const pDate = new Date(date);
-    pDate.setHours(12, 0, 0, 0);
+    const pDate = parseInputDateToUtc(date);
 
     const purchase = await prisma.$transaction(async tx => {
       const p = await tx.purchase.create({

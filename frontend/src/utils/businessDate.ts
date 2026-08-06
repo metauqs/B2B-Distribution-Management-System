@@ -11,9 +11,18 @@
 /**
  * Returns today's active Business Date string in YYYY-MM-DD format (Asia/Karachi timezone)
  * taking into account the 5:00 AM cutoff rule.
+ * If input is already a YYYY-MM-DD string, returns it directly as it is already a business date.
  */
 export function getTodayBusinessDateString(input?: Date | string | number): string {
-  const d = input ? new Date(input) : new Date();
+  if (!input) input = new Date();
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+  }
+
+  const d = new Date(input);
   if (isNaN(d.getTime())) return getTodayBusinessDateString(new Date());
 
   const formatter = new Intl.DateTimeFormat('en-US', {
