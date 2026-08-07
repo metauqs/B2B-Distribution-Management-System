@@ -96,7 +96,9 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
   const netOperatingProfit = contributionProfit - totalExpenses;
   const netMarginPct = netSales > 0 ? (netOperatingProfit / netSales) * 100 : 0;
 
-  const totalCollections = collectionsAgg._sum.amount ?? 0;
+  const salesPaidSum = salesAgg._sum.paid ?? 0;
+  const dbCollectionsSum = collectionsAgg._sum.amount ?? 0;
+  const totalCollections = Math.max(salesPaidSum, dbCollectionsSum);
   const totalReceivables = receivablesAgg._sum.currentBalance ?? 0;
 
   const suppPurchMap = Object.fromEntries(supplierPurchases.map(x => [x.supplierId, x._sum.total ?? 0]));

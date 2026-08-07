@@ -54,12 +54,12 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       l30Expenses,
       attentionRaw
     ] = await Promise.all([
-      prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' } }, _sum: { total: true }, _count: true }),
+      prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' } }, _sum: { total: true, paid: true }, _count: true }),
       prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' }, paymentMode: 'CASH' }, _sum: { total: true } }),
       prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' }, paymentMode: 'CREDIT' }, _sum: { total: true } }),
       prisma.purchase.aggregate({ where: tWhere, _sum: { total: true } }),
-      prisma.expense.aggregate({ where: { ...tWhere, deletedAt: undefined }, _sum: { amount: true } }),
-      prisma.collection.aggregate({ where: { ...tWhere, deletedAt: undefined }, _sum: { amount: true } }),
+      prisma.expense.aggregate({ where: tWhere, _sum: { amount: true } }),
+      prisma.collection.aggregate({ where: tWhere, _sum: { amount: true } }),
       prisma.wastage.aggregate({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } }, _sum: { qty: true }, _count: true }),
       prisma.client.aggregate({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, _sum: { currentBalance: true } }),
       prisma.client.count({ where: { ...bWhere, deletedAt: null } }),
@@ -85,7 +85,9 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const creditSales = creditSalesAgg._sum.total ?? 0;
     const todayPurchases = todayPurchasesAgg._sum.total ?? 0;
     const todayExpenses = todayExpensesAgg._sum.amount ?? 0;
-    const todayCollections = todayCollectionsAgg._sum.amount ?? 0;
+    const todaySalesPaid = todaySalesAgg._sum.paid ?? 0;
+    const dbCollectionsSum = todayCollectionsAgg._sum.amount ?? 0;
+    const todayCollections = Math.max(todaySalesPaid, dbCollectionsSum);
     const grossProfit = todaySales - todayPurchases;
     const netProfit = grossProfit - todayExpenses;
     const todayProfit = netProfit;
