@@ -4,6 +4,7 @@ import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, rec
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { stockOut } from '../lib/inventoryService';
 import { getBusinessDateRange, getBusinessDateString, getCurrentBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
+import { postSaleLedger } from '../lib/financialLedgerService';
 
 const router = Router();
 
@@ -215,6 +216,24 @@ router.post('/', async (req: Request, res: Response) => {
         }
       }
 
+      // Look up current inventory cost for each product item to lock cost basis
+      const itemsWithCost = await Promise.all(
+        items.map(async (i: any) => {
+          let itemCost = 0;
+          if (i.productId) {
+            const inv = await tx.inventory.findUnique({
+              where: { productId_branchId: { productId: i.productId, branchId } },
+              select: { avgCost: true, currentBuyPrice: true },
+            });
+            itemCost = inv?.avgCost && inv.avgCost > 0 ? inv.avgCost : (inv?.currentBuyPrice ?? 0);
+          }
+          return {
+            ...i,
+            costPrice: itemCost > 0 ? itemCost : (Number(i.rate) * 0.75),
+          };
+        })
+      );
+
       const s = await tx.sale.create({
         data: {
           invoiceNo,
@@ -237,13 +256,14 @@ router.post('/', async (req: Request, res: Response) => {
           deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
           deliveryTime: deliveryTime || undefined,
           items: {
-            create: items.map((i: any) => ({
+            create: itemsWithCost.map((i: any) => ({
               productId: i.productId || undefined,
               itemName: i.itemName ?? i.name ?? 'Item',
               qty: Number(i.qty),
               unit: i.unit ?? 'KG',
               rate: Number(i.rate),
               amount: Number(i.qty) * Number(i.rate),
+              costPrice: Number(i.costPrice),
             })),
           },
         },
@@ -328,6 +348,20 @@ router.post('/', async (req: Request, res: Response) => {
       await tx.client.update({
         where: { id: clientId },
         data: { currentBalance: newClientBalance }
+      });
+
+      // Post to Financial Ledger automatically
+      const totalCogs = s.items.reduce((sum, item) => sum + (item.qty * item.costPrice), 0);
+      await postSaleLedger(tx, {
+        branchId,
+        saleId: s.id,
+        invoiceNo: s.invoiceNo,
+        clientId,
+        date: s.date,
+        total: s.total,
+        paid: s.paid,
+        cogs: totalCogs,
+        deliveryCharge: s.deliveryCharge,
       });
 
       return s;

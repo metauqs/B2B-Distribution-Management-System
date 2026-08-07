@@ -39,6 +39,7 @@ model Branch {
   users             User[]
   vehicles          Vehicle[]
   wastage           Wastage[]
+  financialLedgers  FinancialLedger[]
 
   @@map("branches")
 }
@@ -210,6 +211,7 @@ model SaleItem {
   unit      Unit     @default(KG)
   rate      Float
   amount    Float
+  costPrice Float    @default(0)
   returnedQty Float   @default(0)
   returnReason String?
   product   Product? @relation(fields: [productId], references: [id])
@@ -807,6 +809,32 @@ model BroadcastSettings {
   branch               Branch   @relation(fields: [branchId], references: [id])
 
   @@map("broadcast_settings")
+}
+
+model FinancialLedger {
+  id              String   @id @default(cuid())
+  branchId        String
+  date            DateTime @default(now()) @db.Timestamptz(3)
+  transactionType String
+  entryType       String   // DEBIT or CREDIT
+  accountCategory String   // REVENUE, COGS, ASSET_RECEIVABLE, ASSET_CASH, ASSET_INVENTORY, LIABILITY_PAYABLE, EXPENSE_OPERATING, EXPENSE_WASTAGE, DIRECT_COST
+  accountName     String
+  debit           Float    @default(0)
+  credit          Float    @default(0)
+  referenceType   String?  // sale, purchase, collection, expense, wastage, adjustment
+  referenceId     String?
+  referenceNo     String?
+  entityId        String?  // clientId, supplierId, productId
+  entityType      String?  // client, supplier, product
+  notes           String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  branch          Branch   @relation(fields: [branchId], references: [id])
+
+  @@index([branchId])
+  @@index([date])
+  @@index([accountCategory])
+  @@index([referenceType, referenceId])
+  @@map("financial_ledger")
 }
 
 enum UserRole {

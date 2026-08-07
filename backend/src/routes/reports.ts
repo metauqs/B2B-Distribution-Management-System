@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import prisma from '../lib/prisma';
 import { getCurrentBusinessDateRange, getBusinessDateRange } from '../lib/businessDate';
+import { getExecutiveDashboardMetrics, getFinancialAlerts } from '../lib/financialEngine';
 
 const router = Router();
 
@@ -599,4 +600,507 @@ router.get('/invoice-registry', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/reports/executive-dashboard — Comprehensive SRS Executive Dashboard
+router.get('/executive-dashboard', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const { preset = 'today', from, to } = req.query;
+
+    let fromDate: Date;
+    let toDate: Date;
+
+    const currentRange = getCurrentBusinessDateRange();
+
+    if (preset === 'today') {
+      fromDate = currentRange.start;
+      toDate = currentRange.end;
+    } else if (preset === 'yesterday') {
+      const yestStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const r = getBusinessDateRange(yestStr);
+      fromDate = r.start;
+      toDate = r.end;
+    } else if (preset === 'this_week') {
+      fromDate = new Date(Date.now() - 7 * 86400000);
+      toDate = currentRange.end;
+    } else if (preset === 'last_week') {
+      fromDate = new Date(Date.now() - 14 * 86400000);
+      toDate = new Date(Date.now() - 7 * 86400000);
+    } else if (preset === 'this_month') {
+      const now = new Date();
+      fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      toDate = currentRange.end;
+    } else if (preset === 'last_month') {
+      const now = new Date();
+      fromDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      toDate = new Date(now.getFullYear(), now.getMonth(), 0);
+    } else if (from && to) {
+      fromDate = getBusinessDateRange(String(from)).start;
+      toDate = getBusinessDateRange(String(to)).end;
+    } else {
+      fromDate = currentRange.start;
+      toDate = currentRange.end;
+    }
+
+    const [metrics, alerts] = await Promise.all([
+      getExecutiveDashboardMetrics({ branchId, from: fromDate, to: toDate }),
+      getFinancialAlerts(branchId),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        ...metrics,
+        alerts,
+      },
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/reports/executive-dashboard:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load executive dashboard' });
+  }
+});
+
+// GET /api/reports/sales/invoices — Invoice Profitability Report
+router.get('/sales/invoices', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const { from, to, clientId, status, search } = req.query;
+
+    const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
+    const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
+
+    const where: any = {
+      deletedAt: null,
+      ...(branchId ? { branchId } : {}),
+      ...(clientId ? { clientId: String(clientId) } : {}),
+      ...(status && status !== 'all' ? { status: status as any } : {}),
+      date: { gte: fromDate, lte: toDate },
+      ...(search ? {
+        OR: [
+          { invoiceNo: { contains: String(search), mode: 'insensitive' } },
+          { client: { name: { contains: String(search), mode: 'insensitive' } } }
+        ]
+      } : {}),
+    };
+
+    const sales = await prisma.sale.findMany({
+      where,
+      include: {
+        client: { select: { id: true, clientId: true, name: true, type: true } },
+        items: { include: { product: { select: { id: true, name: true, category: true } } } },
+      },
+      orderBy: { date: 'desc' },
+      take: 500,
+    });
+
+    const rows = sales.map(s => {
+      const grossSales = Number(s.subtotal);
+      const discount = Number(s.discount);
+      const deliveryCharge = Number(s.deliveryCharge);
+      const netSales = Math.max(0, grossSales - discount);
+
+      let invoiceCogs = 0;
+      const itemBreakdown = s.items.map(item => {
+        const costBasis = item.costPrice > 0 ? item.costPrice : (item.rate * 0.75);
+        const itemCogs = item.qty * costBasis;
+        invoiceCogs += itemCogs;
+
+        const itemRevenue = item.qty * item.rate;
+        const itemGrossProfit = itemRevenue - itemCogs;
+        const itemMarginPct = itemRevenue > 0 ? (itemGrossProfit / itemRevenue) * 100 : 0;
+
+        return {
+          id: item.id,
+          productId: item.productId,
+          itemName: item.itemName,
+          category: item.product?.category ?? 'VEGETABLE',
+          qty: item.qty,
+          unit: item.unit,
+          rate: item.rate,
+          amount: item.amount,
+          costPrice: costBasis,
+          itemCogs,
+          grossProfit: itemGrossProfit,
+          grossMarginPct: Number(itemMarginPct.toFixed(2)),
+        };
+      });
+
+      const grossProfit = netSales - invoiceCogs;
+      const grossMarginPct = netSales > 0 ? (grossProfit / netSales) * 100 : 0;
+      const contributionProfit = grossProfit - deliveryCharge;
+      const contributionMarginPct = netSales > 0 ? (contributionProfit / netSales) * 100 : 0;
+
+      return {
+        id: s.id,
+        invoiceNo: s.invoiceNo,
+        date: s.date.toISOString(),
+        clientName: s.client?.name ?? '—',
+        clientType: s.client?.type ?? 'RETAIL',
+        grossSales,
+        discount,
+        netSales,
+        deliveryCharge,
+        cogs: invoiceCogs,
+        grossProfit,
+        grossMarginPct: Number(grossMarginPct.toFixed(2)),
+        contributionProfit,
+        contributionMarginPct: Number(contributionMarginPct.toFixed(2)),
+        status: s.status,
+        paymentMode: s.paymentMode,
+        items: itemBreakdown,
+      };
+    });
+
+    const totals = rows.reduce((acc, r) => ({
+      grossSales: acc.grossSales + r.grossSales,
+      discount: acc.discount + r.discount,
+      netSales: acc.netSales + r.netSales,
+      deliveryCharge: acc.deliveryCharge + r.deliveryCharge,
+      cogs: acc.cogs + r.cogs,
+      grossProfit: acc.grossProfit + r.grossProfit,
+      contributionProfit: acc.contributionProfit + r.contributionProfit,
+    }), { grossSales: 0, discount: 0, netSales: 0, deliveryCharge: 0, cogs: 0, grossProfit: 0, contributionProfit: 0 });
+
+    const grossMarginPct = totals.netSales > 0 ? (totals.grossProfit / totals.netSales) * 100 : 0;
+    const contributionMarginPct = totals.netSales > 0 ? (totals.contributionProfit / totals.netSales) * 100 : 0;
+
+    return res.json({
+      success: true,
+      data: rows,
+      summary: {
+        ...totals,
+        grossMarginPct: Number(grossMarginPct.toFixed(2)),
+        contributionMarginPct: Number(contributionMarginPct.toFixed(2)),
+      },
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/reports/sales/invoices:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load invoice profitability' });
+  }
+});
+
+// GET /api/reports/sales/customers — Customer Profitability Report
+router.get('/sales/customers', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const { from, to } = req.query;
+
+    const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
+    const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
+
+    const clients = await prisma.client.findMany({
+      where: { ...(branchId ? { branchId } : {}), deletedAt: null },
+      include: {
+        sales: {
+          where: { status: { not: 'CANCELLED' }, deletedAt: null, date: { gte: fromDate, lte: toDate } },
+          include: { items: true },
+        },
+      },
+    });
+
+    const rows = clients.map(client => {
+      let grossSales = 0;
+      let discounts = 0;
+      let deliveryCharges = 0;
+      let totalCogs = 0;
+
+      for (const sale of client.sales) {
+        grossSales += sale.subtotal;
+        discounts += sale.discount;
+        deliveryCharges += sale.deliveryCharge;
+        for (const item of sale.items) {
+          const cost = item.costPrice > 0 ? item.costPrice : (item.rate * 0.75);
+          totalCogs += (item.qty * cost);
+        }
+      }
+
+      const netSales = Math.max(0, grossSales - discounts);
+      const grossProfit = netSales - totalCogs;
+      const grossMarginPct = netSales > 0 ? (grossProfit / netSales) * 100 : 0;
+      const contributionProfit = grossProfit - deliveryCharges;
+      const contributionMarginPct = netSales > 0 ? (contributionProfit / netSales) * 100 : 0;
+
+      return {
+        clientId: client.id,
+        clientCode: client.clientId ?? '—',
+        clientName: client.name,
+        type: client.type,
+        rating: client.rating,
+        invoiceCount: client.sales.length,
+        grossSales,
+        discounts,
+        netSales,
+        cogs: totalCogs,
+        grossProfit,
+        grossMarginPct: Number(grossMarginPct.toFixed(2)),
+        contributionProfit,
+        contributionMarginPct: Number(contributionMarginPct.toFixed(2)),
+        currentBalance: client.currentBalance,
+      };
+    }).filter(c => c.invoiceCount > 0 || c.currentBalance > 0).sort((a, b) => b.netSales - a.netSales);
+
+    return res.json({ success: true, data: rows });
+  } catch (err: any) {
+    console.error('Error in GET /api/reports/sales/customers:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load customer profitability' });
+  }
+});
+
+// GET /api/reports/sales/products — Product Profitability Report
+router.get('/sales/products', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const { from, to, category } = req.query;
+
+    const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
+    const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
+
+    const saleItems = await prisma.saleItem.findMany({
+      where: {
+        sale: {
+          ...(branchId ? { branchId } : {}),
+          status: { not: 'CANCELLED' },
+          deletedAt: null,
+          date: { gte: fromDate, lte: toDate },
+        },
+        ...(category && category !== 'ALL' ? { product: { category: category as any } } : {}),
+      },
+      include: {
+        product: { select: { id: true, name: true, category: true, defaultUnit: true } },
+      },
+    });
+
+    const prodMap: Record<string, {
+      productId: string;
+      name: string;
+      category: string;
+      unit: string;
+      totalQty: number;
+      grossRevenue: number;
+      totalCogs: number;
+    }> = {};
+
+    for (const item of saleItems) {
+      const pid = item.productId || item.itemName;
+      if (!prodMap[pid]) {
+        prodMap[pid] = {
+          productId: pid,
+          name: item.product?.name ?? item.itemName,
+          category: item.product?.category ?? 'VEGETABLE',
+          unit: item.unit,
+          totalQty: 0,
+          grossRevenue: 0,
+          totalCogs: 0,
+        };
+      }
+
+      const cost = item.costPrice > 0 ? item.costPrice : (item.rate * 0.75);
+      prodMap[pid].totalQty += item.qty;
+      prodMap[pid].grossRevenue += item.amount;
+      prodMap[pid].totalCogs += (item.qty * cost);
+    }
+
+    const rows = Object.values(prodMap).map(p => {
+      const grossProfit = p.grossRevenue - p.totalCogs;
+      const marginPct = p.grossRevenue > 0 ? (grossProfit / p.grossRevenue) * 100 : 0;
+      const avgSellRate = p.totalQty > 0 ? p.grossRevenue / p.totalQty : 0;
+      const avgUnitCost = p.totalQty > 0 ? p.totalCogs / p.totalQty : 0;
+
+      return {
+        ...p,
+        grossProfit,
+        marginPct: Number(marginPct.toFixed(2)),
+        avgSellRate: Number(avgSellRate.toFixed(2)),
+        avgUnitCost: Number(avgUnitCost.toFixed(2)),
+      };
+    }).sort((a, b) => b.grossRevenue - a.grossRevenue);
+
+    return res.json({ success: true, data: rows });
+  } catch (err: any) {
+    console.error('Error in GET /api/reports/sales/products:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load product profitability' });
+  }
+});
+
+// GET /api/reports/purchases/cost-analysis — Purchase Cost Analysis & Rate Trends
+router.get('/purchases/cost-analysis', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const history = await prisma.purchasePriceHistory.findMany({
+      where: branchId ? { branchId } : {},
+      include: {
+        product: { select: { id: true, name: true, category: true } },
+        supplier: { select: { id: true, name: true } },
+      },
+      orderBy: { date: 'desc' },
+      take: 200,
+    });
+
+    const rows = history.map(h => ({
+      id: h.id,
+      date: h.date.toISOString(),
+      productName: h.product.name,
+      category: h.product.category,
+      supplierName: h.supplier?.name ?? 'Mandi / General',
+      buyPrice: h.buyPrice,
+      qty: h.qty,
+      totalSpent: h.buyPrice * h.qty,
+    }));
+
+    return res.json({ success: true, data: rows });
+  } catch (err: any) {
+    console.error('Error in GET /api/reports/purchases/cost-analysis:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load purchase cost analysis' });
+  }
+});
+
+// GET /api/reports/inventory/valuation — Inventory Valuation by Avg Cost & Buy Price
+router.get('/inventory/valuation', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const inventory = await prisma.inventory.findMany({
+      where: branchId ? { branchId } : {},
+      include: {
+        product: { select: { id: true, name: true, category: true, defaultUnit: true, minStock: true } },
+      },
+      orderBy: { product: { name: 'asc' } },
+    });
+
+    const rows = inventory.map(inv => {
+      const avgCostValuation = Math.max(0, inv.qty) * inv.avgCost;
+      const latestBuyValuation = Math.max(0, inv.qty) * (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : inv.avgCost);
+
+      return {
+        id: inv.id,
+        productId: inv.productId,
+        productName: inv.product.name,
+        category: inv.product.category,
+        unit: inv.product.defaultUnit,
+        qty: inv.qty,
+        minStock: inv.product.minStock,
+        avgCost: inv.avgCost,
+        currentBuyPrice: inv.currentBuyPrice,
+        previousBuyPrice: inv.previousBuyPrice,
+        avgCostValuation,
+        latestBuyValuation,
+        lastPurchaseDate: inv.lastPurchaseDate ? inv.lastPurchaseDate.toISOString() : null,
+      };
+    });
+
+    const totalAvgCostValue = rows.reduce((s, r) => s + r.avgCostValuation, 0);
+    const totalLatestBuyValue = rows.reduce((s, r) => s + r.latestBuyValuation, 0);
+
+    return res.json({
+      success: true,
+      data: rows,
+      summary: {
+        totalItems: rows.length,
+        totalQty: rows.reduce((s, r) => s + r.qty, 0),
+        totalAvgCostValue,
+        totalLatestBuyValue,
+      },
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/reports/inventory/valuation:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load inventory valuation' });
+  }
+});
+
+// GET /api/reports/finance/balance-sheet — Balance Sheet Statement
+router.get('/finance/balance-sheet', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const bWhere = branchId ? { branchId } : {};
+
+    const [cashAccts, bankAccts, receivablesAgg, inventoryItems, suppliers, suppPurchases, suppPayments] = await Promise.all([
+      prisma.cashAccount.findMany({ where: bWhere }),
+      prisma.bankAccount.findMany({ where: bWhere }),
+      prisma.client.aggregate({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, _sum: { currentBalance: true } }),
+      prisma.inventory.findMany({ where: bWhere }),
+      prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, name: true, openingBalance: true } }),
+      prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
+      prisma.supplierPayment.groupBy({ by: ['supplierId'], where: bWhere, _sum: { amount: true } }),
+    ]);
+
+    const cashTotal = cashAccts.reduce((s, c) => s + c.balance, 0);
+    const bankTotal = bankAccts.reduce((s, b) => s + b.balance, 0);
+    const totalCashBank = cashTotal + bankTotal;
+    const receivables = receivablesAgg._sum.currentBalance ?? 0;
+
+    const inventoryAssetValue = inventoryItems.reduce((s, inv) => {
+      const rate = inv.avgCost > 0 ? inv.avgCost : inv.currentBuyPrice;
+      return s + (Math.max(0, inv.qty) * rate);
+    }, 0);
+
+    const totalAssets = totalCashBank + receivables + inventoryAssetValue;
+
+    const suppPurchMap = Object.fromEntries(suppPurchases.map(x => [x.supplierId, x._sum.total ?? 0]));
+    const suppPayMap = Object.fromEntries(suppPayments.map(x => [x.supplierId, x._sum.amount ?? 0]));
+
+    const payables = suppliers.reduce((sum, sup) => {
+      const bal = sup.openingBalance + (suppPurchMap[sup.id] ?? 0) - (suppPayMap[sup.id] ?? 0);
+      return sum + Math.max(0, bal);
+    }, 0);
+
+    const totalLiabilities = payables;
+    const equity = totalAssets - totalLiabilities;
+
+    return res.json({
+      success: true,
+      data: {
+        assets: {
+          cashAccounts: cashAccts.map(c => ({ name: c.name, balance: c.balance })),
+          bankAccounts: bankAccts.map(b => ({ name: `${b.bankName ?? ''} - ${b.name}`, balance: b.balance })),
+          totalCashBank,
+          receivables,
+          inventoryAssetValue,
+          totalAssets,
+        },
+        liabilities: {
+          payables,
+          totalLiabilities,
+        },
+        equity: {
+          retainedEarnings: equity,
+          totalEquity: equity,
+        },
+      },
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/reports/finance/balance-sheet:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load balance sheet' });
+  }
+});
+
+// POST /api/reports/backfill — Safe historical backfill for SaleItem costPrice
+router.post('/backfill', async (req: Request, res: Response) => {
+  try {
+    const saleItems = await prisma.saleItem.findMany({
+      where: { costPrice: 0 },
+      include: { product: { select: { id: true, inventory: { select: { avgCost: true, currentBuyPrice: true } } } } },
+    });
+
+    let updatedCount = 0;
+    for (const item of saleItems) {
+      let cost = 0;
+      if (item.product?.inventory && item.product.inventory.length > 0) {
+        const inv = item.product.inventory[0];
+        cost = inv.avgCost > 0 ? inv.avgCost : inv.currentBuyPrice;
+      }
+      if (cost <= 0) cost = item.rate * 0.75;
+
+      await prisma.saleItem.update({
+        where: { id: item.id },
+        data: { costPrice: cost },
+      });
+      updatedCount++;
+    }
+
+    return res.json({ success: true, message: `Successfully backfilled ${updatedCount} historical sale items with cost basis.` });
+  } catch (err: any) {
+    console.error('Error in POST /api/reports/backfill:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to execute backfill' });
+  }
+});
+
 export default router;
+

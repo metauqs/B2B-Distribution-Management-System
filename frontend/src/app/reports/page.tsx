@@ -4,513 +4,784 @@ import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
-import { SkeletonKPI, SkeletonChart, SkeletonTable } from '@/components/ui/Skeleton';
-import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
+import { fetchWithCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import Icon from '@mdi/react';
+import {
+  mdiViewDashboard,
+  mdiReceiptText,
+  mdiCart,
+  mdiPackageVariantClosed,
+  mdiScaleBalance,
+  mdiAlertCircle,
+  mdiDownload,
+  mdiPrinter,
+  mdiFilterVariant,
+  mdiTrendingUp,
+  mdiTrendingDown,
+  mdiAccountGroup,
+  mdiRefresh,
+  mdiFormatListBulleted,
+  mdiShieldAlert,
+} from '@mdi/js';
 
-type Tab = 'Overview' | 'Sales' | 'Purchases' | 'Collections' | 'Inventory' | 'Expenses' | 'Aging' | 'Cash Flow';
+type MainCategory = 'Executive Dashboard' | 'Sales' | 'Purchases' | 'Inventory' | 'Finance' | 'Management Analytics';
 
-interface PnlSummary {
-  revenue:        number;
-  cogs:           number;
-  transport:      number;
-  discounts:      number;
-  expenses:       number;
-  collected:      number;
-  grossProfit:    number;
-  netProfit:      number;
-  grossMarginPct: number;
-  netMarginPct:   number;
-  salesCount:     number;
-  purchasesCount: number;
-  wastageCount:   number;
-}
+type SalesSubTab = 'Invoice Profitability' | 'Customer Profitability' | 'Product Profitability' | 'Sales Registry';
+type PurchaseSubTab = 'Cost Analysis' | 'Purchase Summary';
+type InventorySubTab = 'Inventory Valuation' | 'Wastage Loss';
+type FinanceSubTab = 'Profit & Loss' | 'Balance Sheet' | 'Cash Flow' | 'Receivables Aging';
+type AnalyticsSubTab = 'Financial Risk Alerts' | 'Working Capital';
 
-interface ExpenseCategory { category: string; total: number; }
-interface TrendEntry      { date: string; sales: number; purchases: number; expenses: number; profit: number; }
-interface TopItemEntry    { name: string; total: number; qty: number; }
-
-interface PnlReport {
-  period:             { from: string; to: string };
-  summary:            PnlSummary;
-  expensesByCategory: ExpenseCategory[];
-  trend:              TrendEntry[];
-  topItems:           TopItemEntry[];
-}
-
-interface CashFlowReport {
-  period:      { from: string; to: string };
-  inflow:      { collections: number; total: number };
-  outflow:     { purchases: number; expenses: number; supplierPayments: number; total: number };
-  netCashFlow: number;
-  trend:       { date: string; inflow: number; outflow: number; net: number }[];
-}
-
-interface AgingClient { id: string; clientId?: string | null; name: string; phone?: string; rating: string; current: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; total: number; }
-interface AgingReport {
-  clients: AgingClient[];
-  totals:  { current: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; total: number };
+interface ExecutiveData {
+  sales: {
+    grossSales: number;
+    discounts: number;
+    netSales: number;
+    totalRevenue: number;
+    cashSales: number;
+    creditSales: number;
+    deliveryCharge: number;
+    salesCount: number;
+    avgOrderValue: number;
+    returnedQty: number;
+    returnedValue: number;
+  };
+  cogs: number;
+  profitability: {
+    grossProfit: number;
+    grossMarginPct: number;
+    contributionProfit: number;
+    contributionMarginPct: number;
+    totalExpenses: number;
+    netOperatingProfit: number;
+    netMarginPct: number;
+  };
+  balanceSheetSummary: {
+    cashBankTotal: number;
+    receivables: number;
+    inventoryValue: number;
+    totalAssets: number;
+    payables: number;
+    totalLiabilities: number;
+    workingCapital: number;
+  };
+  inventoryKpis: {
+    totalValue: number;
+    totalCount: number;
+    lowStockCount: number;
+    wastageCount: number;
+    wastageQty: number;
+  };
+  alerts: Array<{ id: string; type: 'DANGER' | 'WARNING' | 'INFO'; title: string; message: string }>;
 }
 
 export default function ReportsPage() {
-  const [rState, setRState] = usePreservedState('reports', {
-    tab: 'Overview' as Tab,
+  const [rState, setRState] = usePreservedState('reports_v2', {
+    mainTab: 'Executive Dashboard' as MainCategory,
+    salesTab: 'Invoice Profitability' as SalesSubTab,
+    purchaseTab: 'Cost Analysis' as PurchaseSubTab,
+    inventoryTab: 'Inventory Valuation' as InventorySubTab,
+    financeTab: 'Profit & Loss' as FinanceSubTab,
+    analyticsTab: 'Financial Risk Alerts' as AnalyticsSubTab,
+    datePreset: 'this_month',
     from: dateOffset(-30),
     to: todayInputDate(),
+    searchQuery: '',
   });
 
-  const tab = rState.tab;
-  const setTab = (t: Tab) => setRState({ tab: t });
+  const { mainTab, salesTab, purchaseTab, inventoryTab, financeTab, analyticsTab, datePreset, from, to, searchQuery } = rState;
 
-  const from = rState.from;
-  const setFrom = (f: string) => setRState({ from: f });
+  const setMainTab = (tab: MainCategory) => setRState({ mainTab: tab });
+  const setSalesTab = (t: SalesSubTab) => setRState({ salesTab: t });
+  const setPurchaseTab = (t: PurchaseSubTab) => setRState({ purchaseTab: t });
+  const setInventoryTab = (t: InventorySubTab) => setRState({ inventoryTab: t });
+  const setFinanceTab = (t: FinanceSubTab) => setRState({ financeTab: t });
+  const setAnalyticsTab = (t: AnalyticsSubTab) => setRState({ analyticsTab: t });
 
-  const to = rState.to;
-  const setTo = (t: string) => setRState({ to: t });
-
-  const [pnl,      setPnl]      = useState<PnlReport | null>(null);
-  const [cashFlow, setCashFlow] = useState<CashFlowReport | null>(null);
-  const [aging,    setAging]    = useState<AgingReport | null>(null);
-  const [loading,  setLoading]  = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [execData, setExecData] = useState<ExecutiveData | null>(null);
+  const [invoiceReport, setInvoiceReport] = useState<any>(null);
+  const [customerReport, setCustomerReport] = useState<any[]>([]);
+  const [productReport, setProductReport] = useState<any[]>([]);
+  const [valuationReport, setValuationReport] = useState<any>(null);
+  const [balanceSheet, setBalanceSheet] = useState<any>(null);
+  const [costAnalysis, setCostAnalysis] = useState<any[]>([]);
+  const [selectedInvoiceModal, setSelectedInvoiceModal] = useState<any | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
 
-  const loadReports = useCallback(async (showLoadingSpinner = false) => {
-    if (showLoadingSpinner && (!pnl || !cashFlow || !aging)) setLoading(true);
+  const loadData = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setLoading(true);
     try {
-      const [pd, cfd, agd] = await Promise.all([
-        fetchWithCache<PnlReport>(`/api/reports/pnl?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showLoadingSpinner }),
-        fetchWithCache<CashFlowReport>(`/api/reports/cashflow?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showLoadingSpinner }),
-        fetchWithCache<AgingReport>('/api/reports/aging', { ttl: TTL_MEDIUM, forceRefresh: !showLoadingSpinner }),
+      const [execRes, invProfRes, custRes, prodRes, valRes, bsRes, costRes] = await Promise.all([
+        fetchWithCache<{ success: boolean; data: ExecutiveData }>(`/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
+        fetchWithCache<{ success: boolean; data: any[]; summary: any }>(`/api/reports/sales/invoices?from=${from}&to=${to}&search=${encodeURIComponent(searchQuery)}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
+        fetchWithCache<{ success: boolean; data: any[] }>(`/api/reports/sales/customers?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
+        fetchWithCache<{ success: boolean; data: any[] }>(`/api/reports/sales/products?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
+        fetchWithCache<{ success: boolean; data: any[]; summary: any }>(`/api/reports/inventory/valuation`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
+        fetchWithCache<{ success: boolean; data: any }>(`/api/reports/finance/balance-sheet`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
+        fetchWithCache<{ success: boolean; data: any[] }>(`/api/reports/purchases/cost-analysis`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
       ]);
-      if (pd)  setPnl(pd);
-      if (cfd) setCashFlow(cfd);
-      if (agd) setAging(agd);
+
+      if (execRes?.data) setExecData(execRes.data);
+      if (invProfRes) setInvoiceReport(invProfRes);
+      if (custRes?.data) setCustomerReport(custRes.data);
+      if (prodRes?.data) setProductReport(prodRes.data);
+      if (valRes) setValuationReport(valRes);
+      if (bsRes?.data) setBalanceSheet(bsRes.data);
+      if (costRes?.data) setCostAnalysis(costRes.data);
+
       setLastSyncTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    } catch {
-      // fallback
+    } catch (err) {
+      console.error('Failed to fetch reports:', err);
     } finally {
       setLoading(false);
     }
-  }, [from, to, pnl, cashFlow, aging]);
+  }, [datePreset, from, to, searchQuery]);
 
-  // Initial load & date filter change
-  useEffect(() => { loadReports(true); }, [loadReports]);
+  useEffect(() => { loadData(true); }, [loadData]);
 
-  // Real-Time Sync: Periodic 10-second polling & Window Focus sync
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadReports(false);
-    }, 10000);
+  // Handle Date Preset Changes
+  const handlePresetChange = (preset: string) => {
+    if (preset === 'today') {
+      const today = todayInputDate();
+      setRState({ datePreset: preset, from: today, to: today });
+    } else if (preset === 'yesterday') {
+      const yest = dateOffset(-1);
+      setRState({ datePreset: preset, from: yest, to: yest });
+    } else if (preset === 'this_week') {
+      setRState({ datePreset: preset, from: dateOffset(-7), to: todayInputDate() });
+    } else if (preset === 'this_month') {
+      setRState({ datePreset: preset, from: dateOffset(-30), to: todayInputDate() });
+    } else {
+      setRState({ datePreset: preset });
+    }
+  };
 
-    const onFocus = () => {
-      loadReports(false);
-    };
+  // Export current table view to CSV
+  const exportToCSV = () => {
+    let headers: string[] = [];
+    let rows: string[][] = [];
+    let filename = `financial_report_${mainTab.toLowerCase().replace(/\s+/g, '_')}.csv`;
 
-    window.addEventListener('focus', onFocus);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [loadReports]);
+    if (mainTab === 'Sales' && salesTab === 'Invoice Profitability' && invoiceReport?.data) {
+      filename = `invoice_profitability_${from}_to_${to}.csv`;
+      headers = ['Invoice No', 'Date', 'Customer', 'Gross Sales', 'Discount', 'Net Sales', 'COGS', 'Gross Profit', 'Margin %', 'Contribution Profit', 'Status'];
+      rows = invoiceReport.data.map((r: any) => [
+        r.invoiceNo, fmtDate(r.date), `"${r.clientName}"`, r.grossSales, r.discount, r.netSales, r.cogs, r.grossProfit, `${r.grossMarginPct}%`, r.contributionProfit, r.status
+      ]);
+    } else if (mainTab === 'Sales' && salesTab === 'Customer Profitability') {
+      filename = `customer_profitability_${from}_to_${to}.csv`;
+      headers = ['Customer', 'Type', 'Invoices', 'Gross Sales', 'Discounts', 'Net Sales', 'COGS', 'Gross Profit', 'Margin %', 'Balance Due'];
+      rows = customerReport.map(r => [
+        `"${r.clientName}"`, r.type, r.invoiceCount, r.grossSales, r.discounts, r.netSales, r.cogs, r.grossProfit, `${r.grossMarginPct}%`, r.currentBalance
+      ]);
+    } else if (mainTab === 'Sales' && salesTab === 'Product Profitability') {
+      filename = `product_profitability_${from}_to_${to}.csv`;
+      headers = ['Product', 'Category', 'Qty Sold', 'Revenue', 'Total COGS', 'Gross Profit', 'Margin %', 'Avg Sell Rate', 'Avg Unit Cost'];
+      rows = productReport.map(r => [
+        `"${r.name}"`, r.category, r.totalQty, r.grossRevenue, r.totalCogs, r.grossProfit, `${r.marginPct}%`, r.avgSellRate, r.avgUnitCost
+      ]);
+    } else if (mainTab === 'Inventory') {
+      filename = `inventory_valuation.csv`;
+      headers = ['Product', 'Category', 'Stock Qty', 'Avg Cost', 'Latest Buy Rate', 'Avg Cost Valuation', 'Latest Buy Valuation'];
+      rows = (valuationReport?.data || []).map((r: any) => [
+        `"${r.productName}"`, r.category, r.qty, r.avgCost, r.currentBuyPrice, r.avgCostValuation, r.latestBuyValuation
+      ]);
+    }
 
-  // Max value calculators for custom CSS bar charts
-  const maxVegTotal = (pnl?.topItems && pnl.topItems.length > 0) ? Math.max(...pnl.topItems.map(x => x.total), 1) : 1;
-  const maxCatExp   = (pnl?.expensesByCategory && pnl.expensesByCategory.length > 0) ? Math.max(...pnl.expensesByCategory.map(x => x.total), 1) : 1;
+    if (rows.length === 0) return;
 
-  const RATING_EMOJI: Record<string, string> = { GREEN: '🟢', YELLOW: '🟡', RED: '🔴', NEW: '⚪' };
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <DashboardLayout>
-      {/* Date Range Selector & Real-Time Sync Badge */}
-      <div className="va-panel" style={{ padding: '14px 20px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+      {/* Top Filter & Toolbar Bar */}
+      <div className="va-panel" style={{ padding: '16px 20px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748B' }}>From</label>
-              <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 13, fontWeight: 600 }} />
+          
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F8FAFC', padding: '4px 8px', border: '1px solid #CBD5E1', borderRadius: 8 }}>
+              <Icon path={mdiFilterVariant} size={0.7} color="#64748B" />
+              <select
+                value={datePreset}
+                onChange={e => handlePresetChange(e.target.value)}
+                style={{ background: 'transparent', border: 'none', fontSize: 13, fontWeight: 700, color: '#1E293B', cursor: 'pointer', outline: 'none' }}
+              >
+                <option value="today">Today (Active Business Day)</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="this_week">This Week</option>
+                <option value="this_month">This Month</option>
+                <option value="custom">Custom Range</option>
+              </select>
             </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748B' }}>To</label>
-              <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 13, fontWeight: 600 }} />
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>From</span>
+              <input type="date" value={from} onChange={e => setRState({ from: e.target.value, datePreset: 'custom' })} style={{ padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 13, fontWeight: 600 }} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>To</span>
+              <input type="date" value={to} onChange={e => setRState({ to: e.target.value, datePreset: 'custom' })} style={{ padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 13, fontWeight: 600 }} />
             </div>
-            <button className="va-btn small" style={{ fontWeight: 700, borderRadius: '6px' }} onClick={() => loadReports(true)}>↻ Refresh Financials</button>
+
+            <input
+              type="text"
+              placeholder="Search invoice or client..."
+              value={searchQuery}
+              onChange={e => setRState({ searchQuery: e.target.value })}
+              style={{ padding: '6px 12px', border: '1px solid #CBD5E1', borderRadius: 6, fontSize: 13, width: 180 }}
+            />
+
+            <button className="va-btn small" style={{ fontWeight: 700, borderRadius: '6px', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => loadData(true)}>
+              <Icon path={mdiRefresh} size={0.65} /> Refresh
+            </button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F0FDF4', border: '1px solid #DCFCE7', padding: '6px 12px', borderRadius: '20px' }}>
-            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#16A34A', boxShadow: '0 0 0 3px rgba(22, 163, 74, 0.2)' }} />
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#166534' }}>
-              Real-Time Sync Active {lastSyncTime && `(Last updated: ${lastSyncTime})`}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button className="va-btn outline small" style={{ fontWeight: 700, borderRadius: '6px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={exportToCSV}>
+              <Icon path={mdiDownload} size={0.7} color="#2563EB" /> Export CSV
+            </button>
+
+            <button className="va-btn outline small" style={{ fontWeight: 700, borderRadius: '6px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => window.print()}>
+              <Icon path={mdiPrinter} size={0.7} color="#475569" /> Print
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F0FDF4', border: '1px solid #DCFCE7', padding: '6px 12px', borderRadius: '20px' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16A34A', boxShadow: '0 0 0 3px rgba(22, 163, 74, 0.2)' }} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#166534' }}>
+                Real-Time {lastSyncTime && `(${lastSyncTime})`}
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="va-tabs-inline">
-        {(['Overview', 'Sales', 'Purchases', 'Cash Flow', 'Aging', 'Expenses'] as Tab[]).map(t => (
-          <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>
+      {/* Main Financial Module Tabs */}
+      <div className="va-tabs-inline" style={{ marginTop: 12, borderBottom: '2px solid #E2E8F0', paddingBottom: 0 }}>
+        {(['Executive Dashboard', 'Sales', 'Purchases', 'Inventory', 'Finance', 'Management Analytics'] as MainCategory[]).map(t => (
+          <button
+            key={t}
+            className={mainTab === t ? 'active' : ''}
+            onClick={() => setMainTab(t)}
+            style={{ fontWeight: 800, padding: '10px 18px', fontSize: 14 }}
+          >
+            {t}
+          </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="va-loading">Compiling database financials…</div>
+        <div className="va-loading" style={{ margin: '40px 0', textAlign: 'center' }}>Compiling Financial Intelligence Layer…</div>
       ) : (
-        <>
-          {/* ─── Overview ─── */}
-          {tab === 'Overview' && pnl && (
-            <>
-              <div className="va-cards">
-                <div className="va-card accent">
-                  <div className="label">Total Revenue</div>
-                  <div className="value">{fmtMoney(pnl.summary.revenue)}</div>
-                  <div className="foot">{pnl.summary.salesCount} invoices</div>
-                </div>
-                <div className="va-card">
-                  <div className="label">Net Profit</div>
-                  <div className={`value ${pnl.summary.netProfit < 0 ? 'neg' : ''}`}>{fmtMoney(pnl.summary.netProfit)}</div>
-                  <div className="foot">{pnl.summary.netMarginPct}% net margin</div>
-                </div>
-                <div className="va-card">
-                  <div className="label">Receivables Dues</div>
-                  <div className="value" style={{ color: (aging?.totals.total ?? 0) > 0 ? 'var(--clay)' : 'var(--ok)' }}>
-                    {fmtMoney(aging?.totals.total ?? 0)}
-                  </div>
-                  <div className="foot">overdue client balances</div>
-                </div>
-                <div className="va-card">
-                  <div className="label">Collection Rate</div>
-                  <div className="value">
-                    {pnl.summary.revenue > 0 ? ((pnl.summary.collected / pnl.summary.revenue) * 100).toFixed(0) : 0}%
-                  </div>
-                  <div className="foot">of revenue collected</div>
-                </div>
-              </div>
+        <div style={{ marginTop: 16 }}>
 
-              {/* Profit Loss Summary sheet */}
-              <div className="va-panel">
-                <div className="va-panel-head"><h3>Profit &amp; Loss Statement</h3></div>
-                
-                {/* Desktop Table View */}
-                <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                  <table className="va-table">
-                    <tbody>
-                      <tr>
-                        <td><strong>Gross Revenue</strong> (Subtotal - Discount)</td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(pnl.summary.revenue)}</td>
-                      </tr>
-                      <tr>
-                        <td style={{ paddingLeft: 24, color: 'var(--muted)' }}>Discounts Given</td>
-                        <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(pnl.summary.discounts)}</td>
-                      </tr>
-                      <tr style={{ borderTop: '1.5px solid var(--line)' }}>
-                        <td><strong>Cost of Goods Sold (COGS)</strong></td>
-                        <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)' }}>-{fmtMoney(pnl.summary.cogs)}</td>
-                      </tr>
-                      <tr>
-                        <td style={{ paddingLeft: 24, color: 'var(--muted)' }}>Transport Costs</td>
-                        <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{pnl.summary.transport > 0 ? fmtMoney(pnl.summary.transport) : '—'}</td>
-                      </tr>
-                      <tr style={{ background: 'var(--line-soft)', fontWeight: 700 }}>
-                        <td>Gross Profit</td>
-                        <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{fmtMoney(pnl.summary.grossProfit)} ({pnl.summary.grossMarginPct}%)</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Operating Expenses</strong></td>
-                        <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)' }}>-{fmtMoney(pnl.summary.expenses)}</td>
-                      </tr>
-                      <tr style={{ background: 'var(--forest)', color: 'var(--cream)', fontWeight: 700, fontSize: 15 }}>
-                        <td>Net Profit</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(pnl.summary.netProfit)} ({pnl.summary.netMarginPct}%)</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Mobile Card List View */}
-                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '8px' }}>
-                  <MobileCardBox title="Revenue &amp; COGS Summary" bg="#F8FAFC" borderColor="#CBD5E1">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <MobileCardRow label="Gross Revenue" value={fmtMoney(pnl.summary.revenue)} isMono />
-                      <MobileCardRow label="Discounts Given" value={`-${fmtMoney(pnl.summary.discounts)}`} valueColor="#991B1B" isMono />
-                      <MobileCardRow label="Cost of Goods Sold (COGS)" value={`-${fmtMoney(pnl.summary.cogs)}`} valueColor="#991B1B" isMono />
-                      <MobileCardRow label="Transport Costs" value={pnl.summary.transport > 0 ? fmtMoney(pnl.summary.transport) : '—'} isMono />
-                      
-                      <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
-                      
-                      <MobileCardRow 
-                        label="Gross Profit" 
-                        value={`${fmtMoney(pnl.summary.grossProfit)} (${pnl.summary.grossMarginPct}%)`} 
-                        valueColor="#166534" 
-                        isMono 
-                      />
-                      <MobileCardRow label="Operating Expenses" value={`-${fmtMoney(pnl.summary.expenses)}`} valueColor="#991B1B" isMono />
-                      
-                      <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
-                      
-                      <div style={{
-                        background: '#1E5E3A',
-                        color: '#FFFFFF',
-                        padding: '12px 14px',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        fontWeight: 700,
-                        marginTop: '4px'
-                      }}>
-                        <span>Net Profit</span>
-                        <span className="mono" style={{ fontSize: '15px' }}>
-                          {fmtMoney(pnl.summary.netProfit)} ({pnl.summary.netMarginPct}%)
-                        </span>
+          {/* ══════════════════ 1. EXECUTIVE DASHBOARD ══════════════════ */}
+          {mainTab === 'Executive Dashboard' && execData && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              
+              {/* Financial Risk Alerts Banner */}
+              {execData.alerts && execData.alerts.length > 0 && (
+                <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 12, padding: '14px 18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: '#991B1B', fontWeight: 800, fontSize: 14 }}>
+                    <Icon path={mdiShieldAlert} size={0.85} color="#DC2626" />
+                    <span>Active Financial Risk &amp; Margin Alerts ({execData.alerts.length})</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {execData.alerts.map(a => (
+                      <div key={a.id} style={{ fontSize: 13, color: '#7F1D1D', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <strong style={{ textTransform: 'uppercase', fontSize: 11, background: '#FEE2E2', padding: '2px 6px', borderRadius: 4, color: '#991B1B' }}>{a.type}</strong>
+                        <span><strong>{a.title}:</strong> {a.message}</span>
                       </div>
-                    </div>
-                  </MobileCardBox>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* ─── Sales tab ─── */}
-          {tab === 'Sales' && pnl && (
-            <div className="va-panel">
-              <div className="va-panel-head"><h3>Top Vegetables &amp; Fruits Revenue</h3></div>
-              {!pnl?.topItems || pnl.topItems.length === 0 ? (
-                <div className="va-empty">No sales entries for this range</div>
-              ) : (
-                pnl.topItems.map(item => (
-                  <div className="va-bar-row" key={item.name}>
-                    <div className="va-bar-label"><strong>{item.name}</strong></div>
-                    <div className="va-bar-track">
-                      <div className="va-bar-fill" style={{ width: `${(item.total / maxVegTotal) * 100}%` }} />
-                    </div>
-                    <div className="va-bar-val mono" style={{ fontWeight: 600 }}>{fmtMoney(item.total)} <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>({item.qty.toFixed(0)} units)</span></div>
+                    ))}
                   </div>
-                ))
+                </div>
               )}
-            </div>
-          )}
 
-          {/* ─── Purchases tab ─── */}
-          {tab === 'Purchases' && pnl && (
-            <div className="va-panel">
-              <div className="va-panel-head"><h3>COGS Analytics</h3></div>
-              <div className="va-cards" style={{ marginBottom: 18 }}>
-                <div className="va-card">
-                  <div className="label">Cost of Mandi Purchases</div>
-                  <div className="value">{fmtMoney(pnl.summary.cogs)}</div>
-                  <div className="foot">{pnl.summary.purchasesCount} sheets</div>
-                </div>
-                <div className="va-card">
-                  <div className="label">Transport Cost</div>
-                  <div className="value">{pnl.summary.transport > 0 ? fmtMoney(pnl.summary.transport) : 'Rs 0'}</div>
-                  <div className="foot">mandi delivery log</div>
-                </div>
-                <div className="va-card">
-                  <div className="label">% of Revenue</div>
-                  <div className="value">{pnl.summary.revenue > 0 ? ((pnl.summary.cogs / pnl.summary.revenue) * 100).toFixed(0) : 0}%</div>
-                  <div className="foot">purchase ratio</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ─── Cash Flow tab ─── */}
-          {tab === 'Cash Flow' && cashFlow && (
-            <>
+              {/* Real-time Executive KPI Grid */}
               <div className="va-cards">
                 <div className="va-card accent">
-                  <div className="label">Cash Inflow</div>
-                  <div className="value" style={{ color: 'var(--ok)' }}>{fmtMoney(cashFlow.inflow?.total ?? 0)}</div>
-                  <div className="foot">collections received</div>
+                  <div className="label">Gross Sales</div>
+                  <div className="value">{fmtMoney(execData.sales.grossSales)}</div>
+                  <div className="foot">{execData.sales.salesCount} Invoices | Net: {fmtMoney(execData.sales.netSales)}</div>
                 </div>
+
                 <div className="va-card">
-                  <div className="label">Cash Outflow</div>
-                  <div className="value" style={{ color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow?.total ?? 0)}</div>
-                  <div className="foot">purchases + expenses + supplier payments</div>
+                  <div className="label">Cost of Goods Sold (COGS)</div>
+                  <div className="value neg">{fmtMoney(execData.cogs)}</div>
+                  <div className="foot">Weighted Avg Cost Basis</div>
                 </div>
+
                 <div className="va-card">
-                  <div className="label">Net Cash Flow</div>
-                  <div className={`value ${(cashFlow.netCashFlow ?? 0) < 0 ? 'neg' : ''}`}>{fmtMoney(cashFlow.netCashFlow ?? 0)}</div>
-                  <div className="foot">operational net gain</div>
+                  <div className="label">Gross Profit</div>
+                  <div className="value" style={{ color: '#15803D' }}>{fmtMoney(execData.profitability.grossProfit)}</div>
+                  <div className="foot">Gross Margin: <strong>{execData.profitability.grossMarginPct}%</strong></div>
+                </div>
+
+                <div className="va-card">
+                  <div className="label">Contribution Profit</div>
+                  <div className="value" style={{ color: '#0369A1' }}>{fmtMoney(execData.profitability.contributionProfit)}</div>
+                  <div className="foot">After Delivery Freight ({fmtMoney(execData.sales.deliveryCharge)})</div>
+                </div>
+
+                <div className="va-card">
+                  <div className="label">Net Operating Profit</div>
+                  <div className={`value ${execData.profitability.netOperatingProfit < 0 ? 'neg' : ''}`}>
+                    {fmtMoney(execData.profitability.netOperatingProfit)}
+                  </div>
+                  <div className="foot">Net Margin: <strong>{execData.profitability.netMarginPct}%</strong></div>
+                </div>
+
+                <div className="va-card">
+                  <div className="label">Working Capital</div>
+                  <div className="value" style={{ color: execData.balanceSheetSummary.workingCapital >= 0 ? '#166534' : '#991B1B' }}>
+                    {fmtMoney(execData.balanceSheetSummary.workingCapital)}
+                  </div>
+                  <div className="foot">Current Assets - Payables</div>
                 </div>
               </div>
 
-              {/* Cash Flow Statement */}
-              <div className="va-panel">
-                <div className="va-panel-head"><h3>Cash Inflows and Outflows</h3></div>
-                
-                {/* Desktop Table View */}
-                <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+              {/* Financial Position & Inventory Overview Panel */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+                <div className="va-panel">
+                  <div className="va-panel-head">
+                    <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Icon path={mdiScaleBalance} size={0.8} color="#0EA5E9" /> Balance Sheet Asset Summary
+                    </h3>
+                  </div>
                   <table className="va-table">
                     <tbody>
-                      <tr style={{ background: 'var(--line-soft)', fontWeight: 600 }}>
-                        <td>Operating Cash Inflow</td>
-                        <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>+{fmtMoney(cashFlow.inflow?.total ?? 0)}</td>
+                      <tr>
+                        <td>Cash &amp; Bank Balances</td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary.cashBankTotal)}</td>
                       </tr>
                       <tr>
-                        <td style={{ paddingLeft: 24 }}>Client Collections</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.inflow?.collections ?? 0)}</td>
-                      </tr>
-                      <tr style={{ background: 'var(--line-soft)', fontWeight: 600, borderTop: '1.5px solid var(--line)' }}>
-                        <td>Operating Cash Outflow</td>
-                        <td className="mono" style={{ textAlign: 'right', color: 'var(--danger)' }}>-{fmtMoney(cashFlow.outflow?.total ?? 0)}</td>
+                        <td>Accounts Receivable (Client Dues)</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#B45309', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary.receivables)}</td>
                       </tr>
                       <tr>
-                        <td style={{ paddingLeft: 24 }}>Supplier Mandi Payments (Cash/Paid)</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.purchases ?? 0)}</td>
+                        <td>Inventory Valuation (Avg Cost)</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#16A34A', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary.inventoryValue)}</td>
                       </tr>
-                      <tr>
-                        <td style={{ paddingLeft: 24 }}>Operating &amp; Overhead Expenses</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.expenses ?? 0)}</td>
+                      <tr style={{ background: '#F8FAFC', fontWeight: 800 }}>
+                        <td>Total Current Assets</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#0369A1' }}>{fmtMoney(execData.balanceSheetSummary.totalAssets)}</td>
                       </tr>
-                      <tr>
-                        <td style={{ paddingLeft: 24 }}>Supplier Balance Payments</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.outflow?.supplierPayments ?? 0)}</td>
-                      </tr>
-                      <tr style={{ background: 'var(--forest)', color: 'var(--cream)', fontWeight: 700, fontSize: 15 }}>
-                        <td>Net Cash Position Increase/Decrease</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(cashFlow.netCashFlow ?? 0)}</td>
+                      <tr style={{ borderTop: '2px solid #E2E8F0' }}>
+                        <td>Accounts Payable (Supplier Dues)</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B', fontWeight: 700 }}>-{fmtMoney(execData.balanceSheetSummary.payables)}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
 
-                {/* Mobile Card List View */}
-                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '8px' }}>
-                  <MobileCardBox title="Cash Flow Breakdown" bg="#F8FAFC" borderColor="#CBD5E1">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <MobileCardRow label="Operating Cash Inflow" value={`+${fmtMoney(cashFlow.inflow?.total ?? 0)}`} valueColor="#166534" isMono />
-                      <MobileCardRow label="Client Collections" value={fmtMoney(cashFlow.inflow?.collections ?? 0)} isMono />
-                      
-                      <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
-                      
-                      <MobileCardRow label="Operating Cash Outflow" value={`-${fmtMoney(cashFlow.outflow?.total ?? 0)}`} valueColor="#991B1B" isMono />
-                      <MobileCardRow label="Supplier Mandi Payments" value={fmtMoney(cashFlow.outflow?.purchases ?? 0)} isMono />
-                      <MobileCardRow label="Operating &amp; Overhead Expenses" value={fmtMoney(cashFlow.outflow?.expenses ?? 0)} isMono />
-                      <MobileCardRow label="Supplier Balance Payments" value={fmtMoney(cashFlow.outflow?.supplierPayments ?? 0)} isMono />
-                      
-                      <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
-                      
-                      <div style={{
-                        background: '#1E5E3A',
-                        color: '#FFFFFF',
-                        padding: '12px 14px',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        fontWeight: 700,
-                        marginTop: '4px'
-                      }}>
-                        <span>Net Cash Position Change</span>
-                        <span className="mono" style={{ fontSize: '15px' }}>
-                          {fmtMoney(cashFlow.netCashFlow ?? 0)}
-                        </span>
-                      </div>
-                    </div>
-                  </MobileCardBox>
+                <div className="va-panel">
+                  <div className="va-panel-head">
+                    <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Icon path={mdiPackageVariantClosed} size={0.8} color="#16A34A" /> Inventory &amp; Wastage KPIs
+                    </h3>
+                  </div>
+                  <table className="va-table">
+                    <tbody>
+                      <tr>
+                        <td>Total Stock Asset Value</td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(execData.inventoryKpis.totalValue)}</td>
+                      </tr>
+                      <tr>
+                        <td>Tracked Inventory Items</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{execData.inventoryKpis.totalCount} Products</td>
+                      </tr>
+                      <tr>
+                        <td>Low Stock Items Alert</td>
+                        <td className="mono" style={{ textAlign: 'right', color: execData.inventoryKpis.lowStockCount > 0 ? '#DC2626' : '#166534', fontWeight: 700 }}>
+                          {execData.inventoryKpis.lowStockCount} Items
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>Wastage Loss Quantity</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B' }}>{execData.inventoryKpis.wastageQty} KG ({execData.inventoryKpis.wastageCount} Records)</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            </>
+
+            </div>
           )}
 
-          {/* ─── Aging tab ─── */}
-          {tab === 'Aging' && aging && (
-            <div className="va-panel">
-              <div className="va-panel-head"><h3>Client Receivables Aging (Days Overdue)</h3></div>
-              <div className="va-cards" style={{ marginBottom: 18 }}>
-                <div className="va-card"><div className="label">Total Dues</div><div className="value">{fmtMoney(aging.totals.total)}</div></div>
-                <div className="va-card"><div className="label">Current</div><div className="value">{fmtMoney(aging.totals.current)}</div></div>
-                <div className="va-card"><div className="label">30+ Days Overdue</div><div className="value" style={{ color: 'var(--danger)' }}>{fmtMoney(aging.totals.d31_60 + aging.totals.d61_90 + aging.totals.d90plus)}</div></div>
+          {/* ══════════════════ 2. SALES MODULE ══════════════════ */}
+          {mainTab === 'Sales' && (
+            <div>
+              <div className="va-tabs-inline" style={{ marginBottom: 16 }}>
+                {(['Invoice Profitability', 'Customer Profitability', 'Product Profitability'] as SalesSubTab[]).map(st => (
+                  <button key={st} className={salesTab === st ? 'active' : ''} onClick={() => setSalesTab(st)}>{st}</button>
+                ))}
               </div>
 
-              {/* Desktop Table View */}
-              <div className="hide-mobile">
-                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <table className="va-table" style={{ minWidth: 600 }}>
+              {/* Sub-tab 1: Invoice Profitability */}
+              {salesTab === 'Invoice Profitability' && invoiceReport && (
+                <div className="va-panel">
+                  <div className="va-panel-head" style={{ justifyContent: 'space-between' }}>
+                    <h3>Invoice Profitability Inspector</h3>
+                    {invoiceReport.summary && (
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
+                        Overall Gross Margin: <strong>{invoiceReport.summary.grossMarginPct}%</strong> | Contribution Profit: <strong>{fmtMoney(invoiceReport.summary.contributionProfit)}</strong>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="va-table">
+                      <thead>
+                        <tr>
+                          <th>Invoice #</th>
+                          <th>Date</th>
+                          <th>Customer</th>
+                          <th>Gross Sales</th>
+                          <th>Discount</th>
+                          <th>Net Sales</th>
+                          <th>COGS</th>
+                          <th>Gross Profit</th>
+                          <th>Margin %</th>
+                          <th>Delivery Charge</th>
+                          <th>Contribution Profit</th>
+                          <th>Inspect</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {invoiceReport.data?.map((row: any) => (
+                          <tr key={row.id}>
+                            <td className="mono" style={{ fontWeight: 700 }}>{row.invoiceNo}</td>
+                            <td>{fmtDate(row.date)}</td>
+                            <td><strong>{row.clientName}</strong></td>
+                            <td className="mono">{fmtMoney(row.grossSales)}</td>
+                            <td className="mono" style={{ color: '#991B1B' }}>{row.discount > 0 ? `-${fmtMoney(row.discount)}` : '—'}</td>
+                            <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(row.netSales)}</td>
+                            <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(row.cogs)}</td>
+                            <td className="mono" style={{ color: row.grossProfit >= 0 ? '#166534' : '#DC2626', fontWeight: 700 }}>
+                              {fmtMoney(row.grossProfit)}
+                            </td>
+                            <td>
+                              <span style={{ padding: '2px 8px', borderRadius: 12, background: row.grossMarginPct >= 15 ? '#DCFCE7' : '#FEE2E2', color: row.grossMarginPct >= 15 ? '#166534' : '#991B1B', fontWeight: 800, fontSize: 12 }}>
+                                {row.grossMarginPct}%
+                              </span>
+                            </td>
+                            <td className="mono">{row.deliveryCharge > 0 ? fmtMoney(row.deliveryCharge) : '—'}</td>
+                            <td className="mono" style={{ fontWeight: 700, color: row.contributionProfit >= 0 ? '#0369A1' : '#991B1B' }}>
+                              {fmtMoney(row.contributionProfit)}
+                            </td>
+                            <td>
+                              <button className="va-btn small outline" onClick={() => setSelectedInvoiceModal(row)} style={{ padding: '4px 8px', fontSize: 12 }}>
+                                View Items
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-tab 2: Customer Profitability */}
+              {salesTab === 'Customer Profitability' && (
+                <div className="va-panel">
+                  <div className="va-panel-head"><h3>Customer Economics &amp; Profitability</h3></div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="va-table">
+                      <thead>
+                        <tr>
+                          <th>Customer Name</th>
+                          <th>Type</th>
+                          <th>Invoices</th>
+                          <th>Gross Sales</th>
+                          <th>Discounts</th>
+                          <th>Net Sales</th>
+                          <th>COGS</th>
+                          <th>Gross Profit</th>
+                          <th>Margin %</th>
+                          <th>Current Dues</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {customerReport.map(c => (
+                          <tr key={c.clientId}>
+                            <td><strong>{c.clientName}</strong> ({c.clientCode})</td>
+                            <td><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 6px', background: '#F1F5F9', borderRadius: 4 }}>{c.type}</span></td>
+                            <td className="mono">{c.invoiceCount}</td>
+                            <td className="mono">{fmtMoney(c.grossSales)}</td>
+                            <td className="mono" style={{ color: '#991B1B' }}>{c.discounts > 0 ? `-${fmtMoney(c.discounts)}` : '—'}</td>
+                            <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(c.netSales)}</td>
+                            <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(c.cogs)}</td>
+                            <td className="mono" style={{ color: c.grossProfit >= 0 ? '#166534' : '#DC2626', fontWeight: 700 }}>{fmtMoney(c.grossProfit)}</td>
+                            <td style={{ fontWeight: 800 }}>{c.grossMarginPct}%</td>
+                            <td className="mono" style={{ color: c.currentBalance > 0 ? '#B45309' : '#166534', fontWeight: 700 }}>{fmtMoney(c.currentBalance)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-tab 3: Product Profitability */}
+              {salesTab === 'Product Profitability' && (
+                <div className="va-panel">
+                  <div className="va-panel-head"><h3>Product Line Profitability &amp; Cost Analysis</h3></div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="va-table">
+                      <thead>
+                        <tr>
+                          <th>Product Name</th>
+                          <th>Category</th>
+                          <th>Qty Sold</th>
+                          <th>Avg Sell Rate</th>
+                          <th>Avg Cost Rate</th>
+                          <th>Gross Revenue</th>
+                          <th>Total COGS</th>
+                          <th>Gross Profit</th>
+                          <th>Margin %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productReport.map(p => (
+                          <tr key={p.productId}>
+                            <td><strong>{p.name}</strong></td>
+                            <td><span style={{ fontSize: 11, fontWeight: 700, background: '#F8FAFC', padding: '2px 6px', borderRadius: 4 }}>{p.category}</span></td>
+                            <td className="mono">{p.totalQty} {p.unit}</td>
+                            <td className="mono">Rs {p.avgSellRate}</td>
+                            <td className="mono" style={{ color: '#991B1B' }}>Rs {p.avgUnitCost}</td>
+                            <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(p.grossRevenue)}</td>
+                            <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(p.totalCogs)}</td>
+                            <td className="mono" style={{ color: p.grossProfit >= 0 ? '#166534' : '#DC2626', fontWeight: 700 }}>{fmtMoney(p.grossProfit)}</td>
+                            <td style={{ fontWeight: 800 }}>{p.marginPct}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* ══════════════════ 3. PURCHASES MODULE ══════════════════ */}
+          {mainTab === 'Purchases' && (
+            <div className="va-panel">
+              <div className="va-panel-head"><h3>Mandi Purchase Cost &amp; Rate History Log</h3></div>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="va-table">
                   <thead>
                     <tr>
-                      <th>Client</th>
-                      <th style={{ textAlign: 'right' }}>Current</th>
-                      <th style={{ textAlign: 'right' }}>1–30 Days</th>
-                      <th style={{ textAlign: 'right' }}>31–60 Days</th>
-                      <th style={{ textAlign: 'right' }}>61–90 Days</th>
-                      <th style={{ textAlign: 'right' }}>90+ Days</th>
-                      <th style={{ textAlign: 'right' }}>Total</th>
+                      <th>Date</th>
+                      <th>Product</th>
+                      <th>Category</th>
+                      <th>Supplier / Source</th>
+                      <th>Buy Rate (Rs/Unit)</th>
+                      <th>Purchase Qty</th>
+                      <th>Total Value</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {aging.clients.length === 0 ? (
-                      <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 18 }}>No client receivables</td></tr>
-                    ) : (
-                      aging.clients.map(c => (
-                        <tr key={c.id}>
-                          <td>
-                            <strong>{RATING_EMOJI[c.rating] ?? ''} {c.name}</strong>
-                            <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--muted)', background: '#e9ecef', padding: '1px 4px', borderRadius: 4, marginLeft: 4 }}>
-                              {c.clientId || 'WH-0000'}
-                            </span>
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right' }}>{c.current > 0 ? fmtMoney(c.current) : '—'}</td>
-                          <td className="mono" style={{ textAlign: 'right' }}>{c.d1_30 > 0 ? fmtMoney(c.d1_30) : '—'}</td>
-                          <td className="mono" style={{ textAlign: 'right', color: c.d31_60 > 0 ? 'var(--mustard)' : undefined }}>{c.d31_60 > 0 ? fmtMoney(c.d31_60) : '—'}</td>
-                          <td className="mono" style={{ textAlign: 'right', color: c.d61_90 > 0 ? 'var(--clay)' : undefined }}>{c.d61_90 > 0 ? fmtMoney(c.d61_90) : '—'}</td>
-                          <td className="mono" style={{ textAlign: 'right', color: c.d90plus > 0 ? 'var(--danger)' : undefined, fontWeight: c.d90plus > 0 ? 600 : undefined }}>{c.d90plus > 0 ? fmtMoney(c.d90plus) : '—'}</td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(c.total)}</td>
-                        </tr>
-                      ))
-                    )}
+                    {costAnalysis.map(h => (
+                      <tr key={h.id}>
+                        <td>{fmtDate(h.date)}</td>
+                        <td><strong>{h.productName}</strong></td>
+                        <td>{h.category}</td>
+                        <td>{h.supplierName}</td>
+                        <td className="mono" style={{ fontWeight: 700, color: '#0369A1' }}>Rs {h.buyPrice}</td>
+                        <td className="mono">{h.qty}</td>
+                        <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(h.totalSpent)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════ 4. INVENTORY MODULE ══════════════════ */}
+          {mainTab === 'Inventory' && valuationReport && (
+            <div className="va-panel">
+              <div className="va-panel-head" style={{ justifyContent: 'space-between' }}>
+                <h3>Inventory Valuation (Weighted Average Cost Basis)</h3>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
+                  Total Valuation: <strong>{fmtMoney(valuationReport.summary?.totalAvgCostValue ?? 0)}</strong>
                 </div>
               </div>
-
-              {/* Mobile Card List View */}
-              <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
-                {aging.clients.length === 0 ? (
-                  <div className="va-empty">No client receivables</div>
-                ) : (
-                  aging.clients.map(c => (
-                    <MobileCard
-                      key={c.id}
-                      title={c.name}
-                      headerBadge={c.clientId || 'WH-0000'}
-                    >
-                      <MobileCardRow label="Total Outstanding" value={fmtMoney(c.total)} valueColor="#991B1B" isMono />
-                      <MobileCardRow label="Current (Not Overdue)" value={c.current > 0 ? fmtMoney(c.current) : '—'} isMono />
-                      <MobileCardRow label="1–30 Days Overdue" value={c.d1_30 > 0 ? fmtMoney(c.d1_30) : '—'} isMono />
-                      <MobileCardRow label="31–60 Days Overdue" value={c.d31_60 > 0 ? fmtMoney(c.d31_60) : '—'} valueColor={c.d31_60 > 0 ? '#B45309' : undefined} isMono />
-                      <MobileCardRow label="61–90 Days Overdue" value={c.d61_90 > 0 ? fmtMoney(c.d61_90) : '—'} valueColor={c.d61_90 > 0 ? '#C2410C' : undefined} isMono />
-                      <MobileCardRow label="90+ Days Overdue" value={c.d90plus > 0 ? fmtMoney(c.d90plus) : '—'} valueColor={c.d90plus > 0 ? '#991B1B' : undefined} isMono />
-                    </MobileCard>
-                  ))
-                )}
+              <div style={{ overflowX: 'auto' }}>
+                <table className="va-table">
+                  <thead>
+                    <tr>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th>Current Stock</th>
+                      <th>Average Cost</th>
+                      <th>Latest Buy Rate</th>
+                      <th>Avg Cost Valuation</th>
+                      <th>Latest Buy Valuation</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {valuationReport.data?.map((item: any) => (
+                      <tr key={item.id}>
+                        <td><strong>{item.productName}</strong></td>
+                        <td>{item.category}</td>
+                        <td className="mono" style={{ fontWeight: 700 }}>{item.qty} {item.unit}</td>
+                        <td className="mono">Rs {item.avgCost.toFixed(2)}</td>
+                        <td className="mono">Rs {item.currentBuyPrice.toFixed(2)}</td>
+                        <td className="mono" style={{ fontWeight: 700, color: '#16A34A' }}>{fmtMoney(item.avgCostValuation)}</td>
+                        <td className="mono" style={{ fontWeight: 700, color: '#0369A1' }}>{fmtMoney(item.latestBuyValuation)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
 
-          {/* ─── Expenses tab ─── */}
-          {tab === 'Expenses' && pnl && (
-            <div className="va-panel">
-              <div className="va-panel-head"><h3>Expenses by Category</h3></div>
-              {!pnl?.expensesByCategory || pnl.expensesByCategory.length === 0 ? (
-                <div className="va-empty">No expenses recorded for this range</div>
-              ) : (
-                pnl.expensesByCategory.map(item => (
-                  <div className="va-bar-row" key={item.category}>
-                    <div className="va-bar-label"><strong>{item.category}</strong></div>
-                    <div className="va-bar-track">
-                      <div className="va-bar-fill" style={{ width: `${(item.total / maxCatExp) * 100}%` }} />
-                    </div>
-                    <div className="va-bar-val mono" style={{ fontWeight: 600 }}>{fmtMoney(item.total)}</div>
-                  </div>
-                ))
-              )}
+          {/* ══════════════════ 5. FINANCE MODULE ══════════════════ */}
+          {mainTab === 'Finance' && balanceSheet && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 20 }}>
+              <div className="va-panel">
+                <div className="va-panel-head"><h3>Balance Sheet Statement - Assets</h3></div>
+                <table className="va-table">
+                  <tbody>
+                    {balanceSheet.assets?.cashAccounts?.map((c: any, i: number) => (
+                      <tr key={i}>
+                        <td>{c.name}</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(c.balance)}</td>
+                      </tr>
+                    ))}
+                    {balanceSheet.assets?.bankAccounts?.map((b: any, i: number) => (
+                      <tr key={i}>
+                        <td>{b.name}</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(b.balance)}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td>Accounts Receivable (Client Dues)</td>
+                      <td className="mono" style={{ textAlign: 'right', color: '#B45309', fontWeight: 700 }}>{fmtMoney(balanceSheet.assets?.receivables ?? 0)}</td>
+                    </tr>
+                    <tr>
+                      <td>Inventory Asset Value</td>
+                      <td className="mono" style={{ textAlign: 'right', color: '#16A34A', fontWeight: 700 }}>{fmtMoney(balanceSheet.assets?.inventoryAssetValue ?? 0)}</td>
+                    </tr>
+                    <tr style={{ background: '#F0FDF4', fontWeight: 800, fontSize: 15 }}>
+                      <td>TOTAL ASSETS</td>
+                      <td className="mono" style={{ textAlign: 'right', color: '#15803D' }}>{fmtMoney(balanceSheet.assets?.totalAssets ?? 0)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="va-panel">
+                <div className="va-panel-head"><h3>Liabilities &amp; Equity</h3></div>
+                <table className="va-table">
+                  <tbody>
+                    <tr>
+                      <td>Accounts Payable (Supplier Dues)</td>
+                      <td className="mono" style={{ textAlign: 'right', color: '#991B1B', fontWeight: 700 }}>{fmtMoney(balanceSheet.liabilities?.payables ?? 0)}</td>
+                    </tr>
+                    <tr style={{ background: '#FEF2F2', fontWeight: 800 }}>
+                      <td>TOTAL LIABILITIES</td>
+                      <td className="mono" style={{ textAlign: 'right', color: '#991B1B' }}>{fmtMoney(balanceSheet.liabilities?.totalLiabilities ?? 0)}</td>
+                    </tr>
+                    <tr style={{ borderTop: '2px solid #E2E8F0' }}>
+                      <td>Retained Equity</td>
+                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(balanceSheet.equity?.retainedEarnings ?? 0)}</td>
+                    </tr>
+                    <tr style={{ background: '#F8FAFC', fontWeight: 800, fontSize: 15 }}>
+                      <td>TOTAL LIABILITIES &amp; EQUITY</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney((balanceSheet.liabilities?.totalLiabilities ?? 0) + (balanceSheet.equity?.retainedEarnings ?? 0))}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
-        </>
+
+          {/* ══════════════════ 6. MANAGEMENT ANALYTICS MODULE ══════════════════ */}
+          {mainTab === 'Management Analytics' && execData && (
+            <div className="va-panel">
+              <div className="va-panel-head"><h3>Financial Risk &amp; Management Analytics</h3></div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {execData.alerts?.map(alert => (
+                  <div key={alert.id} style={{ padding: '16px 20px', borderRadius: 10, background: alert.type === 'DANGER' ? '#FEF2F2' : '#FFFBEB', border: `1px solid ${alert.type === 'DANGER' ? '#FCA5A5' : '#FDE68A'}` }}>
+                    <div style={{ fontWeight: 800, fontSize: 14, color: alert.type === 'DANGER' ? '#991B1B' : '#92400E', marginBottom: 4 }}>
+                      {alert.title}
+                    </div>
+                    <div style={{ fontSize: 13, color: alert.type === 'DANGER' ? '#7F1D1D' : '#78350F' }}>
+                      {alert.message}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
       )}
+
+      {/* Invoice Profitability Line-Item Modal Inspector */}
+      {selectedInvoiceModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div style={{ background: '#FFFFFF', borderRadius: 14, maxWidth: 700, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid #E2E8F0', paddingBottom: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Invoice Profitability Breakdown</h3>
+                <div style={{ fontSize: 12, color: '#64748B' }}>Invoice: <strong>{selectedInvoiceModal.invoiceNo}</strong> | Customer: <strong>{selectedInvoiceModal.clientName}</strong></div>
+              </div>
+              <button className="va-btn small outline" onClick={() => setSelectedInvoiceModal(null)}>Close</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16, background: '#F8FAFC', padding: 12, borderRadius: 8 }}>
+              <div><span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>Net Sales</span><strong style={{ fontSize: 15 }}>{fmtMoney(selectedInvoiceModal.netSales)}</strong></div>
+              <div><span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>COGS</span><strong style={{ fontSize: 15, color: '#991B1B' }}>{fmtMoney(selectedInvoiceModal.cogs)}</strong></div>
+              <div><span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>Gross Profit</span><strong style={{ fontSize: 15, color: '#166534' }}>{fmtMoney(selectedInvoiceModal.grossProfit)} ({selectedInvoiceModal.grossMarginPct}%)</strong></div>
+            </div>
+
+            <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Itemized Cost Basis &amp; Line Margins</h4>
+            <table className="va-table" style={{ fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Qty</th>
+                  <th>Sell Rate</th>
+                  <th>Cost Basis</th>
+                  <th>Line Revenue</th>
+                  <th>Line COGS</th>
+                  <th>Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedInvoiceModal.items?.map((item: any) => (
+                  <tr key={item.id}>
+                    <td><strong>{item.itemName}</strong></td>
+                    <td className="mono">{item.qty} {item.unit}</td>
+                    <td className="mono">Rs {item.rate}</td>
+                    <td className="mono" style={{ color: '#991B1B' }}>Rs {item.costPrice}</td>
+                    <td className="mono">{fmtMoney(item.amount)}</td>
+                    <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(item.itemCogs)}</td>
+                    <td className="mono" style={{ fontWeight: 700, color: item.grossProfit >= 0 ? '#166534' : '#DC2626' }}>
+                      {fmtMoney(item.grossProfit)} ({item.grossMarginPct}%)
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
     </DashboardLayout>
   );
 }

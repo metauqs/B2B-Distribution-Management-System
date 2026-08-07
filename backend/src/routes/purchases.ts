@@ -2,8 +2,8 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { writeAuditLog, syncPriceListFromPurchase, PurchaseItemForSync } from '../lib/business';
 import { stockIn, recalcAvgCostFromHistory } from '../lib/inventoryService';
-
 import { parseInputDateToUtc } from '../lib/businessDate';
+import { postPurchaseLedger } from '../lib/financialLedgerService';
 
 const router = Router();
 
@@ -154,6 +154,18 @@ router.post('/', async (req: Request, res: Response) => {
             })
           )
       );
+
+      // Post to Financial Ledger automatically
+      await postPurchaseLedger(tx, {
+        branchId,
+        purchaseId: p.id,
+        supplierId: finalSupplierId,
+        date: p.date,
+        subtotal: p.subtotal,
+        transportCost: p.transportCost,
+        total: p.total,
+        paid: p.paid,
+      });
 
       return p;
     }, { maxWait: 15000, timeout: 600000 });

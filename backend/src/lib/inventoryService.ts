@@ -12,6 +12,7 @@
  */
 
 import { prisma } from './prisma';
+import { postWastageLedger } from './financialLedgerService';
 
 // ── 0. recalcAvgCostFromHistory — Recomputes avgCost from StockMovements ──────
 //
@@ -297,6 +298,16 @@ export async function recordWastage(tx: any, p: WastageParams): Promise<WastageR
         date: p.date ?? new Date(),
         note: `${refNo} | ${wastageReason} | Qty: -${p.qty} ${p.unit ?? 'KG'}`,
       },
+    });
+
+    await postWastageLedger(db, {
+      branchId: p.branchId,
+      wastageId: wastage.id,
+      productId: p.productId,
+      itemName: p.itemName,
+      qty: p.qty,
+      rate: existing?.avgCost && existing.avgCost > 0 ? existing.avgCost : (existing?.currentBuyPrice ?? 0),
+      date: p.date ?? new Date(),
     });
   }
 

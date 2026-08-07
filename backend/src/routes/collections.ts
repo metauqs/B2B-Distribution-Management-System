@@ -3,6 +3,7 @@ import prisma from '../lib/prisma';
 import { recordCustomerLedgerEntry, writeAuditLog } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { getBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
+import { postCollectionLedger } from '../lib/financialLedgerService';
 
 const router = Router();
 
@@ -153,6 +154,16 @@ router.post('/', async (req: Request, res: Response) => {
       }
 
       await updateClientCreditRating(clientId, tx);
+
+      await postCollectionLedger(tx, {
+        branchId,
+        collectionId: coll.id,
+        clientId,
+        date: coll.date,
+        amount: coll.amount,
+        method: coll.method,
+        reference: coll.reference || undefined,
+      });
 
       return coll;
     }, { maxWait: 10000, timeout: 30000 });

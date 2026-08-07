@@ -2,6 +2,7 @@ import prisma from '../lib/prisma';
 import { writeAuditLog, getValidUserId } from '../lib/business';
 import { parseInputDateToUtc } from '../lib/businessDate';
 import { ExpenseCategory, PaymentMethod } from '@prisma/client';
+import { postExpenseLedger } from '../lib/financialLedgerService';
 
 export interface CreateExpenseInput {
   category: string;
@@ -153,6 +154,20 @@ export class ExpenseService {
           cashAccountId,
           bankAccountId,
         },
+      });
+
+      // Post to Financial Ledger automatically
+      await postExpenseLedger(tx, {
+        branchId,
+        expenseId: expense.id,
+        category: expense.category,
+        date: expense.date,
+        amount: expense.amount,
+        paidBy: expense.paidBy || undefined,
+        supplierId: expense.supplierId || undefined,
+        employeeId: expense.employeeId || undefined,
+        vehicleId: expense.vehicleId || undefined,
+        reference: expense.reference || undefined,
       });
 
       return expense;
