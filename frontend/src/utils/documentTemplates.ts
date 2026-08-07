@@ -1588,7 +1588,7 @@ export function detectPlatform(): 'ios' | 'android' | 'desktop' {
 
 /**
  * Triggers a crisp image download natively on Android, iOS, and Desktop.
- * - iOS: Opens native iOS Share Sheet via Web Share API allowing "Save Image" to Photos library.
+ * - iOS (iPhone/iPad): Opens native iOS Share Sheet via Web Share API presenting "Save Image" (Photos app), AirDrop, WhatsApp.
  * - Android: Downloads binary JPEG Blob so MediaStore/Gallery scanner indexes it immediately.
  * - Desktop: Performs a clean native file download.
  */
@@ -1613,41 +1613,35 @@ export async function downloadImage(
     const blob = new Blob([u8arr], { type: mime });
     const cleanFilename = filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? filename : `${filename}.jpg`;
 
-    // ── iOS Strategy: Web Share API → Share Sheet (Save to Photos) ─────────
+    // ── iOS Strategy: Native Share Sheet (Save to Photos) ───────────────────
     if (platform === 'ios') {
-      if (
-        typeof navigator !== 'undefined' &&
+      const file = new File([blob], cleanFilename, { type: 'image/jpeg' });
+      const canShareFiles = typeof navigator !== 'undefined' &&
         typeof navigator.share === 'function' &&
-        typeof navigator.canShare === 'function'
-      ) {
+        typeof navigator.canShare === 'function' &&
+        navigator.canShare({ files: [file] });
+
+      if (canShareFiles) {
         try {
-          const file = new File([blob], cleanFilename, { type: 'image/jpeg' });
-          if (navigator.canShare({ files: [file] })) {
-            notify('📤 Opening iOS Share Sheet...');
-            await navigator.share({
-              files: [file],
-              title: cleanFilename,
-            });
-            notify('✅ Image ready! Choose "Save Image" to add to Photos');
-            return true;
-          }
+          notify('📤 Opening iOS Share Sheet...');
+          await navigator.share({
+            files: [file],
+            title: cleanFilename,
+          });
+          notify('✅ Select "Save Image" to add to your Photos library');
+          return true;
         } catch (shareErr: any) {
           if (shareErr?.name === 'AbortError') {
             notify('');
             return true;
           }
-          console.warn('iOS Web Share API failed, falling back to new tab:', shareErr);
+          console.warn('iOS Web Share API failed:', shareErr);
         }
       }
 
-      // iOS Fallback: Open Blob URL in new window/tab so long-press allows "Save to Photos"
-      const blobUrl = URL.createObjectURL(blob);
-      const newWin = window.open(blobUrl, '_blank');
-      if (newWin) {
-        notify('📲 Image opened in new tab. Long-press image and select "Save to Photos"');
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
-        return true;
-      }
+      // iOS Fallback (if Web Share API unavailable): Clear explicit guidance
+      notify('Tap the Share button 📤 at the bottom of Safari and select "Save Image" to save to Photos.');
+      return false;
     }
 
     // ── Android & Desktop Strategy: Binary Blob URL download ────────────────
@@ -1664,19 +1658,8 @@ export async function downloadImage(
     return true;
   } catch (err) {
     console.error('downloadImage error:', err);
-    try {
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      notify('✅ JPG downloaded');
-      return true;
-    } catch {
-      notify('❌ Download failed');
-      return false;
-    }
+    notify('❌ Download failed');
+    return false;
   }
 }
 
