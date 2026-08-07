@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import prisma from '../lib/prisma';
+import { Prisma } from '@prisma/client';
 import { getCurrentBusinessDateRange, getBusinessDateRange } from '../lib/businessDate';
 import { getExecutiveDashboardMetrics, getFinancialAlerts } from '../lib/financialEngine';
 
@@ -87,7 +88,10 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const todayExpenses = todayExpensesAgg._sum.amount ?? 0;
     const todaySalesPaid = todaySalesAgg._sum.paid ?? 0;
     const dbCollectionsSum = todayCollectionsAgg._sum.amount ?? 0;
-    const todayCollections = Math.max(todaySalesPaid, dbCollectionsSum);
+    // Collections = standalone collection entries + checkout cash paid at invoice (avoid double-counting
+    // by using whichever is larger — standalone collections already include invoice checkout payments
+    // recorded as collections; sale.paid already sums all collected amounts on the invoice)
+    const todayCollections = todaySalesPaid > dbCollectionsSum ? todaySalesPaid : dbCollectionsSum;
     const grossProfit = todaySales - todayPurchases;
     const netProfit = grossProfit - todayExpenses;
     const todayProfit = netProfit;
@@ -228,6 +232,9 @@ router.get('/pnl', async (req: Request, res: Response) => {
     ]);
 
     const revenue = salesAgg._sum.total ?? 0;
+    // NOTE: cogs in PnL is purchase total (cost of goods purchased), not COGS per SRS.
+    // True COGS is computed from saleItems.costPrice in the executive-dashboard.
+    // PnL uses purchase cost as a proxy for period cost of goods.
     const cogs = purchasesAgg._sum.total ?? 0;
     const expenses = expensesAgg._sum.amount ?? 0;
     const collected = collectionsAgg._sum.amount ?? 0;
@@ -715,7 +722,7 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
       const itemBreakdown = s.items.map(item => {
         const inv = item.product?.inventory?.[0];
         const fallbackCost = (inv?.avgCost && inv.avgCost > 0) ? inv.avgCost : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : (item.rate * 0.75));
-        const costBasis = item.costPrice > 0 ? item.costPrice : fallbackCost;
+        const costBasis = ((item as any).costPrice > 0) ? (item as any).costPrice : fallbackCost;
         const itemCogs = item.qty * costBasis;
         invoiceCogs += itemCogs;
 
@@ -809,7 +816,18 @@ router.get('/sales/customers', async (req: Request, res: Response) => {
       include: {
         sales: {
           where: { status: { not: 'CANCELLED' }, deletedAt: null, date: { gte: fromDate, lte: toDate } },
-          include: { items: true },
+          include: {
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    inventory: { select: { avgCost: true, currentBuyPrice: true } },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -825,7 +843,11 @@ router.get('/sales/customers', async (req: Request, res: Response) => {
         discounts += sale.discount;
         deliveryCharges += sale.deliveryCharge;
         for (const item of sale.items) {
-          const cost = item.costPrice > 0 ? item.costPrice : (item.rate * 0.75);
+          const inv = (item as any).product?.inventory?.[0];
+          const fallbackCost = (inv?.avgCost && inv.avgCost > 0)
+            ? inv.avgCost
+            : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : item.rate * 0.75);
+          const cost = (item as any).costPrice > 0 ? (item as any).costPrice : fallbackCost;
           totalCogs += (item.qty * cost);
         }
       }
@@ -910,7 +932,7 @@ router.get('/sales/products', async (req: Request, res: Response) => {
         };
       }
 
-      const cost = item.costPrice > 0 ? item.costPrice : (item.rate * 0.75);
+      const cost = (item as any).costPrice > 0 ? (item as any).costPrice : (item.rate * 0.75);
       prodMap[pid].totalQty += item.qty;
       prodMap[pid].grossRevenue += item.amount;
       prodMap[pid].totalCogs += (item.qty * cost);
@@ -1093,10 +1115,13 @@ router.get('/finance/balance-sheet', async (req: Request, res: Response) => {
 // POST /api/reports/backfill — Safe historical backfill for SaleItem costPrice
 router.post('/backfill', async (req: Request, res: Response) => {
   try {
+    type BackfillItem = Prisma.SaleItemGetPayload<{
+      include: { product: { select: { id: true; inventory: { select: { avgCost: true; currentBuyPrice: true } } } } };
+    }>;
     const saleItems = await prisma.saleItem.findMany({
       where: { costPrice: 0 },
       include: { product: { select: { id: true, inventory: { select: { avgCost: true, currentBuyPrice: true } } } } },
-    });
+    }) as BackfillItem[];
 
     let updatedCount = 0;
     for (const item of saleItems) {

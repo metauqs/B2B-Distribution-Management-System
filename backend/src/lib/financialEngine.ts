@@ -57,7 +57,14 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
     prisma.supplierPayment.groupBy({ by: ['supplierId'], where: bWhere, _sum: { amount: true } }),
     prisma.saleItem.findMany({
       where: { sale: saleWhere },
-      select: { qty: true, rate: true, amount: true, costPrice: true, returnedQty: true },
+      select: {
+        qty: true,
+        rate: true,
+        amount: true,
+        costPrice: true,
+        returnedQty: true,
+        productId: true,
+      },
     }),
   ]);
 
@@ -75,7 +82,9 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
   let returnedValue = 0;
 
   for (const item of saleItemsAgg) {
-    const effectiveCost = item.costPrice > 0 ? item.costPrice : (item.rate * 0.75); // fallback if missing costPrice
+    // Use locked historical cost basis. If missing (legacy data), fall back to
+    // inventory avgCost resolved at query time (done in backfill). Final resort: 0 (no estimation).
+    const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
     totalCogs += (item.qty * effectiveCost);
     if (item.returnedQty > 0) {
       returnedProductsQty += item.returnedQty;
@@ -98,7 +107,9 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
 
   const salesPaidSum = salesAgg._sum.paid ?? 0;
   const dbCollectionsSum = collectionsAgg._sum.amount ?? 0;
-  const totalCollections = Math.max(salesPaidSum, dbCollectionsSum);
+  // Use whichever is higher: sale.paid already includes all amounts
+  // collected against invoices; standalone collections table may double-count checkout payments.
+  const totalCollections = salesPaidSum > dbCollectionsSum ? salesPaidSum : dbCollectionsSum;
   const totalReceivables = receivablesAgg._sum.currentBalance ?? 0;
 
   const suppPurchMap = Object.fromEntries(supplierPurchases.map(x => [x.supplierId, x._sum.total ?? 0]));
