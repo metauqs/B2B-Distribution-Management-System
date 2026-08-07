@@ -688,7 +688,18 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
       where,
       include: {
         client: { select: { id: true, clientId: true, name: true, type: true } },
-        items: { include: { product: { select: { id: true, name: true, category: true } } } },
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                category: true,
+                inventory: { select: { avgCost: true, currentBuyPrice: true } },
+              },
+            },
+          },
+        },
       },
       orderBy: { date: 'desc' },
       take: 500,
@@ -702,7 +713,9 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
 
       let invoiceCogs = 0;
       const itemBreakdown = s.items.map(item => {
-        const costBasis = item.costPrice > 0 ? item.costPrice : (item.rate * 0.75);
+        const inv = item.product?.inventory?.[0];
+        const fallbackCost = (inv?.avgCost && inv.avgCost > 0) ? inv.avgCost : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : (item.rate * 0.75));
+        const costBasis = item.costPrice > 0 ? item.costPrice : fallbackCost;
         const itemCogs = item.qty * costBasis;
         invoiceCogs += itemCogs;
 
