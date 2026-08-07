@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
-import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
-import { MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import Icon from '@mdi/react';
 import {
@@ -28,11 +26,7 @@ import {
 
 type MainCategory = 'Executive Dashboard' | 'Sales' | 'Purchases' | 'Inventory' | 'Finance' | 'Management Analytics';
 
-type SalesSubTab = 'Invoice Profitability' | 'Customer Profitability' | 'Product Profitability' | 'Sales Registry';
-type PurchaseSubTab = 'Cost Analysis' | 'Purchase Summary';
-type InventorySubTab = 'Inventory Valuation' | 'Wastage Loss';
-type FinanceSubTab = 'Profit & Loss' | 'Balance Sheet' | 'Cash Flow' | 'Receivables Aging';
-type AnalyticsSubTab = 'Financial Risk Alerts' | 'Working Capital';
+type SalesSubTab = 'Invoice Profitability' | 'Customer Profitability' | 'Product Profitability';
 
 interface ExecutiveData {
   sales: {
@@ -81,31 +75,23 @@ export default function ReportsPage() {
   const [rState, setRState] = usePreservedState('reports_v2', {
     mainTab: 'Executive Dashboard' as MainCategory,
     salesTab: 'Invoice Profitability' as SalesSubTab,
-    purchaseTab: 'Cost Analysis' as PurchaseSubTab,
-    inventoryTab: 'Inventory Valuation' as InventorySubTab,
-    financeTab: 'Profit & Loss' as FinanceSubTab,
-    analyticsTab: 'Financial Risk Alerts' as AnalyticsSubTab,
     datePreset: 'this_month',
     from: dateOffset(-30),
     to: todayInputDate(),
     searchQuery: '',
   });
 
-  const { mainTab, salesTab, purchaseTab, inventoryTab, financeTab, analyticsTab, datePreset, from, to, searchQuery } = rState;
+  const { mainTab, salesTab, datePreset, from, to, searchQuery } = rState;
 
   const setMainTab = (tab: MainCategory) => setRState({ mainTab: tab });
   const setSalesTab = (t: SalesSubTab) => setRState({ salesTab: t });
-  const setPurchaseTab = (t: PurchaseSubTab) => setRState({ purchaseTab: t });
-  const setInventoryTab = (t: InventorySubTab) => setRState({ inventoryTab: t });
-  const setFinanceTab = (t: FinanceSubTab) => setRState({ financeTab: t });
-  const setAnalyticsTab = (t: AnalyticsSubTab) => setRState({ analyticsTab: t });
 
   const [loading, setLoading] = useState(true);
   const [execData, setExecData] = useState<ExecutiveData | null>(null);
-  const [invoiceReport, setInvoiceReport] = useState<any>(null);
+  const [invoiceReport, setInvoiceReport] = useState<{ rows: any[]; summary: any } | null>(null);
   const [customerReport, setCustomerReport] = useState<any[]>([]);
   const [productReport, setProductReport] = useState<any[]>([]);
-  const [valuationReport, setValuationReport] = useState<any>(null);
+  const [valuationReport, setValuationReport] = useState<{ rows: any[]; summary: any } | null>(null);
   const [balanceSheet, setBalanceSheet] = useState<any>(null);
   const [costAnalysis, setCostAnalysis] = useState<any[]>([]);
   const [selectedInvoiceModal, setSelectedInvoiceModal] = useState<any | null>(null);
@@ -115,22 +101,30 @@ export default function ReportsPage() {
     if (showSpinner) setLoading(true);
     try {
       const [execRes, invProfRes, custRes, prodRes, valRes, bsRes, costRes] = await Promise.all([
-        fetchWithCache<{ success: boolean; data: ExecutiveData }>(`/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
-        fetchWithCache<{ success: boolean; data: any[]; summary: any }>(`/api/reports/sales/invoices?from=${from}&to=${to}&search=${encodeURIComponent(searchQuery)}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
-        fetchWithCache<{ success: boolean; data: any[] }>(`/api/reports/sales/customers?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
-        fetchWithCache<{ success: boolean; data: any[] }>(`/api/reports/sales/products?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
-        fetchWithCache<{ success: boolean; data: any[]; summary: any }>(`/api/reports/inventory/valuation`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
-        fetchWithCache<{ success: boolean; data: any }>(`/api/reports/finance/balance-sheet`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
-        fetchWithCache<{ success: boolean; data: any[] }>(`/api/reports/purchases/cost-analysis`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
+        fetchWithCache<ExecutiveData>(`/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
+        fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/sales/invoices?from=${from}&to=${to}&search=${encodeURIComponent(searchQuery)}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
+        fetchWithCache<any[]>(`/api/reports/sales/customers?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
+        fetchWithCache<any[]>(`/api/reports/sales/products?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
+        fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/inventory/valuation`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
+        fetchWithCache<any>(`/api/reports/finance/balance-sheet`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
+        fetchWithCache<any[]>(`/api/reports/purchases/cost-analysis`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
       ]);
 
-      if (execRes?.data) setExecData(execRes.data);
-      if (invProfRes) setInvoiceReport(invProfRes);
-      if (custRes?.data) setCustomerReport(custRes.data);
-      if (prodRes?.data) setProductReport(prodRes.data);
-      if (valRes) setValuationReport(valRes);
-      if (bsRes?.data) setBalanceSheet(bsRes.data);
-      if (costRes?.data) setCostAnalysis(costRes.data);
+      if (execRes) setExecData(execRes);
+      if (invProfRes) {
+        const rows = invProfRes.rows || (invProfRes as any).data || (Array.isArray(invProfRes) ? invProfRes : []);
+        const summary = invProfRes.summary || {};
+        setInvoiceReport({ rows, summary });
+      }
+      if (Array.isArray(custRes)) setCustomerReport(custRes);
+      if (Array.isArray(prodRes)) setProductReport(prodRes);
+      if (valRes) {
+        const rows = valRes.rows || (valRes as any).data || (Array.isArray(valRes) ? valRes : []);
+        const summary = valRes.summary || {};
+        setValuationReport({ rows, summary });
+      }
+      if (bsRes) setBalanceSheet(bsRes);
+      if (Array.isArray(costRes)) setCostAnalysis(costRes);
 
       setLastSyncTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (err) {
@@ -165,10 +159,10 @@ export default function ReportsPage() {
     let rows: string[][] = [];
     let filename = `financial_report_${mainTab.toLowerCase().replace(/\s+/g, '_')}.csv`;
 
-    if (mainTab === 'Sales' && salesTab === 'Invoice Profitability' && invoiceReport?.data) {
+    if (mainTab === 'Sales' && salesTab === 'Invoice Profitability' && invoiceReport?.rows) {
       filename = `invoice_profitability_${from}_to_${to}.csv`;
       headers = ['Invoice No', 'Date', 'Customer', 'Gross Sales', 'Discount', 'Net Sales', 'COGS', 'Gross Profit', 'Margin %', 'Contribution Profit', 'Status'];
-      rows = invoiceReport.data.map((r: any) => [
+      rows = invoiceReport.rows.map((r: any) => [
         r.invoiceNo, fmtDate(r.date), `"${r.clientName}"`, r.grossSales, r.discount, r.netSales, r.cogs, r.grossProfit, `${r.grossMarginPct}%`, r.contributionProfit, r.status
       ]);
     } else if (mainTab === 'Sales' && salesTab === 'Customer Profitability') {
@@ -186,7 +180,7 @@ export default function ReportsPage() {
     } else if (mainTab === 'Inventory') {
       filename = `inventory_valuation.csv`;
       headers = ['Product', 'Category', 'Stock Qty', 'Avg Cost', 'Latest Buy Rate', 'Avg Cost Valuation', 'Latest Buy Valuation'];
-      rows = (valuationReport?.data || []).map((r: any) => [
+      rows = (valuationReport?.rows || []).map((r: any) => [
         `"${r.productName}"`, r.category, r.qty, r.avgCost, r.currentBuyPrice, r.avgCostValuation, r.latestBuyValuation
       ]);
     }
@@ -309,40 +303,40 @@ export default function ReportsPage() {
               <div className="va-cards">
                 <div className="va-card accent">
                   <div className="label">Gross Sales</div>
-                  <div className="value">{fmtMoney(execData.sales.grossSales)}</div>
-                  <div className="foot">{execData.sales.salesCount} Invoices | Net: {fmtMoney(execData.sales.netSales)}</div>
+                  <div className="value">{fmtMoney(execData.sales?.grossSales ?? 0)}</div>
+                  <div className="foot">{execData.sales?.salesCount ?? 0} Invoices | Net: {fmtMoney(execData.sales?.netSales ?? 0)}</div>
                 </div>
 
                 <div className="va-card">
                   <div className="label">Cost of Goods Sold (COGS)</div>
-                  <div className="value neg">{fmtMoney(execData.cogs)}</div>
+                  <div className="value neg">{fmtMoney(execData.cogs ?? 0)}</div>
                   <div className="foot">Weighted Avg Cost Basis</div>
                 </div>
 
                 <div className="va-card">
                   <div className="label">Gross Profit</div>
-                  <div className="value" style={{ color: '#15803D' }}>{fmtMoney(execData.profitability.grossProfit)}</div>
-                  <div className="foot">Gross Margin: <strong>{execData.profitability.grossMarginPct}%</strong></div>
+                  <div className="value" style={{ color: '#15803D' }}>{fmtMoney(execData.profitability?.grossProfit ?? 0)}</div>
+                  <div className="foot">Gross Margin: <strong>{execData.profitability?.grossMarginPct ?? 0}%</strong></div>
                 </div>
 
                 <div className="va-card">
                   <div className="label">Contribution Profit</div>
-                  <div className="value" style={{ color: '#0369A1' }}>{fmtMoney(execData.profitability.contributionProfit)}</div>
-                  <div className="foot">After Delivery Freight ({fmtMoney(execData.sales.deliveryCharge)})</div>
+                  <div className="value" style={{ color: '#0369A1' }}>{fmtMoney(execData.profitability?.contributionProfit ?? 0)}</div>
+                  <div className="foot">After Delivery Freight ({fmtMoney(execData.sales?.deliveryCharge ?? 0)})</div>
                 </div>
 
                 <div className="va-card">
                   <div className="label">Net Operating Profit</div>
-                  <div className={`value ${execData.profitability.netOperatingProfit < 0 ? 'neg' : ''}`}>
-                    {fmtMoney(execData.profitability.netOperatingProfit)}
+                  <div className={`value ${(execData.profitability?.netOperatingProfit ?? 0) < 0 ? 'neg' : ''}`}>
+                    {fmtMoney(execData.profitability?.netOperatingProfit ?? 0)}
                   </div>
-                  <div className="foot">Net Margin: <strong>{execData.profitability.netMarginPct}%</strong></div>
+                  <div className="foot">Net Margin: <strong>{execData.profitability?.netMarginPct ?? 0}%</strong></div>
                 </div>
 
                 <div className="va-card">
                   <div className="label">Working Capital</div>
-                  <div className="value" style={{ color: execData.balanceSheetSummary.workingCapital >= 0 ? '#166534' : '#991B1B' }}>
-                    {fmtMoney(execData.balanceSheetSummary.workingCapital)}
+                  <div className="value" style={{ color: (execData.balanceSheetSummary?.workingCapital ?? 0) >= 0 ? '#166534' : '#991B1B' }}>
+                    {fmtMoney(execData.balanceSheetSummary?.workingCapital ?? 0)}
                   </div>
                   <div className="foot">Current Assets - Payables</div>
                 </div>
@@ -360,23 +354,23 @@ export default function ReportsPage() {
                     <tbody>
                       <tr>
                         <td>Cash &amp; Bank Balances</td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary.cashBankTotal)}</td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary?.cashBankTotal ?? 0)}</td>
                       </tr>
                       <tr>
                         <td>Accounts Receivable (Client Dues)</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#B45309', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary.receivables)}</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#B45309', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary?.receivables ?? 0)}</td>
                       </tr>
                       <tr>
                         <td>Inventory Valuation (Avg Cost)</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#16A34A', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary.inventoryValue)}</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#16A34A', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary?.inventoryValue ?? 0)}</td>
                       </tr>
                       <tr style={{ background: '#F8FAFC', fontWeight: 800 }}>
                         <td>Total Current Assets</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#0369A1' }}>{fmtMoney(execData.balanceSheetSummary.totalAssets)}</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#0369A1' }}>{fmtMoney(execData.balanceSheetSummary?.totalAssets ?? 0)}</td>
                       </tr>
                       <tr style={{ borderTop: '2px solid #E2E8F0' }}>
                         <td>Accounts Payable (Supplier Dues)</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B', fontWeight: 700 }}>-{fmtMoney(execData.balanceSheetSummary.payables)}</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B', fontWeight: 700 }}>-{fmtMoney(execData.balanceSheetSummary?.payables ?? 0)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -392,21 +386,21 @@ export default function ReportsPage() {
                     <tbody>
                       <tr>
                         <td>Total Stock Asset Value</td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(execData.inventoryKpis.totalValue)}</td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(execData.inventoryKpis?.totalValue ?? 0)}</td>
                       </tr>
                       <tr>
                         <td>Tracked Inventory Items</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{execData.inventoryKpis.totalCount} Products</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{execData.inventoryKpis?.totalCount ?? 0} Products</td>
                       </tr>
                       <tr>
                         <td>Low Stock Items Alert</td>
-                        <td className="mono" style={{ textAlign: 'right', color: execData.inventoryKpis.lowStockCount > 0 ? '#DC2626' : '#166534', fontWeight: 700 }}>
-                          {execData.inventoryKpis.lowStockCount} Items
+                        <td className="mono" style={{ textAlign: 'right', color: (execData.inventoryKpis?.lowStockCount ?? 0) > 0 ? '#DC2626' : '#166534', fontWeight: 700 }}>
+                          {execData.inventoryKpis?.lowStockCount ?? 0} Items
                         </td>
                       </tr>
                       <tr>
                         <td>Wastage Loss Quantity</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B' }}>{execData.inventoryKpis.wastageQty} KG ({execData.inventoryKpis.wastageCount} Records)</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B' }}>{execData.inventoryKpis?.wastageQty ?? 0} KG ({execData.inventoryKpis?.wastageCount ?? 0} Records)</td>
                       </tr>
                     </tbody>
                   </table>
@@ -426,11 +420,11 @@ export default function ReportsPage() {
               </div>
 
               {/* Sub-tab 1: Invoice Profitability */}
-              {salesTab === 'Invoice Profitability' && invoiceReport && (
+              {salesTab === 'Invoice Profitability' && (
                 <div className="va-panel">
                   <div className="va-panel-head" style={{ justifyContent: 'space-between' }}>
                     <h3>Invoice Profitability Inspector</h3>
-                    {invoiceReport.summary && (
+                    {invoiceReport?.summary && (
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
                         Overall Gross Margin: <strong>{invoiceReport.summary.grossMarginPct}%</strong> | Contribution Profit: <strong>{fmtMoney(invoiceReport.summary.contributionProfit)}</strong>
                       </div>
@@ -456,7 +450,7 @@ export default function ReportsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {invoiceReport.data?.map((row: any) => (
+                        {(invoiceReport?.rows || []).map((row: any) => (
                           <tr key={row.id}>
                             <td className="mono" style={{ fontWeight: 700 }}>{row.invoiceNo}</td>
                             <td>{fmtDate(row.date)}</td>
@@ -609,13 +603,15 @@ export default function ReportsPage() {
           )}
 
           {/* ══════════════════ 4. INVENTORY MODULE ══════════════════ */}
-          {mainTab === 'Inventory' && valuationReport && (
+          {mainTab === 'Inventory' && (
             <div className="va-panel">
               <div className="va-panel-head" style={{ justifyContent: 'space-between' }}>
                 <h3>Inventory Valuation (Weighted Average Cost Basis)</h3>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
-                  Total Valuation: <strong>{fmtMoney(valuationReport.summary?.totalAvgCostValue ?? 0)}</strong>
-                </div>
+                {valuationReport?.summary && (
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
+                    Total Valuation: <strong>{fmtMoney(valuationReport.summary.totalAvgCostValue ?? 0)}</strong>
+                  </div>
+                )}
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="va-table">
@@ -631,7 +627,7 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {valuationReport.data?.map((item: any) => (
+                    {(valuationReport?.rows || []).map((item: any) => (
                       <tr key={item.id}>
                         <td><strong>{item.productName}</strong></td>
                         <td>{item.category}</td>

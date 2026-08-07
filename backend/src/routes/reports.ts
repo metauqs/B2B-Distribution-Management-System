@@ -765,11 +765,13 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      data: rows,
-      summary: {
-        ...totals,
-        grossMarginPct: Number(grossMarginPct.toFixed(2)),
-        contributionMarginPct: Number(contributionMarginPct.toFixed(2)),
+      data: {
+        rows,
+        summary: {
+          ...totals,
+          grossMarginPct: Number(grossMarginPct.toFixed(2)),
+          contributionMarginPct: Number(contributionMarginPct.toFixed(2)),
+        },
       },
     });
   } catch (err: any) {
@@ -991,12 +993,14 @@ router.get('/inventory/valuation', async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      data: rows,
-      summary: {
-        totalItems: rows.length,
-        totalQty: rows.reduce((s, r) => s + r.qty, 0),
-        totalAvgCostValue,
-        totalLatestBuyValue,
+      data: {
+        rows,
+        summary: {
+          totalItems: rows.length,
+          totalQty: rows.reduce((s, r) => s + r.qty, 0),
+          totalAvgCostValue,
+          totalLatestBuyValue,
+        },
       },
     });
   } catch (err: any) {
