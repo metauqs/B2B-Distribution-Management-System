@@ -107,12 +107,19 @@ export async function stockIn(tx: any, p: StockInParams): Promise<void> {
   const oldAvgCost = (existing?.avgCost && existing.avgCost > 0)
     ? existing.avgCost
     : (existing?.currentBuyPrice && existing.currentBuyPrice > 0 ? existing.currentBuyPrice : p.rate);
+
   const newQty = oldQty + p.qty;
 
-  // Weighted average cost calculation
-  const newAvgCost = (oldQty > 0 && newQty > 0)
-    ? ((oldQty * oldAvgCost) + (p.qty * p.rate)) / newQty
-    : p.rate;
+  // Moving Weighted Average Cost:
+  // New Average Cost = (Existing Inventory Value + New Purchase Value) / (Existing Quantity + New Purchase Quantity)
+  let newAvgCost: number;
+  if (oldQty > 0 && newQty > 0) {
+    const existingValue = oldQty * oldAvgCost;
+    const purchaseValue = p.qty * p.rate;
+    newAvgCost = (existingValue + purchaseValue) / newQty;
+  } else {
+    newAvgCost = p.rate;
+  }
 
   // Preserve previous buy price and update current buy price
   const existingCurrentBuy = existing?.currentBuyPrice ?? 0;
