@@ -1572,12 +1572,36 @@ export function writeAndDownload(w: Window, html: string, filename?: string): vo
 }
 
 /**
- * Triggers a crisp image download natively on both desktop and mobile OS.
- * Converts base64 to binary Blob so Android / iOS Photos treat it as a native high-res file.
+ * Detects the client platform: 'ios', 'android', or 'desktop'.
  */
-export function downloadImage(dataUrl: string, filename: string): void {
-  if (typeof window === 'undefined') return;
+export function detectPlatform(): 'ios' | 'android' | 'desktop' {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'desktop';
+  const ua = navigator.userAgent || navigator.vendor || (window as any).opera || '';
+  if (/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+    return 'ios';
+  }
+  if (/android/i.test(ua)) {
+    return 'android';
+  }
+  return 'desktop';
+}
+
+/**
+ * Triggers a crisp image download natively on Android, iOS, and Desktop.
+ * - iOS: Opens native iOS Share Sheet via Web Share API allowing "Save Image" to Photos library.
+ * - Android: Downloads binary JPEG Blob so MediaStore/Gallery scanner indexes it immediately.
+ * - Desktop: Performs a clean native file download.
+ */
+export async function downloadImage(
+  dataUrl: string,
+  filename: string,
+  onNotify?: (msg: string) => void
+): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const notify = (msg: string) => { if (onNotify) onNotify(msg); };
+
   try {
+    const platform = detectPlatform();
     const arr = dataUrl.split(',');
     const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
     const bstr = atob(arr[1]);
@@ -1587,23 +1611,72 @@ export function downloadImage(dataUrl: string, filename: string): void {
       u8arr[n] = bstr.charCodeAt(n);
     }
     const blob = new Blob([u8arr], { type: mime });
-    const blobUrl = URL.createObjectURL(blob);
+    const cleanFilename = filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? filename : `${filename}.jpg`;
 
+    // ── iOS Strategy: Web Share API → Share Sheet (Save to Photos) ─────────
+    if (platform === 'ios') {
+      if (
+        typeof navigator !== 'undefined' &&
+        typeof navigator.share === 'function' &&
+        typeof navigator.canShare === 'function'
+      ) {
+        try {
+          const file = new File([blob], cleanFilename, { type: 'image/jpeg' });
+          if (navigator.canShare({ files: [file] })) {
+            notify('📤 Opening iOS Share Sheet...');
+            await navigator.share({
+              files: [file],
+              title: cleanFilename,
+            });
+            notify('✅ Image ready! Choose "Save Image" to add to Photos');
+            return true;
+          }
+        } catch (shareErr: any) {
+          if (shareErr?.name === 'AbortError') {
+            notify('');
+            return true;
+          }
+          console.warn('iOS Web Share API failed, falling back to new tab:', shareErr);
+        }
+      }
+
+      // iOS Fallback: Open Blob URL in new window/tab so long-press allows "Save to Photos"
+      const blobUrl = URL.createObjectURL(blob);
+      const newWin = window.open(blobUrl, '_blank');
+      if (newWin) {
+        notify('📲 Image opened in new tab. Long-press image and select "Save to Photos"');
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        return true;
+      }
+    }
+
+    // ── Android & Desktop Strategy: Binary Blob URL download ────────────────
+    const blobUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = blobUrl;
-    link.download = filename;
+    link.download = cleanFilename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
     setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    notify(platform === 'android' ? '✅ Image downloaded! View in Gallery / Photos app' : '✅ JPG downloaded successfully');
+    return true;
   } catch (err) {
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    console.error('downloadImage error:', err);
+    try {
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      notify('✅ JPG downloaded');
+      return true;
+    } catch {
+      notify('❌ Download failed');
+      return false;
+    }
   }
 }
 

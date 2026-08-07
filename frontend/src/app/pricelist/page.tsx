@@ -510,8 +510,7 @@ export default function PriceListPage() {
         return;
       }
       showToast('📦 Preparing download...');
-      downloadImage(base64Img, `HalalVeggRates_${targetDate}.jpg`);
-      showToast('💾 Image downloaded successfully!');
+      await downloadImage(base64Img, `PriceList_${targetDate}.jpg`, showToast);
     } catch (err: any) {
       showToast('❌ Unable to generate the image. Please try again.');
     }
@@ -526,8 +525,7 @@ export default function PriceListPage() {
         return;
       }
       showToast('📦 Preparing download...');
-      downloadImage(base64Img, `HalalVeggRatesStatus_${targetDate}.jpg`);
-      showToast('📢 Status Image downloaded! You can now upload it as your WhatsApp Status.');
+      await downloadImage(base64Img, `PriceList_Status_${targetDate}.jpg`, showToast);
     } catch (err: any) {
       showToast('❌ Unable to generate the image. Please try again.');
     }

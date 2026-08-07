@@ -106,8 +106,8 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
         return;
       }
       showToast('📦 Preparing download...');
-      downloadImage(url, `Due_Statement_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.jpg`);
-      showToast('✅ Statement JPG downloaded!');
+      const cleanName = (client.name || 'Client').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+      await downloadImage(url, `DueStatement_${cleanName}.jpg`, showToast);
     } catch (err) {
       console.error(err);
       showToast('❌ Unable to generate the image. Please try again.');

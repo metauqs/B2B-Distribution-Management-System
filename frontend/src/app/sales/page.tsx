@@ -830,8 +830,7 @@ export default function SalesPage() {
       }
       
       showToast('📦 Preparing download...');
-      downloadImage(imgBase64, `Invoice_${s.invoiceNo}.jpg`);
-      showToast('✅ Invoice JPG downloaded');
+      await downloadImage(imgBase64, `Invoice_${s.invoiceNo}.jpg`, showToast);
     } catch (err) {
       console.error(err);
       showToast('❌ Unable to generate the image. Please try again.');
