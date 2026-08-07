@@ -42,9 +42,11 @@ interface Sale {
 interface MobileInvoiceCardProps {
   sale: Sale;
   onView: () => void;
+  onEdit?: () => void;
+  isEditable?: boolean;
 }
 
-export function MobileInvoiceCard({ sale, onView }: MobileInvoiceCardProps) {
+export function MobileInvoiceCard({ sale, onView, onEdit, isEditable }: MobileInvoiceCardProps) {
   const isPaid = sale.balance <= 0;
   const isPartial = sale.paid > 0 && sale.balance > 0;
 
@@ -53,27 +55,52 @@ export function MobileInvoiceCard({ sale, onView }: MobileInvoiceCardProps) {
       title={sale.client?.name ?? 'Anonymous Client'}
       headerBadge={fmtDateTime(sale.date)}
       footer={
-        <button
-          onClick={onView}
-          style={{
-            width: '100%',
-            padding: '10px 14px',
-            background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
-            color: '#FFFFFF',
-            fontWeight: 700,
-            borderRadius: '10px',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
-          }}
-        >
-          👁️ View Invoice Details
-        </button>
+        <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+          <button
+            onClick={onView}
+            style={{
+              flex: 1,
+              padding: '10px 14px',
+              background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+              color: '#FFFFFF',
+              fontWeight: 700,
+              borderRadius: '10px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
+            }}
+          >
+            👁️ View Details
+          </button>
+          {isEditable && onEdit && (
+            <button
+              onClick={onEdit}
+              style={{
+                flex: 1,
+                padding: '10px 14px',
+                background: 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)',
+                color: '#FFFFFF',
+                fontWeight: 700,
+                borderRadius: '10px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                boxShadow: '0 4px 12px rgba(26, 60, 40, 0.25)',
+              }}
+            >
+              ✏️ Edit Invoice
+            </button>
+          )}
+        </div>
       }
     >
       <MobileCardRow label="Invoice ID" value={sale.invoiceNo} isMono />

@@ -181,6 +181,7 @@ model Sale {
   employeeId          String?
   deliveryDate        DateTime? @db.Timestamptz(3)
   deliveryTime        String?
+  isLocked            Boolean           @default(false)
   deliveries          Delivery[]
   items               SaleItem[]
   branch              Branch            @relation(fields: [branchId], references: [id])

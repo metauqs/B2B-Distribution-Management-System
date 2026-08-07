@@ -14,6 +14,7 @@ import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { WhatsAppShareModal } from '@/components/modals/WhatsAppShareModal';
+import { salesService } from '@/services/salesService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ interface OrderItem {
 }
 
 interface SaleItem {
-  id: string; itemName: string; qty: number; unit: string; rate: number; amount: number;
+  id: string; productId?: string | null; itemName: string; qty: number; unit: string; rate: number; amount: number;
   product?: { id: string; name: string; urduName?: string | null } | null;
 }
 
@@ -167,6 +168,74 @@ export default function SalesPage() {
   const [creditWarn,     setCreditWarn]     = useState(false);
   const [whatsappSharing, setWhatsappSharing] = useState(false);
   const [waShareModal, setWaShareModal] = useState<{ jpgBase64: string; whatsappUrl: string; filename: string; displayPhone?: string } | null>(null);
+
+  // ── Same-Day Edit Mode & Audit Trail states ──
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [activeSalePrompt, setActiveSalePrompt] = useState<Sale | null>(null);
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+
+  const isInvoiceEditable = (s: Sale | null) => {
+    if (!s) return false;
+    if (s.status === 'CANCELLED') return false;
+    if (s.deliveryStatus === 'DELIVERED' || s.deliveryStatus === 'FAILED') return false;
+    if (s.deliveries && s.deliveries.some(d => d.status === 'DELIVERED' || d.status === 'FAILED' || d.status === 'RETURNED')) return false;
+    const currentBusinessDay = todayInputDate();
+    const saleDateStr = new Date(s.date).toISOString().slice(0, 10);
+    return saleDateStr === currentBusinessDay;
+  };
+
+  const startEditInvoice = (sale: Sale) => {
+    setEditingSale(sale);
+    setSelClient(sale.client as any);
+    setItems(sale.items.map(i => ({
+      productId: i.productId || i.product?.id || '',
+      itemName: i.itemName,
+      unit: i.unit,
+      rate: i.rate,
+      qty: i.qty,
+      amount: i.amount,
+    })));
+    setDiscount(sale.discount || 0);
+    setDeliveryFee(sale.deliveryCharge || 0);
+    setPaid(sale.paid || 0);
+    setPayMode(sale.paymentMode || 'CREDIT');
+    setInvNotes(sale.notes || '');
+    setSelEmpId(sale.employeeId || '');
+    setDelivDate(sale.deliveryDate ? sale.deliveryDate.slice(0, 10) : '');
+    setDelivTime(sale.deliveryTime || 'PHASE 1 (11:00 AM - 02:00 PM)');
+    setActiveSalePrompt(null);
+    setStep(2);
+    setView('new');
+  };
+
+  const cancelInvoiceDraft = () => {
+    setEditingSale(null);
+    setActiveSalePrompt(null);
+    setSelClient(null);
+    setItems([blankItem()]);
+    setDiscount(0);
+    setDeliveryFee(0);
+    setPaid(0);
+    setInvNotes('');
+    setStep(1);
+    setView('list');
+  };
+
+  const openAuditTrail = async (saleId: string) => {
+    setShowAuditModal(true);
+    setLoadingAudit(true);
+    try {
+      const logs = await salesService.getAuditTrail(saleId);
+      setAuditLogs(logs);
+    } catch (err) {
+      console.error('Failed to load audit trail:', err);
+      showToast('❌ Failed to load audit trail');
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
 
   // ── Employee & Delivery states ──
   const [employees, setEmployees] = useState<any[]>([]);
@@ -326,20 +395,6 @@ export default function SalesPage() {
     loadEmployees();
   };
 
-  const cancelInvoiceDraft = () => {
-    setSelClient(null);
-    setStep(1);
-    setItems([blankItem()]);
-    setDiscount(0);
-    setDeliveryFee(0);
-    setPaid(0);
-    setPayMode('CREDIT');
-    setInvNotes('');
-    setSelEmpId('');
-    setCreditWarn(false);
-    setView('list');
-  };
-
   // Re-load clients whenever search term changes while on the new-invoice view
   useEffect(() => {
     if (view === 'new') loadClients();
@@ -379,12 +434,25 @@ export default function SalesPage() {
     setSavingClient(false);
   };
 
-  // ── Select client → check credit ────────────────────────────────────────────
-  const selectClient = (c: Client) => {
+  // ── Select client → check active same-day invoice ─────────────────────────────
+  const selectClient = async (c: Client) => {
     setSelClient(c);
     if (c.paymentTerms === 0) setPayMode('CASH');
     else setPayMode('CREDIT');
     setPaid(0);
+
+    try {
+      const active = await salesService.getActiveSale(c.id);
+      if (active) {
+        setActiveSalePrompt(active as any);
+      } else {
+        setActiveSalePrompt(null);
+      }
+    } catch (err) {
+      console.error('Error checking active sale:', err);
+      setActiveSalePrompt(null);
+    }
+
     setStep(2);
   };
 
@@ -459,31 +527,61 @@ export default function SalesPage() {
 
     setSaving(true);
     try {
-      const res  = await apiFetch('/api/sales', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId:       selClient.id,
-          items:          items.filter(i => i.itemName && i.qty > 0),
-          discount, deliveryCharge: deliveryFee,
-          paid, paymentMode: payMode,
-          notes: invNotes,
-          employeeId: selEmpId || undefined,
-          deliveryDate: delivDate || undefined,
-          deliveryTime: delivTime || undefined,
-          date: (!invDate || invDate === todayInputDate()) ? new Date().toISOString() : invDate,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        invalidateCache('/api/sales');
-        invalidateCache('/api/clients');
-        invalidateCache('/api/inventory');
-        invalidateCache('/api/collections');
-        invalidateCache('/api/reports');
-        showToast(`✅ Invoice ${data.data.invoiceNo} created`);
-        await loadSales(true);
-        openDetail(data.data);
-      } else showToast('❌ ' + (data.error ?? 'Failed'));
+      if (editingSale) {
+        const res = await apiFetch(`/api/sales/${editingSale.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: items.filter(i => i.itemName && i.qty > 0),
+            discount,
+            deliveryCharge: deliveryFee,
+            notes: invNotes,
+            employeeId: selEmpId || undefined,
+            deliveryDate: delivDate || undefined,
+            deliveryTime: delivTime || undefined,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          invalidateCache('/api/sales');
+          invalidateCache('/api/clients');
+          invalidateCache('/api/inventory');
+          invalidateCache('/api/collections');
+          invalidateCache('/api/reports');
+          showToast(`✅ Invoice #${data.data.invoiceNo} updated successfully`);
+          setEditingSale(null);
+          await loadSales(true);
+          openDetail(data.data);
+        } else showToast('❌ ' + (data.error ?? 'Failed to edit invoice'));
+      } else {
+        const res = await apiFetch('/api/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientId: selClient.id,
+            items: items.filter(i => i.itemName && i.qty > 0),
+            discount, deliveryCharge: deliveryFee,
+            paid, paymentMode: payMode,
+            notes: invNotes,
+            employeeId: selEmpId || undefined,
+            deliveryDate: delivDate || undefined,
+            deliveryTime: delivTime || undefined,
+            date: (!invDate || invDate === todayInputDate()) ? new Date().toISOString() : invDate,
+            forceNew: true,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          invalidateCache('/api/sales');
+          invalidateCache('/api/clients');
+          invalidateCache('/api/inventory');
+          invalidateCache('/api/collections');
+          invalidateCache('/api/reports');
+          showToast(`✅ Invoice ${data.data.invoiceNo} created`);
+          await loadSales(true);
+          openDetail(data.data);
+        } else showToast('❌ ' + (data.error ?? 'Failed'));
+      }
     } finally { setSaving(false); }
   };
 
@@ -853,6 +951,9 @@ export default function SalesPage() {
                           <td>
                             <div style={{ display: 'flex', gap: 4 }}>
                               <button className="va-btn secondary small" onClick={() => openDetail(s)}>🧾 View</button>
+                              {isInvoiceEditable(s) && (
+                                <button className="va-btn secondary small" onClick={() => startEditInvoice(s)} style={{ background: '#1A3C28', color: '#fff', border: 'none' }}>✏️ Edit</button>
+                              )}
                               <button className="va-btn secondary small" onClick={() => shareWhatsApp(s)} disabled={whatsappSharing} style={{ background: whatsappSharing ? '#94d3a2' : '#25D366', color: '#fff', border: 'none', opacity: whatsappSharing ? 0.7 : 1 }}>📲</button>
                             </div>
                           </td>
@@ -878,6 +979,8 @@ export default function SalesPage() {
                       key={s.id}
                       sale={s}
                       onView={() => openDetail(s)}
+                      onEdit={() => startEditInvoice(s)}
+                      isEditable={isInvoiceEditable(s)}
                     />
                   ))}
 
@@ -926,7 +1029,9 @@ export default function SalesPage() {
               {/* Top Row: Cancel + Title */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                 <button className="va-btn secondary small" onClick={cancelInvoiceDraft}>← Cancel</button>
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>+ New Invoice</h3>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>
+                  {editingSale ? `✏️ Editing Invoice #${editingSale.invoiceNo}` : '+ New Invoice'}
+                </h3>
               </div>
 
               {/* Stepper Progress Indicator */}
@@ -1035,6 +1140,75 @@ export default function SalesPage() {
           {/* ── STEP 2: ADD ITEMS ── */}
           {step === 2 && selClient && (
             <>
+              {/* Active Same-Day Invoice Detection Banner */}
+              {activeSalePrompt && !editingSale && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)',
+                  color: '#fff',
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  marginBottom: '16px',
+                  boxShadow: '0 4px 16px rgba(26,60,40,0.2)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '15px' }}>
+                        💡 Active Editable Invoice #{activeSalePrompt.invoiceNo} Exists Today
+                      </div>
+                      <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '4px' }}>
+                        {selClient.name} already has an invoice for today's business day (Total: Rs {activeSalePrompt.total.toLocaleString()}, Items: {activeSalePrompt.items?.length || 0}).
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        className="va-btn"
+                        onClick={() => startEditInvoice(activeSalePrompt)}
+                        style={{ background: '#25D366', color: '#fff', border: 'none', fontWeight: 700, padding: '8px 16px' }}
+                      >
+                        ✏️ Edit Existing Invoice #{activeSalePrompt.invoiceNo}
+                      </button>
+                      <button
+                        className="va-btn secondary small"
+                        onClick={() => setActiveSalePrompt(null)}
+                        style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', border: 'none' }}
+                      >
+                        + Create New Invoice
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Edit Mode Active Banner */}
+              {editingSale && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)',
+                  color: '#fff',
+                  padding: '12px 18px',
+                  borderRadius: '10px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  boxShadow: '0 4px 12px rgba(26,60,40,0.2)',
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '14px' }}>
+                      ✏️ Edit Mode: Invoice #{editingSale.invoiceNo}
+                    </div>
+                    <div style={{ fontSize: '12px', opacity: 0.85, marginTop: '2px' }}>
+                      Updating same-day active invoice for {selClient.name}. Inventory and customer ledger will recalculate automatically upon saving.
+                    </div>
+                  </div>
+                  <button
+                    className="va-btn secondary small"
+                    onClick={cancelInvoiceDraft}
+                    style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', border: 'none' }}
+                  >
+                    Cancel Edit
+                  </button>
+                </div>
+              )}
               {/* Client info card */}
               <div className="va-panel" style={{ borderLeft: '4px solid var(--forest)', padding: '14px 20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
@@ -1331,9 +1505,9 @@ export default function SalesPage() {
                       style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6 }} />
                   </div>
 
-                  <button className="va-btn" style={{ width: '100%', marginTop: 14, fontSize: 15, padding: '12px' }}
+                  <button className="va-btn" style={{ width: '100%', marginTop: 14, fontSize: 15, padding: '12px', background: editingSale ? 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)' : undefined }}
                     onClick={handleSubmit} disabled={saving}>
-                    {saving ? 'Saving…' : '✓ Generate Invoice'}
+                    {saving ? 'Saving…' : editingSale ? `✓ Save Changes to Invoice #${editingSale.invoiceNo}` : '✓ Generate Invoice'}
                   </button>
                 </div>
               </div>
@@ -1356,6 +1530,10 @@ export default function SalesPage() {
               </div>
               {detailSale && (
                 <div className="hidden md:flex" style={{ gap: 8 }}>
+                  {isInvoiceEditable(detailSale) && (
+                    <button className="va-btn primary small" onClick={() => startEditInvoice(detailSale)} style={{ background: '#1A3C28', color: '#fff', border: 'none' }}>✏️ Edit Invoice</button>
+                  )}
+                  <button className="va-btn secondary small" onClick={() => openAuditTrail(detailSale.id)}>📋 Audit Trail</button>
                   <button className="va-btn secondary small" onClick={() => printInvoice(detailSale)}>🖨️ Print</button>
                   <button className="va-btn secondary small" onClick={() => downloadInvoice(detailSale)}>💾 Download PDF</button>
                   <button className="va-btn secondary small" onClick={() => downloadInvoiceJPG(detailSale)}>🖼️ Download JPG</button>
@@ -1759,6 +1937,59 @@ export default function SalesPage() {
           onClose={() => setWaShareModal(null)}
           onToast={showToast}
         />
+      )}
+      {/* Audit Trail Modal */}
+      {showAuditModal && (
+        <div onClick={() => setShowAuditModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ padding: '16px 20px', background: 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 16 }}>📋 Audit Trail & Edit History</div>
+                <div style={{ fontSize: 11, opacity: 0.85 }}>Invoice #{detailSale?.invoiceNo}</div>
+              </div>
+              <button onClick={() => setShowAuditModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: 28, height: 28, color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+
+            <div style={{ padding: 16, overflowY: 'auto', flex: 1 }}>
+              {loadingAudit ? (
+                <div className="va-loading">Loading audit logs…</div>
+              ) : auditLogs.length === 0 ? (
+                <div className="va-empty">No edit history recorded for this invoice yet.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {auditLogs.map((log: any) => (
+                    <div key={log.id} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 14, background: '#f8fafc' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                          {log.action === 'CREATE' ? '✨ Initial Creation' : `✏️ Edited by ${log.user?.name || log.user?.role || 'Admin'}`}
+                        </span>
+                        <span style={{ fontSize: 11, color: '#64748b' }}>
+                          {fmtDateTime(log.createdAt)}
+                        </span>
+                      </div>
+
+                      {log.newData?.changesSummary && Array.isArray(log.newData.changesSummary) && log.newData.changesSummary.length > 0 && (
+                        <div style={{ marginTop: 8, padding: '10px 12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12 }}>
+                          <div style={{ fontWeight: 700, fontSize: 10, color: '#64748b', textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>Changes Breakdown:</div>
+                          {log.newData.changesSummary.map((line: string, idx: number) => (
+                            <div key={idx} style={{ fontFamily: 'monospace', fontSize: 12, padding: '2px 0', color: line.startsWith('+') ? '#166534' : line.startsWith('-') ? '#991b1b' : '#0f172a' }}>
+                              {line}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {log.newData?.reason && (
+                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 6, fontStyle: 'italic' }}>
+                          Reason: {log.newData.reason}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </DashboardLayout>
   );
