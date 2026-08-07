@@ -13,6 +13,71 @@
 
 import { prisma } from './prisma';
 
+// ── 0. recalcAvgCostFromHistory — Recomputes avgCost from StockMovements ──────
+//
+// Called after a Purchase is EDITED or DELETED to ensure avgCost stays accurate.
+// Replays all purchase stock movements chronologically using weighted average cost.
+// Only updates avgCost — never modifies qty (that is already handled by the caller).
+
+export async function recalcAvgCostFromHistory(
+  tx: any,
+  productId: string,
+  branchId: string,
+): Promise<void> {
+  const db = tx || prisma;
+
+  // Fetch all PURCHASE movements for this product in chronological order
+  const purchaseMoves = await db.purchasePriceHistory.findMany({
+    where: {
+      productId,
+      branchId,
+      // Only include histories linked to non-deleted purchases
+      OR: [
+        { purchaseId: null },
+        {
+          purchase: { deletedAt: null },
+        },
+      ],
+    },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    select: { qty: true, buyPrice: true, purchaseId: true },
+  });
+
+  if (purchaseMoves.length === 0) {
+    // No purchase history — reset avgCost to 0
+    await db.inventory.updateMany({
+      where: { productId, branchId },
+      data: { avgCost: 0 },
+    });
+    return;
+  }
+
+  // Replay weighted average cost chronologically
+  let runningQty = 0;
+  let runningAvg = 0;
+
+  for (const move of purchaseMoves) {
+    const q = move.qty;
+    const r = move.buyPrice;
+    if (q <= 0 || r <= 0) continue;
+
+    const totalQty = runningQty + q;
+    runningAvg = totalQty > 0
+      ? ((runningQty * runningAvg) + (q * r)) / totalQty
+      : r;
+    runningQty = totalQty;
+  }
+
+  // Update avgCost if we have a valid value
+  if (runningAvg > 0) {
+    await db.inventory.updateMany({
+      where: { productId, branchId },
+      data: { avgCost: runningAvg },
+    });
+  }
+}
+
+
 // ── 1. stockIn — Called from Purchase Entry ────────────────────────────────────
 
 export interface StockInParams {

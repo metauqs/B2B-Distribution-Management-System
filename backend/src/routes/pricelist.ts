@@ -434,14 +434,18 @@ router.post('/', async (req: Request, res: Response) => {
       where: { branchId, date: { gte: dayStart, lte: dayEnd } },
     });
 
-    // Fetch Inventory buy rates map
+    // Fetch Inventory buy rates map — using avgCost (weighted avg) with currentBuyPrice as fallback
     const productIds = items.filter((it: any) => it.productId).map((it: any) => it.productId);
     const inventories = productIds.length > 0 ? await prisma.inventory.findMany({
       where: { branchId, productId: { in: productIds } },
-      select: { productId: true, currentBuyPrice: true }
+      select: { productId: true, currentBuyPrice: true, avgCost: true }
     }) : [];
     const invBuyMap = new Map<string, number>();
-    inventories.forEach(inv => invBuyMap.set(inv.productId, inv.currentBuyPrice));
+    inventories.forEach(inv => {
+      // Use avgCost (weighted average) as primary; fall back to currentBuyPrice
+      const effectiveBuyRate = (inv.avgCost && inv.avgCost > 0) ? inv.avgCost : inv.currentBuyPrice;
+      invBuyMap.set(inv.productId, effectiveBuyRate);
+    });
 
     const validatedUserId = await getValidUserId(userId);
 
@@ -576,10 +580,13 @@ router.patch('/:id', async (req: Request, res: Response) => {
       const productIds = items.filter((it: any) => it.productId).map((it: any) => it.productId);
       const inventories = productIds.length > 0 ? await prisma.inventory.findMany({
         where: { branchId: existingList.branchId, productId: { in: productIds } },
-        select: { productId: true, currentBuyPrice: true }
+        select: { productId: true, currentBuyPrice: true, avgCost: true }
       }) : [];
       const invBuyMap = new Map<string, number>();
-      inventories.forEach(inv => invBuyMap.set(inv.productId, inv.currentBuyPrice));
+      inventories.forEach(inv => {
+        const effectiveBuyRate = (inv.avgCost && inv.avgCost > 0) ? inv.avgCost : inv.currentBuyPrice;
+        invBuyMap.set(inv.productId, effectiveBuyRate);
+      });
 
       for (const item of items) {
         const buyRate = item.productId ? (invBuyMap.get(item.productId) ?? item.buyRate ?? 0) : (item.buyRate ?? 0);

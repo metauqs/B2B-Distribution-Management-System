@@ -224,7 +224,10 @@ export default function PurchasesPage() {
       if (data.success) {
         invalidateCache('/api/purchases');
         invalidateCache('/api/inventory');
+        invalidateCache('/api/pricelist');
         invalidateCache('/api/reports');
+        // Notify all open pages to refresh immediately
+        window.dispatchEvent(new Event('app-revalidate'));
         showToast('✅ Purchase deleted & stock levels adjusted');
         await load(true);
       } else {
@@ -367,7 +370,10 @@ export default function PurchasesPage() {
       if (res.ok && data.success) {
         invalidateCache('/api/purchases');
         invalidateCache('/api/inventory');
+        invalidateCache('/api/pricelist');
         invalidateCache('/api/reports');
+        // Notify all open pages (Inventory, Price List, Dashboard) to refresh immediately
+        window.dispatchEvent(new Event('app-revalidate'));
         showToast(purchaseId ? '✅ Purchase updated successfully' : '✅ Purchase saved — stock updated');
         handleCancelForm();
         await load(true);

@@ -413,7 +413,9 @@ export default function InventoryPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         invalidateCache('/api/inventory');
+        invalidateCache('/api/pricelist');
         invalidateCache('/api/reports');
+        window.dispatchEvent(new Event('app-revalidate'));
         showToast(`✅ Wastage recorded — ${data.data?.refNo ?? ''}`);
         setWProdId(''); setWProdSearch(''); setWQty(0); setWRemarks(''); setWDate('');
         await load(true); setView('list');
@@ -470,7 +472,9 @@ export default function InventoryPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         invalidateCache('/api/inventory');
+        invalidateCache('/api/pricelist');
         invalidateCache('/api/reports');
+        window.dispatchEvent(new Event('app-revalidate'));
         const { refNo, delta, newQty } = data.data;
         showToast(`✅ Stock updated — ${refNo} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)} → New Stock: ${newQty.toFixed(2)})`);
         setAProdId(''); setAProdSearch(''); setAQtyVal(''); setARemarks(''); setASysQty(0);

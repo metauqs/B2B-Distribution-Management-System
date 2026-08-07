@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { writeAuditLog, syncPriceListFromPurchase, PurchaseItemForSync } from '../lib/business';
-import { stockIn } from '../lib/inventoryService';
+import { stockIn, recalcAvgCostFromHistory } from '../lib/inventoryService';
 
 import { parseInputDateToUtc } from '../lib/businessDate';
 
@@ -259,8 +259,13 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
 
     const updatedPurchase = await prisma.$transaction(async tx => {
       // 1. Reverse previous stock movements for old purchase items
+      //    Revert qty AND remove the price history records so avgCost recalc is clean
+      const productIdsToRecalc = new Set<string>();
+
       for (const oldItem of existingPurchase.items) {
         if (oldItem.productId) {
+          productIdsToRecalc.add(oldItem.productId);
+
           const inv = await tx.inventory.findUnique({
             where: { productId_branchId: { productId: oldItem.productId, branchId } }
           });
@@ -271,6 +276,11 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
               data: { qty: revertedQty }
             });
           }
+
+          // Remove PurchasePriceHistory entries for this purchase so avgCost can be recalculated cleanly
+          await tx.purchasePriceHistory.deleteMany({
+            where: { purchaseId: id, productId: oldItem.productId }
+          });
         }
       }
 
@@ -327,6 +337,15 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
           )
       );
 
+      // 5. Recalculate avgCost from full history for all affected products
+      //    This ensures weighted average is correct even after mid-history edits
+      const allProductIds = new Set<string>(
+        [...productIdsToRecalc, ...finalItems.filter((i: any) => i.productId).map((i: any) => i.productId)]
+      );
+      await Promise.all(
+        Array.from(allProductIds).map(pid => recalcAvgCostFromHistory(tx, pid, branchId))
+      );
+
       return p;
     }, { maxWait: 15000, timeout: 600000 });
 
@@ -369,9 +388,13 @@ router.delete('/:id', async (req: Request, res: Response) => {
     if (!purchase) return res.status(404).json({ success: false, error: 'Purchase not found' });
 
     await prisma.$transaction(async tx => {
-      // Revert stock for deleted items
+      const productIdsToRecalc: string[] = [];
+
+      // Revert stock for deleted items, remove price history, and recalc avgCost
       for (const item of purchase.items) {
         if (item.productId) {
+          productIdsToRecalc.push(item.productId);
+
           const inv = await tx.inventory.findUnique({
             where: { productId_branchId: { productId: item.productId, branchId } }
           });
@@ -381,6 +404,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
               data: { qty: Math.max(0, inv.qty - item.qty) }
             });
           }
+
+          // Remove price history entries for this purchase so avgCost recalculates correctly
+          await tx.purchasePriceHistory.deleteMany({
+            where: { purchaseId: id, productId: item.productId }
+          });
         }
       }
 
@@ -388,6 +416,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
         where: { id },
         data: { deletedAt: new Date() }
       });
+
+      // Recalculate avgCost from remaining purchase history for all affected products
+      await Promise.all(
+        productIdsToRecalc.map(pid => recalcAvgCostFromHistory(tx, pid, branchId))
+      );
     });
 
     await writeAuditLog({
