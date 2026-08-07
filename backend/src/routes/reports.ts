@@ -55,7 +55,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       l30Expenses,
       attentionRaw
     ] = await Promise.all([
-      prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' } }, _sum: { total: true, paid: true }, _count: true }),
+      prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' } }, _sum: { total: true, subtotal: true, discount: true, paid: true }, _count: true }),
       prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' }, paymentMode: 'CASH' }, _sum: { total: true } }),
       prisma.sale.aggregate({ where: { ...tWhere, status: { not: 'CANCELLED' }, paymentMode: 'CREDIT' }, _sum: { total: true } }),
       prisma.purchase.aggregate({ where: tWhere, _sum: { total: true } }),
@@ -92,15 +92,40 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     // by using whichever is larger — standalone collections already include invoice checkout payments
     // recorded as collections; sale.paid already sums all collected amounts on the invoice)
     const todayCollections = todaySalesPaid > dbCollectionsSum ? todaySalesPaid : dbCollectionsSum;
-    const grossProfit = todaySales - todayPurchases;
+    const totalReceivables = totalReceivablesAgg._sum.currentBalance ?? 0;
+
+    // ── Gross Profit: same formula as Reports module (financialEngine.ts) ─────────
+    // netSales  = grossSales (subtotal) - discounts   [matches financialEngine line 75]
+    // totalCogs = Σ(saleItem.qty × saleItem.costPrice) [matches financialEngine lines 84-93]
+    // grossProfit = netSales - totalCogs              [matches financialEngine line 95]
+    const grossSales = todaySalesAgg._sum.subtotal ?? 0;
+    const todayDiscounts = todaySalesAgg._sum.discount ?? 0;
+    const netSales = Math.max(0, grossSales - todayDiscounts);
+
+    // Fetch today's sale items to compute COGS from locked costPrice
+    const todaySaleItems = await prisma.saleItem.findMany({
+      where: { sale: { ...tWhere, status: { not: 'CANCELLED' } } },
+      select: { qty: true, costPrice: true, returnedQty: true, rate: true },
+    });
+
+    let totalCogs = 0;
+    let returnedProductsToday = 0;
+    let returnValueToday = 0;
+    for (const item of todaySaleItems) {
+      // Use locked historical cost. If missing (legacy), 0 — no estimation (matches financialEngine)
+      const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
+      totalCogs += item.qty * effectiveCost;
+      if (item.returnedQty > 0) {
+        returnedProductsToday += item.returnedQty;
+        returnValueToday += item.returnedQty * item.rate;
+      }
+    }
+
+    const grossProfit = netSales - totalCogs;
     const netProfit = grossProfit - todayExpenses;
     const todayProfit = netProfit;
     const cashPosition = todayCollections - todayExpenses - todayPurchases;
-    const totalReceivables = totalReceivablesAgg._sum.currentBalance ?? 0;
-
-    const returnedProductsToday = todayReturnedItemsArr.reduce((sum, i) => sum + (i.returnedQty || 0), 0);
-    const returnValueToday = todayReturnedItemsArr.reduce((sum, i) => sum + ((i.returnedQty || 0) * i.rate), 0);
-    const netSalesToday = todaySales;
+    const netSalesToday = netSales; // expose netSales (after discounts) not gross
 
     const suppPurchMap = Object.fromEntries(supplierPurchasesArr.map(x => [x.supplierId, x._sum.total ?? 0]));
     const suppPayMap = Object.fromEntries(supplierPaymentsArr.map(x => [x.supplierId, x._sum.amount ?? 0]));

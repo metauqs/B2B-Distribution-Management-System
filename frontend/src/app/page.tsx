@@ -278,7 +278,7 @@ export default function DashboardPage() {
           <div className={`value${grossProf < 0 ? ' neg' : ''}`} style={{ color: grossProf >= 0 ? '#166534' : '#DC2626' }}>
             {fmtMoney(grossProf)}
           </div>
-          <div className="foot">Sales − Purchases</div>
+          <div className="foot">Net Sales − COGS</div>
         </div>
 
         {/* Net Profit */}
