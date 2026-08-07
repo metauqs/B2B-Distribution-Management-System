@@ -79,12 +79,31 @@ export function getProductVisual(name: string): { type: 'emoji' | 'image'; value
 
 interface ProductVisualProps {
   name: string;
+  emoji?: string | null;
   size?: number;
   style?: React.CSSProperties;
   className?: string;
 }
 
-export function ProductVisual({ name, size = 22, style, className }: ProductVisualProps) {
+export function ProductVisual({ name, emoji, size = 22, style, className }: ProductVisualProps) {
+  if (emoji && emoji.trim()) {
+    return (
+      <span
+        style={{
+          fontSize: size,
+          lineHeight: 1,
+          display: 'inline-block',
+          verticalAlign: 'middle',
+          fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif',
+          ...style
+        }}
+        className={className}
+      >
+        {emoji.trim()}
+      </span>
+    );
+  }
+
   const visual = getProductVisual(name);
   const [hasError, setHasError] = useState(false);
 

@@ -11,6 +11,8 @@ import { SkeletonTable } from '@/components/ui/Skeleton';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
+import { ProductVisual } from '@/components/ui/ProductVisual';
+import { useAccess } from '@/hooks/useAccess';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +26,7 @@ interface Product {
   id:           string;
   name:         string;
   urduName?:    string | null;
+  emoji?:       string | null;
   category:     string; // vegetable | fruit | other
   defaultUnit:  string;
   availability: ProductAvailability;
@@ -70,7 +73,7 @@ interface PriceList {
 interface HistoryEntry {
   itemName: string;
   product?: { urduName?: string | null; category?: string };
-  latest: { sellRate: number; buyRate: number; marginPct: number; date: string; } | null;
+  latest: { sellRate: number; buyRate: number; marginPct: number; date: string; sellChange?: number | null; buyChange?: number | null; } | null;
   history: {
     date: string;
     buyRate: number;
@@ -88,8 +91,8 @@ const CLIENT_TYPES = ['RETAIL', 'WHOLESALE', 'HOTEL', 'RESTAURANT', 'HOSTEL', 'C
 
 // ─── Component Helpers ────────────────────────────────────────────────────────
 
-function ChangeChip({ val }: { val: number | null }) {
-  if (val === null || val === 0) return <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>;
+function ChangeChip({ val }: { val?: number | null }) {
+  if (val === undefined || val === null || val === 0) return <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>;
   const pos = val > 0;
   return (
     <span style={{
@@ -144,6 +147,10 @@ export default function PriceListPage() {
   const [activeBroadcastId, setActiveBroadcastId] = useState<string | null>(null);
   const [broadcastProgress, setBroadcastProgress] = useState<any>(null);
 
+  // Access permissions
+  const { isAdmin, isSupervisor } = useAccess();
+  const canEditCatalog = isAdmin || isSupervisor;
+
   // Master Catalog State
   const [products, setProducts] = useState<Product[]>([]);
   const [newProdName, setNewProdName] = useState('');
@@ -151,6 +158,22 @@ export default function PriceListPage() {
   const [newProdCat, setNewProdCat] = useState('vegetable');
   const [newProdUnit, setNewProdUnit] = useState('KG');
   const [newProdAvail, setNewProdAvail] = useState<ProductAvailability>(ProductAvailability.AVAILABLE);
+
+  // Edit Product Modal State
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editUrdu, setEditUrdu] = useState('');
+  const [editEmoji, setEditEmoji] = useState('');
+  const [editCategory, setEditCategory] = useState('vegetable');
+  const [editUnit, setEditUnit] = useState('KG');
+  const [editAvailability, setEditAvailability] = useState<ProductAvailability>(ProductAvailability.AVAILABLE);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  // Audit Log Modal State
+  const [auditProduct, setAuditProduct] = useState<Product | null>(null);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
 
   // Today's snapshot state
   const [targetDate, setTargetDate] = useState(() => todayInputDate());
@@ -618,6 +641,77 @@ export default function PriceListPage() {
     }
   };
 
+  const handleOpenEditProduct = (p: Product) => {
+    setEditingProduct(p);
+    setEditName(p.name || '');
+    setEditUrdu(p.urduName || '');
+    setEditEmoji(p.emoji || '');
+    setEditCategory((p.category || 'vegetable').toLowerCase());
+    setEditUnit(p.defaultUnit || 'KG');
+    setEditAvailability(p.availability || ProductAvailability.AVAILABLE);
+    setEditError('');
+  };
+
+  const handleSaveEditProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+    if (!editName.trim()) {
+      setEditError('Product name cannot be empty');
+      return;
+    }
+    setEditSaving(true);
+    setEditError('');
+    try {
+      const res = await apiFetch(`/api/products/${editingProduct.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editName,
+          urduName: editUrdu,
+          emoji: editEmoji,
+          category: editCategory,
+          defaultUnit: editUnit,
+          availability: editAvailability,
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        invalidateCache('/api/products');
+        invalidateCache('/api/pricelist');
+        showToast(`✅ Updated "${editName.trim()}" successfully`);
+        setEditingProduct(null);
+        await loadProducts();
+        await loadDateList(targetDate, true);
+      } else {
+        setEditError(data.error || 'Failed to update product');
+      }
+    } catch (err: any) {
+      setEditError(err.message || 'Error updating product');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleOpenAuditLog = async (p: Product) => {
+    setAuditProduct(p);
+    setLoadingAudit(true);
+    setAuditLogs([]);
+    try {
+      const res = await apiFetch(`/api/products/${p.id}/audit-logs`);
+      const data = await res.json();
+      if (data.success) {
+        setAuditLogs(data.data || []);
+      } else {
+        showToast('❌ Failed to fetch audit logs');
+      }
+    } catch (err: any) {
+      console.error('Audit log fetch error:', err);
+      showToast('❌ Failed to fetch audit logs');
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
   // ─── Today's Snapshot Actions ──────────────────────────────────────────────
 
   const updateRate = (idx: number, field: 'buyRate' | 'sellRate', val: number) => {
@@ -979,7 +1073,7 @@ export default function PriceListPage() {
                         <th>Unit</th>
                         <th>Category</th>
                         <th style={{ textAlign: 'right', width: 120, color: 'var(--primary)', fontWeight: 700 }}>Stock</th>
-                        <th style={{ textAlign: 'right', width: 130, color: 'var(--forest)', fontWeight: 700 }}>Buy Rate</th>
+                        <th style={{ textAlign: 'right', width: 150, color: 'var(--forest)', fontWeight: 700 }}>Avg Buy Cost (Inventory)</th>
                         <th style={{ textAlign: 'right', width: 140, fontWeight: 700 }}>Sell Rate (Customer)</th>
                         <th style={{ textAlign: 'right', width: 110 }}>Profit Margin</th>
                         <th style={{ minWidth: 110 }}>Margin %</th>
@@ -991,7 +1085,7 @@ export default function PriceListPage() {
                       ) : (
                         filteredEditItems.map((item, idx) => {
                           const realIndex = editItems.indexOf(item);
-                          const buyRate = item.avgBuyCost && item.avgBuyCost > 0 ? item.avgBuyCost : (item.buyRate ?? 0);
+                          const buyRate = (item.avgBuyCost && item.avgBuyCost > 0) ? item.avgBuyCost : ((item.currentBuyPrice && item.currentBuyPrice > 0) ? item.currentBuyPrice : (item.buyRate ?? 0));
                           const availStock = item.availableStock ?? item.currentStock ?? 0;
                           const margin = item.sellRate - buyRate;
                           const marginPct = (buyRate > 0) ? (margin / buyRate) * 100 : 0;
@@ -1009,7 +1103,16 @@ export default function PriceListPage() {
                                 {availStock.toFixed(2)} {item.unit}
                               </td>
                               <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
-                                {buyRate > 0 ? `Rs ${buyRate.toFixed(2)}` : '—'}
+                                {buyRate > 0 ? (
+                                  <div>
+                                    <span style={{ fontSize: 13, fontWeight: 800 }}>Rs {buyRate.toFixed(2)}</span>
+                                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>
+                                      Inventory Avg
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span style={{ color: 'var(--muted)' }}>—</span>
+                                )}
                               </td>
                               <td style={{ textAlign: 'right' }}>
                                 {isEditing ? (
@@ -1046,9 +1149,9 @@ export default function PriceListPage() {
                 ) : (
                   filteredEditItems.map((item, idx) => {
                     const realIndex = editItems.indexOf(item);
-                    const margin = item.sellRate - item.buyRate;
-                    const marginPct = item.buyRate > 0 ? (margin / item.buyRate) * 100 : 0;
-                    const buyChanged = item.origBuyRate !== undefined && item.buyRate !== item.origBuyRate;
+                    const buyRate = (item.avgBuyCost && item.avgBuyCost > 0) ? item.avgBuyCost : ((item.currentBuyPrice && item.currentBuyPrice > 0) ? item.currentBuyPrice : (item.buyRate ?? 0));
+                    const margin = item.sellRate - buyRate;
+                    const marginPct = buyRate > 0 ? (margin / buyRate) * 100 : 0;
                     const sellChanged = item.origSellRate !== undefined && item.sellRate !== item.origSellRate;
 
                     return (
@@ -1057,22 +1160,14 @@ export default function PriceListPage() {
                         title={item.itemName}
                         headerBadge={item.product?.urduName || item.unit}
                         style={{
-                          background: (buyChanged || sellChanged) ? '#FFFDE6' : '#FFFFFF',
+                          background: sellChanged ? '#FFFDE6' : '#FFFFFF',
                         }}
                       >
                         <MobileCardRow label="Unit / Category" value={`${item.unit} · ${item.product?.category || 'General'}`} />
-                        <MobileCardRow label="Buy Rate (Mandi)">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              value={item.buyRate ?? ''}
-                              onFocus={e => e.target.select()}
-                              onChange={e => updateRate(realIndex, 'buyRate', e.target.value === '' ? 0 : Number(e.target.value))}
-                              style={{ width: 100, textAlign: 'right', padding: '4px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: '13px', fontWeight: 700 }}
-                            />
-                          ) : (
-                            `Rs ${item.buyRate}`
-                          )}
+                        <MobileCardRow label="Avg Buy Cost (Inventory)">
+                          <span style={{ fontWeight: 800, color: 'var(--forest)' }}>
+                            {buyRate > 0 ? `Rs ${buyRate.toFixed(2)}` : '—'}
+                          </span>
                         </MobileCardRow>
                         <MobileCardRow label="Sell Rate (Customer)">
                           {isEditing ? (
@@ -1112,109 +1207,29 @@ export default function PriceListPage() {
       {/* ═══════════════════════════════════════════════════════════ */}
       {tab === 'history' && (
         <>
-          {/* Two-Date Comparison Tool */}
           <div className="va-panel">
-            <div className="va-panel-head"><h3>📅 Compare Prices Between Two Dates</h3></div>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700 }}>Base Date A</label>
-                <input type="date" value={compareDateA} onChange={e => setCompareDateA(e.target.value)} style={{ display: 'block', padding: '6px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', color: 'var(--ink)' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <h3>Price Trend Analysis &amp; Historical Margins</h3>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>History range:</span>
+                <select
+                  value={historyDays}
+                  onChange={e => setHistoryDays(Number(e.target.value))}
+                  style={{ padding: '4px 8px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', color: 'var(--ink)', fontSize: 12 }}
+                >
+                  <option value={7}>Last 7 Days</option>
+                  <option value={14}>Last 14 Days</option>
+                  <option value={30}>Last 30 Days</option>
+                  <option value={60}>Last 60 Days</option>
+                  <option value={90}>Last 90 Days</option>
+                </select>
               </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700 }}>Compare Date B</label>
-                <input type="date" value={compareDateB} onChange={e => setCompareDateB(e.target.value)} style={{ display: 'block', padding: '6px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', color: 'var(--ink)' }} />
-              </div>
-              <button className="va-btn" onClick={handleCompare}>Compare Snapshots</button>
             </div>
-
-            {compareResults.length > 0 && (
-              <>
-                {/* Desktop view */}
-                <div className="hide-mobile">
-                  <div style={{ overflowX: 'auto', marginTop: 20 }}>
-                    <table className="va-table">
-                      <thead>
-                        <tr>
-                          <th>Product</th>
-                          <th>Unit</th>
-                          <th style={{ textAlign: 'right' }}>Buy (Date A)</th>
-                          <th style={{ textAlign: 'right' }}>Buy (Date B)</th>
-                          <th>Buy Change</th>
-                          <th style={{ textAlign: 'right' }}>Sell (Date A)</th>
-                          <th style={{ textAlign: 'right' }}>Sell (Date B)</th>
-                          <th>Sell Change</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {compareResults.map((r, i) => (
-                          <tr key={i}>
-                            <td><strong>{r.name}</strong></td>
-                            <td>{r.unit}</td>
-                            <td className="mono" style={{ textAlign: 'right' }}>Rs {r.buyA}</td>
-                            <td className="mono" style={{ textAlign: 'right' }}>Rs {r.buyB}</td>
-                            <td>
-                              <ChangeChip val={r.buyA > 0 ? ((r.buyB - r.buyA) / r.buyA) * 100 : null} />
-                            </td>
-                            <td className="mono" style={{ textAlign: 'right' }}>Rs {r.sellA}</td>
-                            <td className="mono" style={{ textAlign: 'right' }}>Rs {r.sellB}</td>
-                            <td>
-                              <ChangeChip val={r.sellA > 0 ? ((r.sellB - r.sellA) / r.sellA) * 100 : null} />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Mobile view */}
-                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%', marginTop: 20 }}>
-                  {compareResults.map((r, i) => (
-                    <div key={i} className="va-mobile-card">
-                      <div className="card-header">
-                        <span className="card-title" style={{ color: '#FFFFFF' }}>{r.name}</span>
-                        <span className="card-subtitle">{r.unit}</span>
-                      </div>
-
-                      <div className="card-divider" />
-
-                      <div className="flex flex-col gap-2.5">
-                        <div className="card-info-row">
-                          <span className="card-label">Buy Rate (A ➔ B)</span>
-                          <span className="card-value flex items-center gap-1.5 justify-end">
-                            Rs {r.buyA} ➔ Rs {r.buyB}
-                            <ChangeChip val={r.buyA > 0 ? ((r.buyB - r.buyA) / r.buyA) * 100 : null} />
-                          </span>
-                        </div>
-                        <div className="card-info-row">
-                          <span className="card-label">Sell Rate (A ➔ B)</span>
-                          <span className="card-value flex items-center gap-1.5 justify-end">
-                            Rs {r.sellA} ➔ Rs {r.sellB}
-                            <ChangeChip val={r.sellA > 0 ? ((r.sellB - r.sellA) / r.sellA) * 100 : null} />
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
           </div>
 
-          {/* Indefinite Logs list */}
           <div className="va-panel">
-            <div className="va-panel-head">
-              <h3>Indefinite Price History Logs</h3>
-              <select value={historyDays} onChange={e => setHistoryDays(+e.target.value)} style={{ padding: '4px', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--paper)', color: 'var(--ink)' }}>
-                <option value={30}>Last 30 days</option>
-                <option value={180}>Last 6 months</option>
-                <option value={365}>Last 1 year</option>
-                <option value={1825}>Last 5 years</option>
-              </select>
-            </div>
-
-            {loading ? (
-              <div className="va-loading">Computing historical trends...</div>
+            {loading && filteredHistory.length === 0 ? (
+              <div style={{ padding: 16 }}><SkeletonTable rows={8} cols={6} /></div>
             ) : (
               <>
                 {/* Desktop View */}
@@ -1223,43 +1238,94 @@ export default function PriceListPage() {
                     <table className="va-table">
                       <thead>
                         <tr>
-                          <th>Product</th>
+                          <th>Product Name</th>
                           <th>Category</th>
-                          <th style={{ textAlign: 'right' }}>Latest Buy</th>
-                          <th style={{ textAlign: 'right' }}>Latest Sell</th>
-                          <th>Margin</th>
-                          <th>Details</th>
+                          <th style={{ textAlign: 'right' }}>Latest Buy Rate</th>
+                          <th style={{ textAlign: 'right' }}>Latest Sell Rate</th>
+                          <th style={{ textAlign: 'right' }}>Current Margin</th>
+                          <th>Margin %</th>
+                          <th>Sell Change</th>
+                          <th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredHistory.map(h => (
-                          <>
-                            <tr key={h.itemName} style={{ cursor: 'pointer' }} onClick={() => setExpandedProduct(expandedProduct === h.itemName ? null : h.itemName)}>
-                              <td>
-                                <strong>{h.itemName}</strong>
-                                {h.product?.urduName && <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>({h.product.urduName})</span>}
-                              </td>
-                              <td style={{ textTransform: 'capitalize', fontSize: 12 }}>{h.product?.category}</td>
-                              <td className="mono" style={{ textAlign: 'right' }}>Rs {h.latest?.buyRate ?? '0'}</td>
-                              <td className="mono" style={{ textAlign: 'right', fontWeight: 'bold' }}>Rs {h.latest?.sellRate ?? '0'}</td>
-                              <td><MarginBar pct={h.latest?.marginPct ?? 0} /></td>
-                              <td style={{ color: 'var(--muted)', fontSize: 12 }}>{expandedProduct === h.itemName ? '▲ Collapse' : `▼ ${h.history.length} snapshots`}</td>
-                            </tr>
-                            {expandedProduct === h.itemName && h.history.map((entry, idx) => (
-                              <tr key={`${h.itemName}-${idx}`} style={{ background: 'var(--line-soft)', fontSize: 12 }}>
-                                <td style={{ paddingLeft: 24 }}>{fmtDate(entry.date)}</td>
-                                <td></td>
-                                <td className="mono" style={{ textAlign: 'right' }}>Rs {entry.buyRate}</td>
-                                <td className="mono" style={{ textAlign: 'right', fontWeight: 'bold' }}>Rs {entry.sellRate}</td>
-                                <td className="mono">Rs {entry.margin.toFixed(0)} ({entry.marginPct.toFixed(0)}%)</td>
+                        {filteredHistory.length === 0 ? (
+                          <tr><td colSpan={8} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>No historical rate data found for selected filter</td></tr>
+                        ) : (
+                          filteredHistory.map((h, idx) => (
+                            <>
+                              <tr key={idx} style={{ cursor: 'pointer' }} onClick={() => setExpandedProduct(expandedProduct === h.itemName ? null : h.itemName)}>
                                 <td>
-                                  <span style={{ fontSize: 10, marginRight: 8 }}>Sell Change:</span>
-                                  <ChangeChip val={entry.sellChange} />
+                                  <strong>{h.itemName}</strong>
+                                  {h.product?.urduName && <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>({h.product.urduName})</span>}
+                                </td>
+                                <td style={{ textTransform: 'capitalize', fontSize: 12 }}>{h.product?.category || '—'}</td>
+                                <td className="mono" style={{ textAlign: 'right' }}>
+                                  {h.latest ? `Rs ${h.latest.buyRate}` : '—'}
+                                </td>
+                                <td className="mono" style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                                  {h.latest ? `Rs ${h.latest.sellRate}` : '—'}
+                                </td>
+                                <td className="mono" style={{ textAlign: 'right' }}>
+                                  {h.latest ? `Rs ${(h.latest.sellRate - h.latest.buyRate).toFixed(0)}` : '—'}
+                                </td>
+                                <td>
+                                  {h.latest ? <MarginBar pct={h.latest.marginPct} /> : '—'}
+                                </td>
+                                <td>
+                                  {h.latest ? <ChangeChip val={h.latest.sellChange} /> : '—'}
+                                </td>
+                                <td>
+                                  <button
+                                    className="va-btn secondary small"
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      setExpandedProduct(expandedProduct === h.itemName ? null : h.itemName);
+                                    }}
+                                  >
+                                    {expandedProduct === h.itemName ? '▲ Hide Log' : `▼ View (${h.history.length})`}
+                                  </button>
                                 </td>
                               </tr>
-                            ))}
-                          </>
-                        ))}
+
+                              {expandedProduct === h.itemName && (
+                                <tr key={`${idx}-sub`} style={{ background: '#F8F9FA' }}>
+                                  <td colSpan={8} style={{ padding: '12px 24px' }}>
+                                    <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 8, color: 'var(--primary)' }}>
+                                      📜 Complete Price Change History for {h.itemName} ({h.history.length} snapshots)
+                                    </div>
+                                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                                      <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--muted)', textAlign: 'left' }}>
+                                          <th style={{ padding: '4px 8px' }}>Date</th>
+                                          <th style={{ padding: '4px 8px', textAlign: 'right' }}>Buy Rate</th>
+                                          <th style={{ padding: '4px 8px', textAlign: 'right' }}>Sell Rate</th>
+                                          <th style={{ padding: '4px 8px', textAlign: 'right' }}>Margin</th>
+                                          <th style={{ padding: '4px 8px' }}>Margin %</th>
+                                          <th style={{ padding: '4px 8px' }}>Sell Change</th>
+                                          <th style={{ padding: '4px 8px' }}>Buy Change</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {h.history.map((entry, eIdx) => (
+                                          <tr key={eIdx} style={{ borderBottom: '1px solid #EAEAEA' }}>
+                                            <td style={{ padding: '4px 8px', fontWeight: 600 }}>{fmtDate(entry.date)}</td>
+                                            <td style={{ padding: '4px 8px', textAlign: 'right' }} className="mono">Rs {entry.buyRate}</td>
+                                            <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }} className="mono">Rs {entry.sellRate}</td>
+                                            <td style={{ padding: '4px 8px', textAlign: 'right' }} className="mono">Rs {entry.margin.toFixed(0)}</td>
+                                            <td style={{ padding: '4px 8px' }}><MarginBar pct={entry.marginPct} /></td>
+                                            <td style={{ padding: '4px 8px' }}><ChangeChip val={entry.sellChange} /></td>
+                                            <td style={{ padding: '4px 8px' }}><ChangeChip val={entry.buyChange} /></td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </td>
+                                </tr>
+                              )}
+                            </>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1267,9 +1333,9 @@ export default function PriceListPage() {
 
                 {/* Mobile View */}
                 <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
-                  {filteredHistory.map(h => (
-                    <div key={h.itemName} className="va-mobile-card" style={{ cursor: 'pointer' }} onClick={() => setExpandedProduct(expandedProduct === h.itemName ? null : h.itemName)}>
-                      <div className="card-header">
+                  {filteredHistory.map((h, idx) => (
+                    <div key={idx} className="va-mobile-card">
+                      <div className="card-header" onClick={() => setExpandedProduct(expandedProduct === h.itemName ? null : h.itemName)} style={{ cursor: 'pointer' }}>
                         <span className="card-title" style={{ color: '#FFFFFF' }}>{h.itemName}</span>
                         {h.product?.urduName && <span className="card-subtitle text-emerald-100">{h.product.urduName}</span>}
                       </div>
@@ -1279,30 +1345,34 @@ export default function PriceListPage() {
                       <div className="flex flex-col gap-2.5">
                         <div className="card-info-row">
                           <span className="card-label">Category</span>
-                          <span className="card-value text-capitalize">{h.product?.category}</span>
+                          <span className="card-value text-capitalize">{h.product?.category || 'General'}</span>
                         </div>
                         <div className="card-info-row">
-                          <span className="card-label">Latest Buy / Sell</span>
-                          <span className="card-value font-bold">Rs {h.latest?.buyRate ?? '0'} / Rs {h.latest?.sellRate ?? '0'}</span>
+                          <span className="card-label">Latest Rates</span>
+                          <span className="card-value font-mono">Buy: Rs {h.latest?.buyRate ?? 0} | Sell: Rs {h.latest?.sellRate ?? 0}</span>
                         </div>
                         <div className="card-info-row">
-                          <span className="card-label">Margin %</span>
-                          <span className="card-value max-w-[60%] flex justify-end">
-                            <MarginBar pct={h.latest?.marginPct ?? 0} />
-                          </span>
-                        </div>
-                        <div className="card-info-row">
-                          <span className="card-label">Snapshots Log</span>
-                          <span className="card-value text-emerald-100">{expandedProduct === h.itemName ? '▲ Collapse' : `▼ ${h.history.length} snapshots`}</span>
+                          <span className="card-label">Margin</span>
+                          <span className="card-value font-mono">Rs {((h.latest?.sellRate ?? 0) - (h.latest?.buyRate ?? 0)).toFixed(0)} ({h.latest?.marginPct.toFixed(0)}%)</span>
                         </div>
                       </div>
+
+                      <div className="card-divider" />
+
+                      <button
+                        onClick={() => setExpandedProduct(expandedProduct === h.itemName ? null : h.itemName)}
+                        className="card-btn"
+                        style={{ width: '100%' }}
+                      >
+                        {expandedProduct === h.itemName ? 'Hide Log' : `View Change Log (${h.history.length})`}
+                      </button>
 
                       {expandedProduct === h.itemName && (
                         <>
                           <div className="card-divider" />
                           <div className="flex flex-col gap-3" style={{ background: 'rgba(0,0,0,0.15)', padding: '12px', borderRadius: '8px' }}>
-                            {h.history.map((entry, idx) => (
-                              <div key={idx} className="flex flex-col gap-1.5" style={{ borderBottom: idx < h.history.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none', paddingBottom: idx < h.history.length - 1 ? '10px' : '0' }}>
+                            {h.history.map((entry, eIdx) => (
+                              <div key={eIdx} className="flex flex-col gap-1.5" style={{ borderBottom: eIdx < h.history.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none', paddingBottom: eIdx < h.history.length - 1 ? '10px' : '0' }}>
                                 <div className="flex justify-between items-center text-xs font-semibold text-white">
                                   <span>{fmtDate(entry.date)}</span>
                                   <span>Margin: Rs {entry.margin.toFixed(0)} ({entry.marginPct.toFixed(0)}%)</span>
@@ -1449,25 +1519,43 @@ export default function PriceListPage() {
 
           {/* Master Product List */}
           <div className="va-panel">
-            <div className="va-panel-head"><h3>📋 Permanent Catalog Catalog</h3></div>
+            <div className="va-panel-head"><h3>📋 Permanent Catalog</h3></div>
             {/* Desktop view */}
             <div className="hide-mobile">
               <div style={{ overflowX: 'auto' }}>
                 <table className="va-table">
                   <thead>
                     <tr>
-                      <th>Product</th>
+                      <th style={{ width: 40 }}>Icon</th>
+                      <th>Product ID</th>
+                      <th>English Name</th>
+                      <th>Urdu Name</th>
                       <th>Category</th>
                       <th>Unit</th>
                       <th>Availability Status</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredCatalog.map(p => (
                       <tr key={p.id}>
+                        <td style={{ textAlign: 'center' }}>
+                          <ProductVisual name={p.name} emoji={p.emoji} size={22} />
+                        </td>
+                        <td>
+                          <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)' }}>{p.id}</span>
+                        </td>
                         <td>
                           <strong>{p.name}</strong>
-                          {p.urduName && <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>({p.urduName})</span>}
+                        </td>
+                        <td>
+                          {p.urduName ? (
+                            <span style={{ fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif', fontSize: 13 }}>
+                              {p.urduName}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
+                          )}
                         </td>
                         <td style={{ textTransform: 'capitalize', fontSize: 12 }}>{p.category}</td>
                         <td style={{ color: 'var(--muted)' }}>{p.defaultUnit}</td>
@@ -1487,6 +1575,24 @@ export default function PriceListPage() {
                             <option value={ProductAvailability.INACTIVE}>Inactive</option>
                           </select>
                         </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              className="va-btn secondary small"
+                              style={{ padding: '3px 8px', fontSize: 12 }}
+                              onClick={() => handleOpenEditProduct(p)}
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              className="va-btn secondary small"
+                              style={{ padding: '3px 8px', fontSize: 12 }}
+                              onClick={() => handleOpenAuditLog(p)}
+                            >
+                              📜 Audit Log
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1498,14 +1604,25 @@ export default function PriceListPage() {
             <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%', marginTop: '14px' }}>
               {filteredCatalog.map(p => (
                 <div key={p.id} className="va-mobile-card">
-                  <div className="card-header">
-                    <span className="card-title" style={{ color: '#FFFFFF' }}>{p.name}</span>
-                    {p.urduName && <span className="card-subtitle text-emerald-100">{p.urduName}</span>}
+                  <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <ProductVisual name={p.name} emoji={p.emoji} size={24} />
+                    <div>
+                      <span className="card-title" style={{ color: '#FFFFFF' }}>{p.name}</span>
+                      {p.urduName && (
+                        <span className="card-subtitle text-emerald-100" style={{ display: 'block', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif' }}>
+                          {p.urduName}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="card-divider" />
 
                   <div className="flex flex-col gap-2.5">
+                    <div className="card-info-row">
+                      <span className="card-label">Product ID</span>
+                      <span className="card-value font-mono text-xs text-emerald-100">{p.id}</span>
+                    </div>
                     <div className="card-info-row">
                       <span className="card-label">Category</span>
                       <span className="card-value text-capitalize">{p.category}</span>
@@ -1528,6 +1645,24 @@ export default function PriceListPage() {
                         </select>
                       </span>
                     </div>
+                  </div>
+
+                  <div className="card-divider" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <button
+                      onClick={() => handleOpenEditProduct(p)}
+                      className="card-btn"
+                      style={{ padding: '6px' }}
+                    >
+                      ✏️ Edit
+                    </button>
+                    <button
+                      onClick={() => handleOpenAuditLog(p)}
+                      className="card-btn secondary"
+                      style={{ padding: '6px' }}
+                    >
+                      📜 Audit Log
+                    </button>
                   </div>
                 </div>
               ))}
@@ -2043,6 +2178,218 @@ export default function PriceListPage() {
                 }}
               >
                 💾 Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ─── MODAL: EDIT PRODUCT DETAILS ───────────────────────── */}
+      {editingProduct && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 99999,
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          padding: 16
+        }}>
+          <div className="va-panel" style={{
+            width: '100%', maxWidth: '480px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)', borderRadius: 12, padding: 20
+          }}>
+            <div className="va-panel-head" style={{ borderBottom: '1px solid var(--line)', paddingBottom: 12, marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0 }}>✏️ Edit Product Details</h3>
+                <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>
+                  Product ID: {editingProduct.id} (Identity Preserved)
+                </span>
+              </div>
+              <button 
+                onClick={() => setEditingProduct(null)}
+                style={{ all: 'unset', cursor: 'pointer', fontSize: 18, color: 'var(--muted)' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {editError && (
+              <div style={{ padding: '8px 12px', background: '#FCE8E6', color: '#C5221F', borderRadius: 6, fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
+                ⚠️ {editError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditProduct}>
+              <div className="va-field" style={{ marginBottom: 12 }}>
+                <label style={{ fontWeight: 600 }}>English Product Name *</label>
+                <input
+                  required
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  placeholder="e.g. Fresh Potato"
+                  style={{ background: 'var(--paper)', color: 'var(--ink)' }}
+                />
+              </div>
+
+              <div className="va-field" style={{ marginBottom: 12 }}>
+                <label style={{ fontWeight: 600 }}>Urdu Product Name (Optional)</label>
+                <input
+                  value={editUrdu}
+                  onChange={e => setEditUrdu(e.target.value)}
+                  placeholder="e.g. تازہ آلو"
+                  style={{ background: 'var(--paper)', color: 'var(--ink)', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif' }}
+                />
+              </div>
+
+              <div className="va-field" style={{ marginBottom: 12 }}>
+                <label style={{ fontWeight: 600 }}>Product Emoji / Icon (Optional)</label>
+                <input
+                  value={editEmoji}
+                  onChange={e => setEditEmoji(e.target.value)}
+                  placeholder="e.g. 🥔"
+                  style={{ background: 'var(--paper)', color: 'var(--ink)' }}
+                />
+              </div>
+
+              <div className="va-field" style={{ marginBottom: 12 }}>
+                <label style={{ fontWeight: 600 }}>Category *</label>
+                <select
+                  value={editCategory}
+                  onChange={e => setEditCategory(e.target.value)}
+                  style={{ background: 'var(--paper)', color: 'var(--ink)' }}
+                >
+                  {CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="va-field" style={{ marginBottom: 12 }}>
+                <label style={{ fontWeight: 600 }}>Default Unit *</label>
+                <select
+                  value={editUnit}
+                  onChange={e => setEditUnit(e.target.value)}
+                  style={{ background: 'var(--paper)', color: 'var(--ink)' }}
+                >
+                  {UNITS.map(unit => (
+                    <option key={unit} value={unit}>{unit}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="va-field" style={{ marginBottom: 16 }}>
+                <label style={{ fontWeight: 600 }}>Availability Status *</label>
+                <select
+                  value={editAvailability}
+                  onChange={e => setEditAvailability(e.target.value as ProductAvailability)}
+                  style={{ background: 'var(--paper)', color: 'var(--ink)' }}
+                >
+                  <option value={ProductAvailability.AVAILABLE}>Available</option>
+                  <option value={ProductAvailability.SEASONAL}>Seasonal</option>
+                  <option value={ProductAvailability.INACTIVE}>Inactive</option>
+                </select>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button
+                  type="button"
+                  className="va-btn secondary small"
+                  onClick={() => setEditingProduct(null)}
+                  disabled={editSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="va-btn small"
+                  disabled={editSaving || !editName.trim()}
+                >
+                  {editSaving ? 'Saving...' : '💾 Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: AUDIT LOG HISTORY ───────────────────────────── */}
+      {auditProduct && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 99999,
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          padding: 16
+        }}>
+          <div className="va-panel" style={{
+            width: '100%', maxWidth: '650px', maxHeight: '85vh',
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)', borderRadius: 12, padding: 20
+          }}>
+            <div className="va-panel-head" style={{ borderBottom: '1px solid var(--line)', paddingBottom: 12, marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0 }}>📜 Audit Log History: {auditProduct.name}</h3>
+                <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>
+                  Product ID: {auditProduct.id}
+                </span>
+              </div>
+              <button 
+                onClick={() => setAuditProduct(null)}
+                style={{ all: 'unset', cursor: 'pointer', fontSize: 18, color: 'var(--muted)' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {loadingAudit ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)' }}>Loading audit history...</div>
+              ) : auditLogs.length === 0 ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)' }}>
+                  No name update logs recorded for this product yet.
+                </div>
+              ) : (
+                auditLogs.map((log, idx) => {
+                  const oldData = log.oldData || {};
+                  const newData = log.newData || {};
+                  return (
+                    <div key={log.id || idx} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: 12, background: 'var(--paper)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 12 }}>
+                        <div>
+                          👤 <strong>{log.user?.name || 'Admin/Supervisor'}</strong>
+                          {log.user?.role && <span style={{ color: 'var(--muted)', marginLeft: 4 }}>({log.user.role})</span>}
+                        </div>
+                        <div style={{ color: 'var(--muted)', fontSize: 11 }}>
+                          📅 {fmtDateTime(log.createdAt)}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, background: 'var(--line-soft)', padding: 8, borderRadius: 6 }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700 }}>Previous Details</div>
+                          <div>Name: <strong>{oldData.name || '—'}</strong></div>
+                          {oldData.urduName && <div>Urdu: {oldData.urduName}</div>}
+                          {oldData.emoji && <div>Emoji: {oldData.emoji}</div>}
+                          {oldData.category && <div>Cat: {oldData.category}</div>}
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: 10, color: 'var(--ok)', textTransform: 'uppercase', fontWeight: 700 }}>Updated Details</div>
+                          <div>Name: <strong style={{ color: 'var(--ok)' }}>{newData.name || '—'}</strong></div>
+                          {newData.urduName && <div>Urdu: {newData.urduName}</div>}
+                          {newData.emoji && <div>Emoji: {newData.emoji}</div>}
+                          {newData.category && <div>Cat: {newData.category}</div>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--line)', marginTop: 16, paddingTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="va-btn secondary small"
+                onClick={() => setAuditProduct(null)}
+              >
+                Close
               </button>
             </div>
           </div>

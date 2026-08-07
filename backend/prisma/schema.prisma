@@ -73,6 +73,7 @@ model Product {
   id             String              @id @default(cuid())
   name           String              @unique
   urduName       String?
+  emoji          String?
   category       ProductCategory     @default(VEGETABLE)
   defaultUnit    Unit                @default(KG)
   minStock       Float               @default(0)
