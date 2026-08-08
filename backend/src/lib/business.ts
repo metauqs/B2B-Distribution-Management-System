@@ -346,11 +346,11 @@ export async function adjustInventory(
     return;
   }
 
+  const oldQty = Math.max(0, existing.qty);
   let newAvgCost = existing.avgCost;
+
   if (newRate && deltaQty > 0) {
-    const oldQty = Math.max(0, existing.qty);
-    const thresholdQty = deltaQty * 0.30;
-    if (oldQty < thresholdQty || oldQty <= 0) {
+    if (oldQty <= 0 || existing.avgCost <= 0) {
       newAvgCost = newRate;
     } else {
       const totalQty = oldQty + deltaQty;
@@ -360,10 +360,15 @@ export async function adjustInventory(
     }
   }
 
+  const finalQty = oldQty + deltaQty;
+  if (finalQty <= 0) {
+    newAvgCost = 0;
+  }
+
   await prisma.inventory.update({
     where: { productId_branchId: { productId, branchId } },
     data: {
-      qty:     { increment: deltaQty },
+      qty:     Math.max(0, finalQty),
       avgCost: newAvgCost,
     },
   });

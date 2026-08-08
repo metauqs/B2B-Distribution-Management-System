@@ -27,6 +27,21 @@ export async function recalcAvgCostFromHistory(
 ): Promise<void> {
   const db = tx || prisma;
 
+  // Fetch current inventory stock level
+  const currentInv = await db.inventory.findUnique({
+    where: { productId_branchId: { productId, branchId } },
+    select: { qty: true },
+  });
+
+  // If current stock is 0 or negative, reset avgCost to 0 immediately
+  if (!currentInv || currentInv.qty <= 0) {
+    await db.inventory.updateMany({
+      where: { productId, branchId },
+      data: { avgCost: 0 },
+    });
+    return;
+  }
+
   // Fetch all PURCHASE movements for this product in chronological order
   const purchaseMoves = await db.purchasePriceHistory.findMany({
     where: {
@@ -53,7 +68,8 @@ export async function recalcAvgCostFromHistory(
     return;
   }
 
-  // Replay weighted average cost chronologically applying 30% threshold rule
+  // Replay moving weighted average cost chronologically
+  // When runningQty <= 0 or runningAvg <= 0, start a fresh cost basis on the next purchase
   let runningQty = 0;
   let runningAvg = 0;
 
@@ -62,8 +78,7 @@ export async function recalcAvgCostFromHistory(
     const r = move.buyPrice;
     if (q <= 0 || r <= 0) continue;
 
-    const thresholdQty = q * 0.30;
-    if (runningQty < thresholdQty || runningQty <= 0) {
+    if (runningQty <= 0 || runningAvg <= 0) {
       runningAvg = r;
     } else {
       const totalQty = runningQty + q;
@@ -109,21 +124,18 @@ export async function stockIn(tx: any, p: StockInParams): Promise<void> {
   });
 
   const oldQty = Math.max(0, existing?.qty ?? 0);
-  const oldAvgCost = (existing?.avgCost && existing.avgCost > 0)
-    ? existing.avgCost
-    : (existing?.currentBuyPrice && existing.currentBuyPrice > 0 ? existing.currentBuyPrice : p.rate);
+  const oldAvgCost = (existing?.avgCost && existing.avgCost > 0) ? existing.avgCost : 0;
 
   const newQty = oldQty + p.qty;
 
-  // 30% Threshold Rule for Average Cost:
-  // If Existing Stock Quantity < (Today's Purchase Quantity * 0.30) OR Existing Stock <= 0:
+  // Moving Weighted Average Cost & Zero-Stock Cost Reset Rule:
+  // IF CURRENT STOCK <= 0 (or oldAvgCost <= 0):
   //   New Average Cost = Today's Purchase Unit Price (p.rate)
-  // Else (Existing Stock >= Today's Purchase Quantity * 0.30):
-  //   Use Moving Weighted Average Cost: ( (oldQty * oldAvgCost) + (p.qty * p.rate) ) / (oldQty + p.qty)
-  const thresholdQty = p.qty * 0.30;
+  // IF CURRENT STOCK > 0:
+  //   New Average Cost = ( (oldQty * oldAvgCost) + (p.qty * p.rate) ) / (oldQty + p.qty)
   let newAvgCost: number;
 
-  if (oldQty < thresholdQty || oldQty <= 0) {
+  if (oldQty <= 0 || oldAvgCost <= 0) {
     newAvgCost = p.rate;
   } else {
     const existingValue = oldQty * oldAvgCost;
@@ -213,15 +225,17 @@ export async function stockOut(tx: any, p: StockOutParams): Promise<void> {
   const db = tx || prisma;
   const existing = await db.inventory.findUnique({
     where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
-    select: { qty: true, reservedQty: true },
+    select: { qty: true, avgCost: true, reservedQty: true },
   });
 
   const oldQty = existing?.qty ?? 0;
   const newQty = Math.max(0, oldQty - p.qty);
+  // Zero-Stock Cost Reset Rule: When stock reaches zero or less, reset avgCost to 0 immediately
+  const newAvgCost = newQty <= 0 ? 0 : (existing?.avgCost ?? 0);
 
   await db.inventory.upsert({
     where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
-    update: { qty: newQty },
+    update: { qty: newQty, avgCost: newAvgCost },
     create: { productId: p.productId, branchId: p.branchId, qty: 0, avgCost: 0 },
   });
 
@@ -289,11 +303,13 @@ export async function recordWastage(tx: any, p: WastageParams): Promise<WastageR
 
     const oldQty = existing?.qty ?? 0;
     const newQty = Math.max(0, oldQty - p.qty);
+    // Zero-Stock Cost Reset Rule: When stock reaches zero or less, reset avgCost to 0 immediately
+    const newAvgCost = newQty <= 0 ? 0 : (existing?.avgCost ?? 0);
 
     if (existing) {
       await db.inventory.update({
         where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
-        data: { qty: newQty },
+        data: { qty: newQty, avgCost: newAvgCost },
       });
     } else {
       await db.inventory.create({
@@ -402,14 +418,17 @@ export async function manualAdjust(tx: any, p: AdjustParams): Promise<AdjustResu
   const modeTitle = modeLabels[adjType] ?? 'Stock Adjustment';
   const reasonText = [p.reason, p.remarks].filter(Boolean).join(' - ') || modeTitle;
 
+  // Zero-Stock Cost Reset Rule: When stock reaches zero or less, reset avgCost to 0 immediately
+  const newAvgCost = newQty <= 0 ? 0 : (existing?.avgCost ?? 0);
+
   if (existing) {
     await db.inventory.update({
       where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
-      data: { qty: newQty },
+      data: { qty: newQty, avgCost: newAvgCost },
     });
   } else {
     await db.inventory.create({
-      data: { productId: p.productId, branchId: p.branchId, qty: newQty, avgCost: 0 },
+      data: { productId: p.productId, branchId: p.branchId, qty: newQty, avgCost: newAvgCost },
     });
   }
 
