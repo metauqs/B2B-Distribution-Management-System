@@ -1092,7 +1092,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
     else if (n.includes('pear') || n.includes('nashpati')) emoji = '🍐';
     else if (n.includes('watermelon') || n.includes('tarbooz')) emoji = '🍉';
 
-    return `<span style="font-size:16px;margin-left:4px;vertical-align:middle;">${emoji}</span>`;
+    return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;">${emoji}</span>`;
   };
 
   const buildPriceRows = (items: typeof data.items, startIdx: number) =>
@@ -1101,18 +1101,18 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
       const bg = i % 2 === 0 ? '#072E1D' : '#0A3723';
       return `
         <tr style="background:${bg};border-bottom:1px solid #14492E;">
-          <td style="padding:6px 8px;vertical-align:middle;text-align:left;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:800;color:#FACC15;">Rs ${item.sellRate.toLocaleString()}</td>
-          <td style="padding:6px 8px;vertical-align:middle;text-align:center;text-transform:uppercase;font-size:11px;color:#CBD5E1;font-weight:600;">${item.unit}</td>
-          <td style="padding:6px 8px;vertical-align:middle;">
-            <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:6px;">
+          <td style="padding:7px 10px;vertical-align:middle;text-align:left;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:800;color:#FACC15;">Rs ${item.sellRate.toLocaleString()}</td>
+          <td style="padding:7px 10px;vertical-align:middle;text-align:center;text-transform:uppercase;font-size:12px;color:#FFFFFF;font-weight:700;">${item.unit}</td>
+          <td style="padding:7px 10px;vertical-align:middle;">
+            <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px;">
               <div style="display:flex;flex-direction:column;align-items:flex-start;">
-                <span style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:18px;font-weight:800;color:#FFFFFF;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</span>
-                <span style="font-size:10.5px;color:#A3C9B3;font-weight:500;font-family:'Inter',sans-serif;">${item.itemName}</span>
+                <span style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:26px;font-weight:800;color:#FFFFFF;direction:rtl;line-height:1.2;">${item.urduName || item.itemName}</span>
+                <span style="font-size:11px;color:#A3C9B3;font-weight:500;font-family:'Inter',sans-serif;margin-top:1px;">${item.itemName}</span>
               </div>
               ${htmlVisual}
             </div>
           </td>
-          <td style="padding:6px 8px;vertical-align:middle;text-align:right;font-size:11px;color:#789E89;font-weight:600;">${startIdx + i + 1}</td>
+          <td style="padding:7px 10px;vertical-align:middle;text-align:right;font-size:12px;color:#789E89;font-weight:600;">${startIdx + i + 1}</td>
         </tr>
       `;
     }).join('');
@@ -1120,10 +1120,10 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
   const priceColHeader = `
     <thead>
       <tr style="background:#0D4429;border-bottom:2px solid #E5A93C;">
-        <th style="font-size:10px;padding:8px;width:85px;text-align:left;font-weight:800;color:#FACC15;letter-spacing:0.08em;">RATE (RS)</th>
-        <th style="font-size:10px;padding:8px;width:55px;text-align:center;font-weight:800;color:#FACC15;letter-spacing:0.08em;">UNIT</th>
-        <th style="font-size:10px;padding:8px;text-align:right;font-weight:800;color:#FACC15;letter-spacing:0.08em;">پروڈکٹ / PRODUCT</th>
-        <th style="font-size:10px;padding:8px;width:25px;text-align:right;font-weight:800;color:#FACC15;">#</th>
+        <th style="font-size:11px;padding:9px 10px;width:90px;text-align:left;font-weight:800;color:#FACC15;letter-spacing:0.08em;">RATE (RS)</th>
+        <th style="font-size:11px;padding:9px 10px;width:60px;text-align:center;font-weight:800;color:#FACC15;letter-spacing:0.08em;">UNIT</th>
+        <th style="font-size:11px;padding:9px 10px;text-align:right;font-weight:800;color:#FACC15;letter-spacing:0.08em;">پروڈکٹ / PRODUCT</th>
+        <th style="font-size:11px;padding:9px 10px;width:30px;text-align:right;font-weight:800;color:#FACC15;">#</th>
       </tr>
     </thead>
   `;
