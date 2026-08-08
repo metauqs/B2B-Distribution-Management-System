@@ -7,6 +7,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
+import { CollectionReceiptModal } from '@/components/modals/CollectionReceiptModal';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiCashRegister, mdiFormatListBulleted } from '@mdi/js';
@@ -58,7 +59,8 @@ export default function CollectionsPage() {
   const [form,        setForm]        = useState({ ...BLANK_FORM });
   const [expandedClients, setExpandedClients] = useState<{ [key: string]: boolean }>({});
 
-  // ── Due Statement Modal state ──
+  // ── Receipt Modal & Due Statement Modal state ──
+  const [receiptModal, setReceiptModal] = useState<any | null>(null);
   const [statementClient, setStatementClient] = useState<any | null>(null);
   const [statementInvoices, setStatementInvoices] = useState<any[]>([]);
   const [statementMode, setStatementMode] = useState<'view' | 'share'>('view');
@@ -169,24 +171,14 @@ export default function CollectionsPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.clientId) return showToast('❌ Select a client');
-    if (form.amount <= 0) return showToast('❌ Amount must be > 0');
+    if (form.amount <= 0 || isNaN(form.amount)) return showToast('❌ Amount must be > 0');
     if (!form.date) return showToast('❌ Date is required');
 
-    if (form.saleId) {
-      const targetSale = sales.find(s => s.id === form.saleId);
-      if (targetSale && form.amount > targetSale.balance) {
-        return showToast(`❌ Payment amount (Rs ${form.amount.toLocaleString()}) cannot exceed invoice due balance (Rs ${targetSale.balance.toLocaleString()})`);
-      }
-    } else {
-      const client = clients.find(c => c.id === form.clientId);
-      if (client && client.currentBalance > 0 && form.amount > client.currentBalance) {
-        return showToast(`❌ Payment amount (Rs ${form.amount.toLocaleString()}) cannot exceed customer balance due (Rs ${client.currentBalance.toLocaleString()})`);
-      }
-    }
     setSaving(true);
     try {
-      const res  = await apiFetch('/api/collections', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const res = await apiFetch('/api/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
       const data = await res.json();
@@ -196,10 +188,39 @@ export default function CollectionsPage() {
         invalidateCache('/api/clients');
         invalidateCache('/api/reports');
         showToast('✅ Payment recorded successfully');
+
+        const clientObj = clients.find(c => c.id === form.clientId);
+        setReceiptModal({
+          receiptNo: data.data.reference || `PAY-${(data.data.id || '').slice(-6).toUpperCase()}`,
+          date: fmtDateTime(data.data.date),
+          clientName: clientObj?.name || data.data.client?.name || 'Customer',
+          clientId: clientObj?.clientId || undefined,
+          phone: (clientObj as any)?.phone || (clientObj as any)?.whatsapp || undefined,
+          whatsapp: (clientObj as any)?.whatsapp || (clientObj as any)?.phone || undefined,
+          paymentMethod: form.method,
+          reference: form.reference || undefined,
+          previousBalance: data.data.summary?.previousBalance ?? 0,
+          currentBillAmount: data.data.summary?.currentBillAmount ?? 0,
+          totalPayable: data.data.summary?.totalPayable ?? 0,
+          amountReceived: data.data.summary?.amountReceived ?? form.amount,
+          remainingBalance: data.data.summary?.remainingBalance ?? 0,
+          excessPayment: data.data.summary?.excessPayment ?? 0,
+          allocations: (data.data.allocations || []).map((a: any) => ({
+            invoiceNo: a.invoiceNo,
+            allocatedAmount: a.allocatedAmount,
+            remainingBalance: a.remainingBalance,
+          })),
+          notes: form.notes || undefined,
+        });
+
         setForm({ ...BLANK_FORM });
         await load(true);
         setView('list');
+      } else {
+        showToast(`❌ ${data.error || 'Failed to record payment'}`);
       }
+    } catch (err: any) {
+      showToast(`❌ ${err.message || 'Network error'}`);
     } finally { setSaving(false); }
   };
 
@@ -279,7 +300,7 @@ export default function CollectionsPage() {
       </div>
 
       {view === 'add' && (
-        <div className="va-panel" style={{ maxWidth: 650 }}>
+        <div className="va-panel" style={{ maxWidth: 680 }}>
           <div className="va-panel-head"><h3>New Payment Received</h3></div>
           <form onSubmit={handleSave}>
             <div className="va-form-row">
@@ -287,74 +308,145 @@ export default function CollectionsPage() {
                 <label>Client *</label>
                 <select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value, saleId: '' }))} required>
                   <option value="">— Select Customer —</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.name} (Due: {fmtMoney(c.currentBalance)})</option>)}
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name} (Outstanding Due: {fmtMoney(c.currentBalance)})</option>)}
                 </select>
               </div>
               <div className="va-field">
                 <label>Amount Collected (Rs) *</label>
-                <input type="number" required min="1" value={form.amount || ''} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} />
-                {(() => {
-                  const targetSale = form.saleId ? sales.find(s => s.id === form.saleId) : null;
-                  const maxAllowed = targetSale ? targetSale.balance : (clients.find(c => c.id === form.clientId)?.currentBalance ?? 0);
-                  if (maxAllowed > 0 && form.amount > maxAllowed) {
-                    return (
-                      <span style={{ color: '#B5533C', fontSize: 11, fontWeight: 700, marginTop: 4, display: 'block' }}>
-                        ⚠️ Amount (Rs {form.amount.toLocaleString()}) exceeds maximum due balance (Rs {maxAllowed.toLocaleString()})
-                      </span>
-                    );
-                  }
-                  return null;
-                })()}
+                <input type="number" required min="1" value={form.amount || ''} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} placeholder="Enter payment amount" />
               </div>
             </div>
 
+            {/* ────── REAL-TIME PAYMENT & RUNNING BALANCE CALCULATION CARD ────── */}
             {form.clientId && (() => {
               const selectedC = clients.find(c => c.id === form.clientId);
               if (!selectedC) return null;
-              const openBal = selectedC.openingBalance ?? 0;
-              const invoicesOutstanding = Math.max(0, selectedC.currentBalance - openBal);
+              const targetSale = form.saleId ? sales.find(s => s.id === form.saleId) : null;
+              const prevBal = selectedC.currentBalance ?? 0;
+              const currBill = targetSale ? targetSale.balance : 0;
+              const totalPayable = Math.max(0, prevBal);
+              const amtRec = Math.max(0, Number(form.amount || 0));
+              const remBal = Math.max(0, totalPayable - amtRec);
+              const excessAmt = Math.max(0, amtRec - totalPayable);
+
+              // Live client-side FIFO calculation
+              let unpaidSales = sales
+                .filter(s => s.clientId === form.clientId && s.balance > 0 && s.status !== 'CANCELLED')
+                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+              if (targetSale && targetSale.balance > 0) {
+                unpaidSales = [targetSale, ...unpaidSales.filter(s => s.id !== targetSale.id)];
+              }
+
+              let remPayment = amtRec;
+              const liveAllocations = unpaidSales.map(s => {
+                if (remPayment <= 0) return null;
+                const toApply = Math.min(remPayment, s.balance);
+                const newBal = Math.max(0, s.balance - toApply);
+                remPayment -= toApply;
+                return {
+                  saleId: s.id,
+                  invoiceNo: s.invoiceNo,
+                  previousBalance: s.balance,
+                  allocatedAmount: toApply,
+                  remainingBalance: newBal,
+                };
+              }).filter(Boolean) as Array<{ saleId: string; invoiceNo: string; previousBalance: number; allocatedAmount: number; remainingBalance: number }>;
+
               return (
-                <div style={{
-                  margin: '12px 0 16px',
-                  padding: '12px 14px',
-                  background: '#F4F8F0',
-                  borderRadius: 10,
-                  border: '1px solid #D4E6CC',
-                  fontSize: 13
-                }}>
-                  <div style={{ fontWeight: 700, color: 'var(--forest)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>💰 Client Financial Summary — {selectedC.name}</span>
-                    <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>{selectedC.clientId || 'WH-0000'}</span>
+                <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 12, padding: 16, margin: '14px 0 16px' }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>📊 Real-Time Financial &amp; Running Balance Summary</span>
+                    <span style={{ fontSize: 11, background: '#E2E8F0', padding: '2px 8px', borderRadius: 12, color: '#475569', fontWeight: 700 }}>FIFO Engine</span>
                   </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700 }}>Opening Balance</div>
-                      <div className="mono" style={{ fontWeight: 700, color: openBal > 0 ? 'var(--clay)' : 'var(--muted)' }}>{fmtMoney(openBal)}</div>
+                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>1. Previous Balance</div>
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: prevBal > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                        {fmtMoney(prevBal)}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Outstanding before today</div>
                     </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700 }}>Invoices Outstanding</div>
-                      <div className="mono" style={{ fontWeight: 700 }}>{fmtMoney(invoicesOutstanding)}</div>
+
+                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>2. Current Bill</div>
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: currBill > 0 ? '#2563EB' : '#64748B', marginTop: 4 }}>
+                        {fmtMoney(currBill)}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Selected invoice due</div>
                     </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: 'var(--forest)', textTransform: 'uppercase', fontWeight: 700 }}>Total Due / Outstanding</div>
-                      <div className="mono" style={{ fontWeight: 700, color: 'var(--forest)', fontSize: 15 }}>{fmtMoney(selectedC.currentBalance)}</div>
+
+                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>3. Total Payable</div>
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', marginTop: 4 }}>
+                        {fmtMoney(totalPayable)}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Total customer dues</div>
+                    </div>
+
+                    <div style={{ background: '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
+                      <div style={{ fontSize: 10, color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>4. Amount Received</div>
+                      <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: '#15803D', marginTop: 4 }}>
+                        {fmtMoney(amtRec)}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#16A34A', marginTop: 2 }}>Payment being received</div>
+                    </div>
+
+                    <div style={{ background: remBal > 0 ? '#FFFBEB' : '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: `1px solid ${remBal > 0 ? '#FDE68A' : '#BBF7D0'}` }}>
+                      <div style={{ fontSize: 10, color: remBal > 0 ? '#92400E' : '#166534', fontWeight: 700, textTransform: 'uppercase' }}>
+                        {excessAmt > 0 ? '5. Advance Credit' : '5. Remaining Balance'}
+                      </div>
+                      <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: excessAmt > 0 ? '#15803D' : (remBal > 0 ? '#B45309' : '#16A34A'), marginTop: 4 }}>
+                        {excessAmt > 0 ? `+${fmtMoney(excessAmt)}` : fmtMoney(remBal)}
+                      </div>
+                      <div style={{ fontSize: 10, color: remBal > 0 ? '#D97706' : '#16A34A', marginTop: 2 }}>
+                        {excessAmt > 0 ? 'Excess stored as credit' : (remBal === 0 ? 'Fully settled (Rs 0 due)' : 'Customer dues after payment')}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Live FIFO Allocation Preview */}
+                  {amtRec > 0 && liveAllocations.length > 0 && (
+                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed #CBD5E1' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 6, textTransform: 'uppercase' }}>
+                        📍 FIFO Invoice Settlement Preview ({liveAllocations.length} Invoice{liveAllocations.length !== 1 ? 's' : ''})
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {liveAllocations.map(alloc => (
+                          <div key={alloc.saleId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FFF', padding: '6px 10px', borderRadius: 6, fontSize: 12, border: '1px solid #E2E8F0' }}>
+                            <div>
+                              <strong style={{ color: '#1E293B' }}>Invoice #{alloc.invoiceNo}</strong>
+                              <span style={{ color: '#64748B', marginLeft: 8, fontSize: 11 }}>Due before: {fmtMoney(alloc.previousBalance)}</span>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ color: '#15803D', fontWeight: 700, marginRight: 8 }}>Paying: {fmtMoney(alloc.allocatedAmount)}</span>
+                              <span style={{ color: alloc.remainingBalance > 0 ? '#B45309' : '#16A34A', fontWeight: 700, fontSize: 11 }}>
+                                ({alloc.remainingBalance > 0 ? `Remaining: ${fmtMoney(alloc.remainingBalance)}` : 'PAID IN FULL'})
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
-              <div className="va-form-row" style={{ marginTop: 12 }}>
-                <div className="va-field">
-                  <label>Invoice to Settle (Optional)</label>
-                  <select value={form.saleId} onChange={e => setForm(p => ({ ...p, saleId: e.target.value }))}>
-                    {clientInvoices.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.invoiceNo} (Total: {fmtMoney(s.total)}, Due: {fmtMoney(s.balance)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+
+            <div className="va-form-row" style={{ marginTop: 12 }}>
+              <div className="va-field">
+                <label>Specific Invoice to Settle (Optional — FIFO Auto-Allocates Oldest Dues First)</label>
+                <select value={form.saleId} onChange={e => setForm(p => ({ ...p, saleId: e.target.value }))}>
+                  <option value="">— Auto FIFO Allocation (Oldest Invoices First) —</option>
+                  {clientInvoices.map(s => (
+                    <option key={s.id} value={s.id}>
+                      Invoice #{s.invoiceNo} (Total: {fmtMoney(s.total)}, Due: {fmtMoney(s.balance)})
+                    </option>
+                  ))}
+                </select>
               </div>
+            </div>
 
             <div className="va-form-row" style={{ marginTop: 12 }}>
               <div className="va-field">
@@ -811,6 +903,13 @@ export default function CollectionsPage() {
           invoices={statementInvoices}
           mode={statementMode}
           onClose={() => setStatementClient(null)}
+        />
+      )}
+      {receiptModal && (
+        <CollectionReceiptModal
+          data={receiptModal}
+          onClose={() => setReceiptModal(null)}
+          onToast={showToast}
         />
       )}
     </DashboardLayout>

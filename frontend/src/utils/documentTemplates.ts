@@ -17,6 +17,7 @@
 
 import html2canvas from 'html2canvas';
 import { DEFAULT_LOGO_BASE64 } from './logoBase64';
+import { fmtMoney } from './formatters';
 
 // ─── Brand Configuration ───────────────────────────────────────────────────────
 
@@ -1451,6 +1452,163 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
 
   return buildDocShell(brand, `Outstanding Due Statement — ${data.clientName}`, body);
 }
+
+// ─── Collection Receipt Slip HTML Generator ─────────────────────────────────────
+
+export interface CollectionSlipData {
+  receiptNo: string;
+  date: string;
+  clientName: string;
+  clientId?: string;
+  phone?: string;
+  paymentMethod: string;
+  reference?: string;
+  previousBalance: number;
+  currentBillAmount?: number;
+  totalPayable: number;
+  amountReceived: number;
+  remainingBalance: number;
+  excessPayment?: number;
+  allocations?: Array<{
+    invoiceNo: string;
+    allocatedAmount: number;
+    remainingBalance: number;
+  }>;
+  notes?: string;
+}
+
+export function generateCollectionSlipHTML(data: CollectionSlipData, brand: BrandConfig, origin = ''): string {
+  const printedOn = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Karachi' });
+
+  const header = buildHeader(
+    brand,
+    'OFFICIAL PAYMENT RECEIPT',
+    data.date,
+    `Receipt #${data.receiptNo}`,
+    origin
+  );
+
+  const infoGrid = `
+    <div class="doc-info-grid">
+      <div class="doc-info-box">
+        <div class="doc-info-label">Customer Name <span class="urdu-inline-dark">(نام کلائنٹ)</span></div>
+        <div class="doc-info-value large">${data.clientName}</div>
+        ${data.phone ? `<div class="doc-info-value" style="font-size:11px;">📞 ${data.phone}</div>` : ''}
+      </div>
+      <div class="doc-info-box">
+        <div class="doc-info-label">Payment Details</div>
+        <div class="doc-info-value"><strong>Method:</strong> ${data.paymentMethod}</div>
+        ${data.reference ? `<div class="doc-info-value"><strong>Ref:</strong> ${data.reference}</div>` : ''}
+        <div class="doc-info-value"><strong>Date:</strong> ${data.date}</div>
+      </div>
+    </div>
+  `;
+
+  const excessAmt = data.excessPayment ?? 0;
+  const kpiGrid = `
+    <div class="doc-kpi-grid">
+      <div class="doc-kpi-card">
+        <div class="doc-kpi-label">Previous Outstanding</div>
+        <div class="doc-kpi-val text-amber">${fmtMoney(data.previousBalance)}</div>
+      </div>
+      <div class="doc-kpi-card">
+        <div class="doc-kpi-label">Paid Today <span class="urdu-inline-dark">(وصولی)</span></div>
+        <div class="doc-kpi-val text-green">${fmtMoney(data.amountReceived)}</div>
+      </div>
+      <div class="doc-kpi-card highlight">
+        <div class="doc-kpi-label">${excessAmt > 0 ? 'Advance Credit' : 'Remaining Outstanding'}</div>
+        <div class="doc-kpi-val ${excessAmt > 0 ? 'text-green' : (data.remainingBalance > 0 ? 'text-red' : 'text-green')}">
+          ${excessAmt > 0 ? `+${fmtMoney(excessAmt)}` : fmtMoney(data.remainingBalance)}
+        </div>
+      </div>
+    </div>
+  `;
+
+  let allocationTable = '';
+  if (data.allocations && data.allocations.length > 0) {
+    allocationTable = `
+      <div style="margin-top:20px;">
+        <div style="font-size:13px; font-weight:700; color: ${brand.primaryColor}; margin-bottom:8px;">
+          📍 FIFO Invoice Payment Allocation
+        </div>
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th>Invoice #</th>
+              <th class="num">Allocated Amount (Rs)</th>
+              <th class="num">Remaining Invoice Due</th>
+              <th style="text-align:center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.allocations.map(a => `
+              <tr>
+                <td><strong>Invoice #${a.invoiceNo}</strong></td>
+                <td class="num text-green"><strong>${fmtMoney(a.allocatedAmount)}</strong></td>
+                <td class="num ${a.remainingBalance > 0 ? 'text-amber' : 'text-green'}">${fmtMoney(a.remainingBalance)}</td>
+                <td style="text-align:center;">
+                  <span class="doc-badge ${a.remainingBalance <= 0 ? 'paid' : 'partial'}">
+                    ${a.remainingBalance <= 0 ? 'PAID' : 'PARTIAL'}
+                  </span>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  const summary = `
+    <div class="doc-summary-box" style="margin-top:20px;">
+      <div class="doc-summary-card">
+        <div class="doc-summary-row">
+          <span>Previous Balance (سابقہ بقایا)</span>
+          <span class="mono">${fmtMoney(data.previousBalance)}</span>
+        </div>
+        ${data.currentBillAmount && data.currentBillAmount > 0 ? `
+          <div class="doc-summary-row">
+            <span>Current Bill Amount</span>
+            <span class="mono">${fmtMoney(data.currentBillAmount)}</span>
+          </div>
+        ` : ''}
+        <div class="doc-summary-row">
+          <span>Total Payable (کل واجب الادا)</span>
+          <span class="mono font-bold">${fmtMoney(data.totalPayable)}</span>
+        </div>
+        <div class="doc-summary-row text-green">
+          <span>Amount Received Today (آج کی ادائیگی)</span>
+          <span class="mono font-bold">${fmtMoney(data.amountReceived)}</span>
+        </div>
+        <div class="doc-summary-row grand-total">
+          <span>${excessAmt > 0 ? 'Advance Credit (ایڈوانس کریڈٹ)' : 'Remaining Outstanding (بقیہ واجب الادا)'}</span>
+          <span class="mono">${excessAmt > 0 ? `+${fmtMoney(excessAmt)}` : fmtMoney(data.remainingBalance)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const notesBlock = data.notes ? `
+    <div style="margin-top:16px; padding:10px 14px; background:${brand.lightBg}; border:1px solid ${brand.lineColor}; border-radius:8px; font-size:12px; color:${brand.primaryColor};">
+      <strong>Notes:</strong> ${data.notes}
+    </div>
+  ` : '';
+
+  const footer = buildFooter(brand, `Printed: ${printedOn}`);
+
+  const body = `
+    ${header}
+    ${infoGrid}
+    ${kpiGrid}
+    ${summary}
+    ${allocationTable}
+    ${notesBlock}
+    ${footer}
+  `;
+
+  return buildDocShell(brand, `Payment Receipt — ${data.clientName}`, body);
+}
+
 
 // ─── Print Helpers ────────────────────────────────────────────────────────────
 

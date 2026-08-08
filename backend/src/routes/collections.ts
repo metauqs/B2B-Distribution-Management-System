@@ -66,7 +66,108 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/collections
+// GET /api/collections/preview — Pre-calculation & FIFO Allocation Preview
+router.get('/preview', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const { clientId, amount, saleId } = req.query;
+
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+
+    const client = await prisma.client.findUnique({
+      where: { id: String(clientId), deletedAt: null },
+      select: { id: true, name: true, currentBalance: true, openingBalance: true }
+    });
+    if (!client) return res.status(404).json({ success: false, error: 'Client not found' });
+
+    const amountNum = Math.max(0, Number(amount || 0));
+    let targetSale: any = null;
+    if (saleId && String(saleId).trim()) {
+      targetSale = await prisma.sale.findUnique({
+        where: { id: String(saleId) }
+      });
+    }
+
+    const previousBalance = client.currentBalance;
+    const currentBillAmount = targetSale ? targetSale.balance : 0;
+    // Total Payable is the total client dues (which already incorporates previous balances and invoices)
+    const totalPayable = Math.max(0, previousBalance);
+    const amountReceived = amountNum;
+    const remainingBalance = Math.max(0, totalPayable - amountReceived);
+    const excessPayment = Math.max(0, amountReceived - totalPayable);
+
+    // Calculate FIFO Payment Allocations
+    let unpaidSales = await prisma.sale.findMany({
+      where: {
+        clientId: client.id,
+        ...(branchId ? { branchId } : {}),
+        status: { in: ['PENDING', 'PARTIAL'] },
+        deletedAt: null,
+      },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    if (targetSale && ['PENDING', 'PARTIAL'].includes(targetSale.status)) {
+      unpaidSales = [targetSale, ...unpaidSales.filter(s => s.id !== targetSale.id)];
+    }
+
+    let remainingPayment = amountNum;
+    const allocations: Array<{
+      saleId: string;
+      invoiceNo: string;
+      date: string;
+      invoiceTotal: number;
+      previousPaid: number;
+      previousBalance: number;
+      allocatedAmount: number;
+      remainingBalance: number;
+      newStatus: string;
+    }> = [];
+
+    for (const sale of unpaidSales) {
+      if (remainingPayment <= 0) break;
+      const toApply = Math.min(remainingPayment, sale.balance);
+      const newPaid = sale.paid + toApply;
+      const newBal = Math.max(0, sale.total - newPaid);
+      const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
+
+      allocations.push({
+        saleId: sale.id,
+        invoiceNo: sale.invoiceNo,
+        date: sale.date.toISOString(),
+        invoiceTotal: sale.total,
+        previousPaid: sale.paid,
+        previousBalance: sale.balance,
+        allocatedAmount: toApply,
+        remainingBalance: newBal,
+        newStatus,
+      });
+
+      remainingPayment -= toApply;
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        client: { id: client.id, name: client.name },
+        previousBalance,
+        currentBillAmount,
+        totalPayable,
+        amountReceived,
+        remainingBalance,
+        excessPayment,
+        allocations,
+      }
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/collections/preview:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to calculate payment preview' });
+  }
+});
+
+// POST /api/collections — Record payment with atomic FIFO allocation & running balance update
 router.post('/', async (req: Request, res: Response) => {
   const branchId = req.headers['x-branch-id'] as string;
   const userId = (req.headers['x-user-id'] as string) || null;
@@ -75,8 +176,9 @@ router.post('/', async (req: Request, res: Response) => {
 
   const { clientId, saleId, amount, method = 'CASH', reference, notes, date } = req.body;
 
-  if (!clientId || !amount || amount <= 0) {
-    return res.status(400).json({ success: false, error: 'Client and amount are required' });
+  const numAmount = Number(amount);
+  if (!clientId || isNaN(numAmount) || numAmount <= 0) {
+    return res.status(400).json({ success: false, error: 'Valid client and positive payment amount are required' });
   }
 
   const validMethod = ['CASH', 'BANK', 'CHEQUE', 'ONLINE'].includes(method) ? method : 'CASH';
@@ -85,29 +187,40 @@ router.post('/', async (req: Request, res: Response) => {
   if (!client) return res.status(404).json({ success: false, error: 'Client not found' });
 
   try {
-    const collection = await prisma.$transaction(async tx => {
+    const result = await prisma.$transaction(async tx => {
+      const currentClient = await tx.client.findUnique({
+        where: { id: clientId },
+        select: { id: true, name: true, currentBalance: true }
+      });
+
       let targetSale = null;
-      if (saleId) {
-        targetSale = await tx.sale.findUnique({ where: { id: saleId } });
-        if (targetSale && amount > targetSale.balance) {
-          throw new Error(`Payment amount (Rs ${amount.toLocaleString()}) cannot exceed invoice due balance (Rs ${targetSale.balance.toLocaleString()})`);
-        }
+      if (saleId && String(saleId).trim()) {
+        targetSale = await tx.sale.findUnique({ where: { id: String(saleId) } });
       }
 
+      const previousBalance = currentClient?.currentBalance ?? 0;
+      const currentBillAmount = targetSale ? targetSale.balance : 0;
+      const totalPayable = Math.max(0, previousBalance);
+      const amountReceived = numAmount;
+      const remainingBalance = Math.max(0, totalPayable - amountReceived);
+      const excessPayment = Math.max(0, amountReceived - totalPayable);
+
+      // Create Collection master record
       const coll = await tx.collection.create({
         data: {
           clientId,
           branchId,
-          amount,
+          amount: numAmount,
           method: validMethod as any,
-          date: date ? parseInputDateToUtc(date) : new Date(),
+          date: date ? parseInputDateToUtc(date) : parseInputDateToUtc(),
           reference: reference || (targetSale ? `INV-${targetSale.invoiceNo}` : undefined),
           notes: notes || (targetSale ? `Payment for Invoice ${targetSale.invoiceNo}` : undefined),
         },
         include: { client: { select: { id: true, name: true } } },
       });
 
-      await recordCustomerLedgerEntry(tx, {
+      // Customer Ledger Entry (Credit decreases customer dues / increases advance credit)
+      const ledgerRes = await recordCustomerLedgerEntry(tx, {
         clientId,
         branchId,
         type: 'PAYMENT',
@@ -116,41 +229,62 @@ router.post('/', async (req: Request, res: Response) => {
         referenceNo: targetSale ? targetSale.invoiceNo : `PAY-${coll.id.slice(-6).toUpperCase()}`,
         description: targetSale ? `Payment for Invoice ${targetSale.invoiceNo}` : `Payment Received (${coll.method})`,
         debit: 0,
-        credit: amount,
+        credit: numAmount,
       });
 
-      let remaining = amount;
+      // FIFO Allocation across unpaid invoices
+      let unpaidSales = await tx.sale.findMany({
+        where: {
+          clientId,
+          branchId,
+          status: { in: ['PENDING', 'PARTIAL'] },
+          deletedAt: null,
+        },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      });
+
       if (targetSale && ['PENDING', 'PARTIAL'].includes(targetSale.status)) {
-        const toApply = Math.min(remaining, targetSale.balance);
-        const newPaid = targetSale.paid + toApply;
-        const newBal = targetSale.total - newPaid;
-        const newStatus = newBal <= 0 ? 'PAID' : 'PARTIAL';
-        await tx.sale.update({
-          where: { id: targetSale.id },
-          data: { paid: newPaid, balance: newBal, status: newStatus as any }
-        });
-        remaining -= toApply;
+        unpaidSales = [targetSale, ...unpaidSales.filter(s => s.id !== targetSale.id)];
       }
 
-      if (remaining > 0) {
-        const unpaidSales = await tx.sale.findMany({
-          where: { clientId, branchId, status: { in: ['PENDING', 'PARTIAL'] }, deletedAt: null, id: saleId ? { not: saleId } : undefined },
-          orderBy: { date: 'asc' },
+      let remainingPayment = numAmount;
+      const allocations: Array<{
+        saleId: string;
+        invoiceNo: string;
+        date: string;
+        invoiceTotal: number;
+        previousPaid: number;
+        previousBalance: number;
+        allocatedAmount: number;
+        remainingBalance: number;
+        newStatus: string;
+      }> = [];
+
+      for (const sale of unpaidSales) {
+        if (remainingPayment <= 0) break;
+        const toApply = Math.min(remainingPayment, sale.balance);
+        const newPaid = sale.paid + toApply;
+        const newBal = Math.max(0, sale.total - newPaid);
+        const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
+
+        await tx.sale.update({
+          where: { id: sale.id },
+          data: { paid: newPaid, balance: newBal, status: newStatus as any }
         });
 
-        for (const sale of unpaidSales) {
-          if (remaining <= 0) break;
-          const toApply = Math.min(remaining, sale.balance);
-          const newPaid = sale.paid + toApply;
-          const newBal = sale.total - newPaid;
-          const newStatus = newBal <= 0 ? 'PAID' : 'PARTIAL';
+        allocations.push({
+          saleId: sale.id,
+          invoiceNo: sale.invoiceNo,
+          date: sale.date.toISOString(),
+          invoiceTotal: sale.total,
+          previousPaid: sale.paid,
+          previousBalance: sale.balance,
+          allocatedAmount: toApply,
+          remainingBalance: newBal,
+          newStatus,
+        });
 
-          await tx.sale.update({
-            where: { id: sale.id },
-            data: { paid: newPaid, balance: newBal, status: newStatus as any },
-          });
-          remaining -= toApply;
-        }
+        remainingPayment -= toApply;
       }
 
       await updateClientCreditRating(clientId, tx);
@@ -165,11 +299,37 @@ router.post('/', async (req: Request, res: Response) => {
         reference: coll.reference || undefined,
       });
 
-      return coll;
+      return {
+        collection: coll,
+        summary: {
+          previousBalance,
+          currentBillAmount,
+          totalPayable,
+          amountReceived,
+          remainingBalance: ledgerRes.balance,
+          excessPayment,
+        },
+        allocations,
+      };
     }, { maxWait: 10000, timeout: 30000 });
 
-    await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Collection', entityId: collection.id, newData: { clientId, amount } });
-    return res.status(201).json({ success: true, data: collection });
+    await writeAuditLog({
+      userId: userId ?? undefined,
+      branchId,
+      action: 'CREATE',
+      entity: 'Collection',
+      entityId: result.collection.id,
+      newData: { clientId, amount: numAmount, summary: result.summary, allocationsCount: result.allocations.length }
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        ...result.collection,
+        summary: result.summary,
+        allocations: result.allocations,
+      }
+    });
   } catch (err: any) {
     console.error('[POST /api/collections]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Internal server error' });
@@ -177,3 +337,4 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 export default router;
+

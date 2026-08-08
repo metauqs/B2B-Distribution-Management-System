@@ -1,4 +1,5 @@
 import prisma from './prisma';
+import { parseInputDateToUtc } from './businessDate';
 
 // ─── Write an audit log entry ─────────────────────────────────────────────────
 
@@ -162,7 +163,7 @@ export async function recordCustomerLedgerEntry(
   params: LedgerEntryParams
 ): Promise<{ ledger: any; balance: number }> {
   const db = tx || prisma;
-  const entryDate = params.date ? new Date(params.date) : new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const entryDate = parseInputDateToUtc(params.date);
 
   // 1. Fetch predecessor ledger entry (latest chronological entry BEFORE the new entry's date)
   const predecessor = await db.customerLedger.findFirst({
