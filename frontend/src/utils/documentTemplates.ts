@@ -237,43 +237,75 @@ function buildDocStyles(b: BrandConfig): string {
     }
 
     /* ── Bilingual KPI Summary Boxes ───────────────────── */
-    .doc-kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 10px;
-      margin-bottom: 20px;
+    /* ── Urdu-First Typography Rules ────────────────────── */
+    .urdu-title-main {
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', sans-serif;
+      font-size: 24px;
+      font-weight: 800;
+      color: ${b.primaryColor};
+      direction: rtl;
+      unicode-bidi: isolate;
+      line-height: 1.3;
     }
-    .doc-kpi-box {
-      background: ${b.lightBg};
-      border: 1px solid ${b.lineColor};
-      border-radius: 8px;
-      padding: 12px 14px;
-      text-align: center;
-    }
-    .doc-kpi-label {
-      font-size: 9px;
+    .doc-info-label-urdu {
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', sans-serif;
+      font-size: 17px;
       font-weight: 700;
-      color: #7A8C79;
+      color: #1A1A1A;
+      direction: rtl;
+      unicode-bidi: isolate;
+      line-height: 1.3;
+      margin-bottom: 2px;
+    }
+    .doc-info-sub-eng {
+      font-family: 'Inter', sans-serif;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #6B7C6A;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
-      line-height: 1.4;
+      letter-spacing: 0.05em;
+      direction: ltr;
+      display: inline-block;
     }
     .doc-kpi-urdu {
-      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 17px;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', sans-serif;
+      font-size: 18px;
       color: #000000;
       direction: rtl;
       unicode-bidi: isolate;
       display: block;
-      margin-top: 3px;
       margin-bottom: 2px;
       line-height: 1.4;
-      letter-spacing: normal !important;
-      text-transform: none !important;
-      font-weight: 700;
+      font-weight: 800;
+    }
+    .doc-kpi-label-eng {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #64748B;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      display: block;
+    }
+    .urdu-main {
+      display: block;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', sans-serif;
+      font-size: 18px;
+      color: #000000;
+      direction: rtl;
+      unicode-bidi: isolate;
+      line-height: 1.4;
+      font-weight: 800;
+    }
+    .eng-sub {
+      display: block;
+      font-family: 'Inter', sans-serif;
+      font-size: 10.5px;
+      color: #64748B;
+      font-weight: 500;
+      margin-top: 1px;
     }
     .urdu-inline {
-      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', sans-serif;
       font-size: 16px;
       color: #FFFFFF;
       margin-left: 4px;
@@ -282,12 +314,10 @@ function buildDocStyles(b: BrandConfig): string {
       vertical-align: middle;
       display: inline-block;
       line-height: 1.4;
-      letter-spacing: normal !important;
-      text-transform: none !important;
       font-weight: 700;
     }
     .urdu-inline-dark {
-      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', sans-serif;
       font-size: 17px;
       color: #000000;
       margin-left: 4px;
@@ -296,12 +326,10 @@ function buildDocStyles(b: BrandConfig): string {
       vertical-align: middle;
       display: inline-block;
       line-height: 1.4;
-      letter-spacing: normal !important;
-      text-transform: none !important;
       font-weight: 700;
     }
     .urdu-inline-val {
-      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', sans-serif;
       font-size: 16px;
       color: #000000;
       margin-left: 4px;
@@ -310,14 +338,12 @@ function buildDocStyles(b: BrandConfig): string {
       vertical-align: middle;
       display: inline-block;
       line-height: 1.4;
-      letter-spacing: normal !important;
-      text-transform: none !important;
       font-weight: 700;
     }
     .doc-kpi-value {
       font-family: 'IBM Plex Mono', monospace;
-      font-size: 17px;
-      font-weight: 700;
+      font-size: 18px;
+      font-weight: 800;
       color: ${b.primaryColor};
       margin-top: 4px;
     }
@@ -364,7 +390,7 @@ function buildDocStyles(b: BrandConfig): string {
       direction: rtl;
       unicode-bidi: isolate;
       text-align: right;
-      font-size: 15px;
+      font-size: 17px;
       color: #000000;
       line-height: 1.4;
       padding-top: 4px;
@@ -385,8 +411,8 @@ function buildDocStyles(b: BrandConfig): string {
       margin-bottom: 20px;
     }
     .doc-summary-box {
-      width: 300px;
-      border: 1px solid ${b.lineColor};
+      width: 350px;
+      border: 1.5px solid ${b.lineColor};
       border-radius: 8px;
       overflow: hidden;
     }
@@ -394,37 +420,38 @@ function buildDocStyles(b: BrandConfig): string {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 8px 14px;
+      padding: 9px 14px;
       border-bottom: 1px solid ${b.lineColor};
-      font-size: 12.5px;
+      font-size: 13px;
     }
     .doc-summary-row:last-child { border-bottom: none; }
-    .doc-summary-row .label { color: #4A5C49; }
+    .doc-summary-row .label { color: #2C3E2D; font-weight: 600; }
     .doc-summary-row .label .urdu-sub {
       display: block;
       font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 14px;
+      font-size: 17px;
       color: #000000;
       direction: rtl;
       unicode-bidi: isolate;
-      margin-top: 2px;
-      line-height: 1.3;
+      margin-top: 3px;
+      line-height: 1.4;
       letter-spacing: normal !important;
       text-transform: none !important;
       font-weight: 700;
     }
     .doc-summary-row .val {
       font-family: 'IBM Plex Mono', monospace;
-      font-weight: 700;
-      font-size: 13px;
+      font-weight: 800;
+      font-size: 17px;
       color: ${b.primaryColor};
     }
-    .doc-summary-row.prev .val  { color: #B5533C; }
-    .doc-summary-row.credit-row .val { color: #2D6A4F; }
+    .doc-summary-row.prev .val  { color: #B5533C; font-size: 17px; }
+    .doc-summary-row.credit-row .val { color: #2D6A4F; font-size: 17px; }
     .doc-summary-row.total-row {
       background: ${b.lightBg};
       font-weight: 700;
     }
+    .doc-summary-row.total-row .val { font-size: 18px; }
     .doc-summary-row.grand-row {
       background: ${b.primaryColor};
       color: #FFFFFF;
@@ -432,10 +459,10 @@ function buildDocStyles(b: BrandConfig): string {
       font-size: 14px;
     }
     .doc-summary-row.grand-row .label,
-    .doc-summary-row.grand-row .label .urdu-sub { color: rgba(255,255,255,0.85); }
-    .doc-summary-row.grand-row .val { color: #FFFFFF; font-size: 15px; }
+    .doc-summary-row.grand-row .label .urdu-sub { color: #FFFFFF !important; font-size: 18px; font-weight: 800; }
+    .doc-summary-row.grand-row .val { color: #FFFFFF; font-size: 20px; font-weight: 900; }
     .doc-summary-row.paid-row { background: #F0FAF2; }
-    .doc-summary-row.paid-row .val { color: #2D6A4F; }
+    .doc-summary-row.paid-row .val { color: #2D6A4F; font-size: 17px; }
 
     /* ── Payment Status Badge ──────────────────────────── */
     .doc-status-wrap { text-align: center; margin-bottom: 18px; }
@@ -545,7 +572,8 @@ function buildHeader(
   title: string,
   subLabel: string,
   refLine: string,
-  origin: string
+  origin: string,
+  urduTitle = ''
 ): string {
   const logoSrc = (b.logoUrl && (b.logoUrl.startsWith('data:') || b.logoUrl.startsWith('http')))
     ? b.logoUrl
@@ -560,6 +588,7 @@ function buildHeader(
         </div>
       </div>
       <div class="doc-header-meta">
+        ${urduTitle ? `<div class="urdu-title-main">${urduTitle}</div>` : ''}
         <div class="doc-title">${title}</div>
         <div class="doc-title-sub">${subLabel}</div>
         ${refLine ? `<div class="doc-ref-no">${refLine}</div>` : ''}
@@ -665,13 +694,14 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     'INVOICE',
     `${today} · ${time}`,
     `#${inv.invoiceNo}`,
-    origin
+    origin,
+    'انوائس'
   );
 
   const infoGrid = `
     <div class="doc-info-grid">
       <div class="doc-info-box">
-        <div class="doc-info-label">Billed To <span class="urdu-inline-dark">(کلائنٹ)</span></div>
+        <div class="doc-info-label-urdu">کلائنٹ <span class="doc-info-sub-eng">(Billed To)</span></div>
         <div class="doc-info-value large">${inv.clientName} <span style="font-size:11px;font-weight:500;color:#7A8C79;">(${inv.clientId || '—'})</span></div>
         ${inv.clientType ? `<div class="doc-info-value" style="font-size:11px;color:#7A8C79;">${inv.clientType}</div>` : ''}
         ${clientPhone ? `<div class="doc-info-value" style="font-size:11px;">📞 ${clientPhone}</div>` : ''}
@@ -679,10 +709,10 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
         ${inv.deliveryLocation || inv.clientAddress ? `<div class="doc-info-value" style="font-size:11px;color:#7A8C79;">${inv.deliveryLocation || inv.clientAddress}</div>` : ''}
       </div>
       <div class="doc-info-box">
-        <div class="doc-info-label">Delivery <span class="urdu-inline-dark">(ترسیل)</span></div>
+        <div class="doc-info-label-urdu">ترسیل <span class="doc-info-sub-eng">(Delivery)</span></div>
         ${inv.employeeName ? `<div class="doc-info-value">👷 ${inv.employeeName} (03061110041)</div>` : '<div class="doc-info-value" style="color:#aaa;">—</div>'}
         ${inv.deliveryDate ? `<div class="doc-info-value" style="font-size:12px;">📅 ${new Date(inv.deliveryDate).toLocaleDateString('en-GB')}${inv.deliveryTime ? ` · ${inv.deliveryTime}` : ''}</div>` : ''}
-        <div class="doc-info-label" style="margin-top:8px;">Payment Mode <span class="urdu-inline-dark">(ادائیگی)</span></div>
+        <div class="doc-info-label-urdu" style="margin-top:8px;">ادائیگی طریقہ <span class="doc-info-sub-eng">(Payment Mode)</span></div>
         <div class="doc-info-value">${inv.paymentMode}</div>
       </div>
     </div>
@@ -697,8 +727,8 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     <tr>
       <td class="center muted" style="font-size:10px;padding:4px 6px;">${startIndex + i + 1}</td>
       <td style="font-size:10px;padding:4px 6px;">
-        <strong>${item.itemName}</strong>
-        ${item.urduName ? `<span class="urdu-inline-val">(${item.urduName})</span>` : ''}
+        <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:16px;font-weight:700;color:#000000;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</div>
+        <div style="font-size:10.5px;color:#555555;">${item.itemName}</div>
       </td>
       <td class="center mono" style="font-size:10px;padding:4px 6px;">${item.qty} ${item.unit}</td>
       <td class="right mono" style="font-size:10px;padding:4px 6px;">${item.rate.toLocaleString()}</td>
@@ -710,10 +740,10 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     <thead>
       <tr>
         <th class="center" style="font-size:9px;padding:5px 6px;">#</th>
-        <th style="font-size:9px;padding:5px 6px;">Item <span class="urdu-inline">(آئٹم)</span></th>
-        <th class="center" style="font-size:9px;padding:5px 6px;">Qty</th>
-        <th class="right" style="font-size:9px;padding:5px 6px;">Rate</th>
-        <th class="right" style="font-size:9px;padding:5px 6px;">Amount</th>
+        <th style="font-size:9.5px;padding:5px 6px;">پروڈکٹ / آئٹم <span style="font-size:9px;font-weight:500;">(Item)</span></th>
+        <th class="center" style="font-size:9.5px;padding:5px 6px;">تعداد <span style="font-size:9px;font-weight:500;">(Qty)</span></th>
+        <th class="right" style="font-size:9.5px;padding:5px 6px;">ریٹ <span style="font-size:9px;font-weight:500;">(Rate)</span></th>
+        <th class="right" style="font-size:9.5px;padding:5px 6px;">رقم <span style="font-size:9px;font-weight:500;">(Amount)</span></th>
       </tr>
     </thead>
   `;
@@ -739,11 +769,11 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
       <thead>
         <tr>
           <th class="center">#</th>
-          <th>Item <span class="urdu-inline">(آئٹم)</span></th>
-          <th class="center">Qty</th>
-          <th>Unit</th>
-          <th class="right">Rate (Rs)</th>
-          <th class="right">Amount (Rs)</th>
+          <th>پروڈکٹ / آئٹم <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Item)</span></th>
+          <th class="center">تعداد <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Qty)</span></th>
+          <th>پیمائش <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Unit)</span></th>
+          <th class="right">ریٹ <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Rate Rs)</span></th>
+          <th class="right">کل رقم <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Amount Rs)</span></th>
         </tr>
       </thead>
       <tbody>
@@ -751,8 +781,8 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
           <tr>
             <td class="center muted">${i + 1}</td>
             <td>
-              <strong>${item.itemName}</strong>
-              ${item.urduName ? `<span class="urdu-inline-val">(${item.urduName})</span>` : ''}
+              <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:17px;font-weight:700;color:#000000;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</div>
+              <div style="font-size:11px;color:#555555;font-weight:500;">${item.itemName}</div>
             </td>
             <td class="center mono">${item.qty}</td>
             <td class="muted">${item.unit}</td>
@@ -767,8 +797,8 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
   const prevBalRow = `
     <div class="doc-summary-row prev">
       <span class="label">
-        Previous Outstanding
-        <span class="urdu-sub">بقایا جات (سابقہ بقایا)</span>
+        <span class="urdu-main" style="color:#991B1B;">سابقہ بقایا جات</span>
+        <span class="eng-sub">Previous Outstanding</span>
       </span>
       <span class="val">Rs ${prevBal.toLocaleString()}</span>
     </div>
@@ -780,31 +810,31 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
         ${prevBalRow}
         <div class="doc-summary-row">
           <span class="label">
-            Current Bill
-            <span class="urdu-sub">موجودہ بل</span>
+            <span class="urdu-main">موجودہ بل</span>
+            <span class="eng-sub">Current Bill</span>
           </span>
           <span class="val">Rs ${inv.total.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row total-row">
           <span class="label">
-            Total Payable Amount
-            <span class="urdu-sub">کل قابل ادائیگی (کل واجب الادا)</span>
+            <span class="urdu-main" style="color:#0284C7;">کل قابل ادائیگی (کل واجب الادا)</span>
+            <span class="eng-sub">Total Payable Amount</span>
           </span>
           <span class="val">Rs ${grandTotal.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row paid-row">
           <span class="label">
-            Amount Paid
-            <span class="urdu-sub">وصول شدہ رقم (کل ادائیگی)</span>
+            <span class="urdu-main" style="color:#166534;">وصول شدہ رقم (کل ادائیگی)</span>
+            <span class="eng-sub">Amount Paid Today</span>
           </span>
-          <span class="val" style="color:#2D6A4F;">- Rs ${inv.paid.toLocaleString()}</span>
+          <span class="val" style="color:#166534;">- Rs ${inv.paid.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row grand-row ${remaining <= 0 ? 'paid-row' : ''}">
           <span class="label">
-            Remaining Balance
-            <span class="urdu-sub" style="color:#FFFFFF !important; font-size:18px; font-weight:800;">بقایا رقم (بقیہ واجب الادا)</span>
+            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">بقیہ واجب الادا (بقایا رقم)</span>
+            <span class="eng-sub" style="color:rgba(255,255,255,0.85); font-size:11px;">Remaining Balance</span>
           </span>
-          <span class="val" style="color:#FFFFFF; font-size:19px; font-weight:900;">Rs ${Math.max(0, remaining).toLocaleString()}</span>
+          <span class="val" style="color:#FFFFFF; font-size:20px; font-weight:900;">Rs ${Math.max(0, remaining).toLocaleString()}</span>
         </div>
       </div>
     </div>
@@ -876,7 +906,8 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
     'DUE STATEMENT',
     `As of ${today}`,
     `Client: ${stmt.clientId || '—'}`,
-    origin
+    origin,
+    'واجب الادا تفصیل'
   );
 
   const whatsappLine = stmt.whatsapp && stmt.whatsapp !== stmt.phone ? ` · WA: ${stmt.whatsapp}` : '';
@@ -885,14 +916,14 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
   const infoGrid = `
     <div class="doc-info-grid">
       <div class="doc-info-box">
-        <div class="doc-info-label">Client <span class="urdu-inline-dark">(کلائنٹ)</span></div>
+        <div class="doc-info-label-urdu">کلائنٹ <span class="doc-info-sub-eng">(Client)</span></div>
         <div class="doc-info-value large">${stmt.clientName}</div>
         ${stmt.ownerName ? `<div class="doc-info-value" style="font-size:11px;color:#7A8C79;">Owner: ${stmt.ownerName}</div>` : ''}
         ${stmt.phone ? `<div class="doc-info-value" style="font-size:11px;">📞 ${stmt.phone}${whatsappLine}</div>` : ''}
         ${addrLine ? `<div class="doc-info-value" style="font-size:11px;color:#7A8C79;">${addrLine}</div>` : ''}
       </div>
       <div class="doc-info-box">
-        <div class="doc-info-label">Statement Date</div>
+        <div class="doc-info-label-urdu">تاریخ <span class="doc-info-sub-eng">(Statement Date)</span></div>
         <div class="doc-info-value large">${today}</div>
       </div>
     </div>
@@ -901,24 +932,18 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
   const kpiGrid = `
     <div class="doc-kpi-grid">
       <div class="doc-kpi-box">
-        <div class="doc-kpi-label">
-          Total Sales
-          <span class="doc-kpi-urdu">کل فروخت</span>
-        </div>
+        <span class="doc-kpi-urdu">کل فروخت</span>
+        <span class="doc-kpi-label-eng">Total Sales</span>
         <div class="doc-kpi-value">Rs ${stmt.totalSales.toLocaleString()}</div>
       </div>
       <div class="doc-kpi-box">
-        <div class="doc-kpi-label">
-          Total Paid
-          <span class="doc-kpi-urdu">کل ادائیگی</span>
-        </div>
+        <span class="doc-kpi-urdu" style="color:#166534;">کل ادائیگی</span>
+        <span class="doc-kpi-label-eng">Total Paid</span>
         <div class="doc-kpi-value ok">Rs ${stmt.totalCollected.toLocaleString()}</div>
       </div>
       <div class="doc-kpi-box">
-        <div class="doc-kpi-label">
-          Balance Due
-          <span class="doc-kpi-urdu">کل واجب الادا</span>
-        </div>
+        <span class="doc-kpi-urdu" style="color:#991B1B;">کل واجب الادا</span>
+        <span class="doc-kpi-label-eng">Balance Due</span>
         <div class="doc-kpi-value ${isCredit ? 'ok' : 'danger'}">
           Rs ${Math.abs(stmt.currentBalance).toLocaleString()}${isCredit ? ' (Credit)' : ''}
         </div>
@@ -946,11 +971,11 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
     <table class="doc-table">
       <thead>
         <tr>
-          <th>Date</th>
-          <th>Description</th>
-          <th class="right">Debit (Rs)</th>
-          <th class="right">Credit (Rs)</th>
-          <th class="right">Balance (Rs)</th>
+          <th>تاریخ <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Date)</span></th>
+          <th>تفصیل <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Description)</span></th>
+          <th class="right">بل / واجب <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Debit Rs)</span></th>
+          <th class="right">وصولی / ادا <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Credit Rs)</span></th>
+          <th class="right">بقایا جات <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Balance Rs)</span></th>
         </tr>
       </thead>
       <tbody>
@@ -1076,15 +1101,15 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
       const bg = i % 2 === 0 ? '#072E1D' : '#0A3723';
       return `
         <tr style="background:${bg};border-bottom:1px solid #14492E;">
-          <td style="padding:6px 8px;vertical-align:middle;text-align:left;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:800;color:#FACC15;">Rs ${item.sellRate.toLocaleString()}</td>
+          <td style="padding:6px 8px;vertical-align:middle;text-align:left;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:800;color:#FACC15;">Rs ${item.sellRate.toLocaleString()}</td>
           <td style="padding:6px 8px;vertical-align:middle;text-align:center;text-transform:uppercase;font-size:11px;color:#CBD5E1;font-weight:600;">${item.unit}</td>
           <td style="padding:6px 8px;vertical-align:middle;">
             <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:6px;">
-              <span style="font-size:11px;color:#9ECBB2;font-weight:600;font-family:'Inter',sans-serif;">${item.itemName}</span>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:16px;font-weight:700;color:#FFFFFF;direction:rtl;line-height:1.4;display:inline-block;">${item.urduName || ''}</span>
-                ${htmlVisual}
+              <div style="display:flex;flex-direction:column;align-items:flex-start;">
+                <span style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:18px;font-weight:800;color:#FFFFFF;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</span>
+                <span style="font-size:10.5px;color:#A3C9B3;font-weight:500;font-family:'Inter',sans-serif;">${item.itemName}</span>
               </div>
+              ${htmlVisual}
             </div>
           </td>
           <td style="padding:6px 8px;vertical-align:middle;text-align:right;font-size:11px;color:#789E89;font-weight:600;">${startIdx + i + 1}</td>
@@ -1097,7 +1122,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
       <tr style="background:#0D4429;border-bottom:2px solid #E5A93C;">
         <th style="font-size:10px;padding:8px;width:85px;text-align:left;font-weight:800;color:#FACC15;letter-spacing:0.08em;">RATE (RS)</th>
         <th style="font-size:10px;padding:8px;width:55px;text-align:center;font-weight:800;color:#FACC15;letter-spacing:0.08em;">UNIT</th>
-        <th style="font-size:10px;padding:8px;text-align:right;font-weight:800;color:#FACC15;letter-spacing:0.08em;">PRODUCT / پروڈکٹ</th>
+        <th style="font-size:10px;padding:8px;text-align:right;font-weight:800;color:#FACC15;letter-spacing:0.08em;">پروڈکٹ / PRODUCT</th>
         <th style="font-size:10px;padding:8px;width:25px;text-align:right;font-weight:800;color:#FACC15;">#</th>
       </tr>
     </thead>
@@ -1143,7 +1168,8 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
         </div>
 
         <div style="text-align:right;">
-          <div style="font-size:20px;font-weight:900;color:#FACC15;letter-spacing:0.08em;text-transform:uppercase;line-height:1.1;">TODAY'S PRICE LIST</div>
+          <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:24px;font-weight:800;color:#FACC15;direction:rtl;line-height:1.2;">آج کی ریٹ لسٹ</div>
+          <div style="font-size:12px;font-weight:800;color:#FDFBF7;letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;">TODAY'S PRICE LIST</div>
           <div style="display:inline-block;margin-top:6px;background:#0D4429;border:1px solid #E5A93C;color:#FFFFFF;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;padding:4px 12px;border-radius:6px;letter-spacing:0.05em;">
             📅 ${data.dateStr}
           </div>
@@ -1383,19 +1409,20 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
     'OUTSTANDING DUE STATEMENT',
     `${today} · ${time}`,
     `Client: ${data.clientId || '—'}`,
-    origin
+    origin,
+    'واجب الادا تفصیل'
   );
 
   const infoGrid = `
     <div class="doc-info-grid">
       <div class="doc-info-box">
-        <div class="doc-info-label">Client <span class="urdu-inline-dark">(کلائنٹ)</span></div>
+        <div class="doc-info-label-urdu">کلائنٹ <span class="doc-info-sub-eng">(Client)</span></div>
         <div class="doc-info-value large">${data.clientName}</div>
         ${data.phone ? `<div class="doc-info-value" style="font-size:11px;">📞 ${data.phone}</div>` : ''}
         ${data.whatsapp && data.whatsapp !== data.phone ? `<div class="doc-info-value" style="font-size:11px;color:#2D6A4F;">💬 WA: ${data.whatsapp}</div>` : ''}
       </div>
       <div class="doc-info-box">
-        <div class="doc-info-label">Statement Date</div>
+        <div class="doc-info-label-urdu">تاریخ <span class="doc-info-sub-eng">(Statement Date)</span></div>
         <div class="doc-info-value large">${today}</div>
       </div>
     </div>
@@ -1404,11 +1431,9 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
   const kpiGrid = `
     <div class="doc-kpi-grid">
       <div class="doc-kpi-box">
-        <div class="doc-kpi-label">
-          Total Outstanding
-          <span class="doc-kpi-urdu">کل واجب الادا</span>
-        </div>
-        <div class="doc-kpi-value danger">Rs ${data.totalOutstanding.toLocaleString()}</div>
+        <span class="doc-kpi-urdu" style="color:#991B1B;">کل واجب الادا (کل بقایا جات)</span>
+        <span class="doc-kpi-label-eng">Total Outstanding Balance</span>
+        <div class="doc-kpi-value danger" style="font-size:22px;">Rs ${data.totalOutstanding.toLocaleString()}</div>
       </div>
     </div>
   `;
@@ -1429,11 +1454,11 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
       <thead>
         <tr>
           <th class="center">#</th>
-          <th>Invoice No</th>
-          <th>Date</th>
-          <th class="right">Total (Rs)</th>
-          <th class="right">Paid (Rs)</th>
-          <th class="right">Remaining Due (Rs)</th>
+          <th>انواﺋس نمبر <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Invoice No)</span></th>
+          <th>تاریخ <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Date)</span></th>
+          <th class="right">کل رقم <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Total Rs)</span></th>
+          <th class="right">وصولی / ادائیگی <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Paid Rs)</span></th>
+          <th class="right">بقیہ واجب الادا <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Remaining Due)</span></th>
         </tr>
       </thead>
       <tbody>
@@ -1444,7 +1469,10 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
 
   const openBalRow = data.openingBalance && data.openingBalance > 0 ? `
     <div class="doc-summary-row prev">
-      <span class="label">Opening Balance / <span class="urdu-inline-dark" style="color: #000000; font-size: 14px; font-weight: 700; margin-left: 5px;">سابقی بقایا</span></span>
+      <span class="label">
+        <span class="urdu-main" style="color:#991B1B;">سابقی بقایا</span>
+        <span class="eng-sub">Opening Balance</span>
+      </span>
       <span class="val">Rs ${data.openingBalance.toLocaleString()}</span>
     </div>
   ` : '';
@@ -1454,28 +1482,32 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
       <div class="doc-summary-box">
         ${openBalRow}
         <div class="doc-summary-row">
-          <span class="label">Total Billed / <span class="urdu-inline-dark" style="color: #000000; font-size: 14px; font-weight: 700; margin-left: 5px;">کل بل</span></span>
+          <span class="label">
+            <span class="urdu-main">کل بل (موجودہ)</span>
+            <span class="eng-sub">Total Billed</span>
+          </span>
           <span class="val">Rs ${data.totalBilled.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row paid-row">
-          <span class="label">Total Paid / <span class="urdu-inline-dark" style="color: #000000; font-size: 14px; font-weight: 700; margin-left: 5px;">کل ادا شدہ</span></span>
-          <span class="val">- Rs ${data.totalPaid.toLocaleString()}</span>
+          <span class="label">
+            <span class="urdu-main" style="color:#166534;">کل ادا شدہ (وصولی)</span>
+            <span class="eng-sub">Total Paid</span>
+          </span>
+          <span class="val" style="color:#166534;">- Rs ${data.totalPaid.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row grand-row">
           <span class="label">
-            Remaining Outstanding
-            <span class="urdu-sub">بقیہ واجب الادا</span>
+            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">بقیہ واجب الادا (کل بقایا جات)</span>
+            <span class="eng-sub" style="color:rgba(255,255,255,0.85); font-size:11px;">Remaining Outstanding</span>
           </span>
-          <span class="val">Rs ${data.totalOutstanding.toLocaleString()}</span>
+          <span class="val" style="color:#FFFFFF; font-size:20px; font-weight:900;">Rs ${data.totalOutstanding.toLocaleString()}</span>
         </div>
       </div>
     </div>
   `;
 
-  const notesBlock = ''; // Outstanding due statement doesn't have custom notes
-
-  const statusBadge = ''; // No status badge for list statement
-
+  const notesBlock = '';
+  const statusBadge = '';
   const footer = buildFooter(brand, `Printed: ${printedOn}`);
 
   const body = `
@@ -1524,21 +1556,22 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
     'OFFICIAL PAYMENT RECEIPT',
     data.date,
     `Receipt #${data.receiptNo}`,
-    origin
+    origin,
+    'وصولی رسید'
   );
 
   const infoGrid = `
     <div class="doc-info-grid">
       <div class="doc-info-box">
-        <div class="doc-info-label">Customer Name <span class="urdu-inline-dark">(نام کلائنٹ)</span></div>
+        <div class="doc-info-label-urdu">نام کلائنٹ <span class="doc-info-sub-eng">(Customer Name)</span></div>
         <div class="doc-info-value large">${data.clientName}</div>
         ${data.phone ? `<div class="doc-info-value" style="font-size:11px;">📞 ${data.phone}</div>` : ''}
       </div>
       <div class="doc-info-box">
-        <div class="doc-info-label">Payment Details</div>
-        <div class="doc-info-value"><strong>Method:</strong> ${data.paymentMethod}</div>
+        <div class="doc-info-label-urdu">ادائیگی تفصیل <span class="doc-info-sub-eng">(Payment Details)</span></div>
+        <div class="doc-info-value"><strong>طریقہ (Method):</strong> ${data.paymentMethod}</div>
         ${data.reference ? `<div class="doc-info-value"><strong>Ref:</strong> ${data.reference}</div>` : ''}
-        <div class="doc-info-value"><strong>Date:</strong> ${data.date}</div>
+        <div class="doc-info-value"><strong>تاریخ (Date):</strong> ${data.date}</div>
       </div>
     </div>
   `;
@@ -1546,18 +1579,21 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
   const excessAmt = data.excessPayment ?? 0;
   const kpiGrid = `
     <div class="doc-kpi-grid">
-      <div class="doc-kpi-card">
-        <div class="doc-kpi-label">Previous Outstanding</div>
-        <div class="doc-kpi-val text-amber">${fmtMoney(data.previousBalance)}</div>
+      <div class="doc-kpi-box">
+        <span class="doc-kpi-urdu">سابقہ بقایا جات</span>
+        <span class="doc-kpi-label-eng">Previous Outstanding</span>
+        <div class="doc-kpi-value danger">Rs ${fmtMoney(data.previousBalance)}</div>
       </div>
-      <div class="doc-kpi-card">
-        <div class="doc-kpi-label">Paid Today <span class="urdu-inline-dark">(وصولی)</span></div>
-        <div class="doc-kpi-val text-green">${fmtMoney(data.amountReceived)}</div>
+      <div class="doc-kpi-box">
+        <span class="doc-kpi-urdu" style="color:#166534;">آج کی وصولی</span>
+        <span class="doc-kpi-label-eng">Paid Today</span>
+        <div class="doc-kpi-value ok">Rs ${fmtMoney(data.amountReceived)}</div>
       </div>
-      <div class="doc-kpi-card highlight">
-        <div class="doc-kpi-label">${excessAmt > 0 ? 'Advance Credit' : 'Remaining Outstanding'}</div>
-        <div class="doc-kpi-val ${excessAmt > 0 ? 'text-green' : (data.remainingBalance > 0 ? 'text-red' : 'text-green')}">
-          ${excessAmt > 0 ? `+${fmtMoney(excessAmt)}` : fmtMoney(data.remainingBalance)}
+      <div class="doc-kpi-box">
+        <span class="doc-kpi-urdu" style="color:${excessAmt > 0 ? '#166534' : '#991B1B'};">${excessAmt > 0 ? 'ایڈوانس رقم' : 'بقیہ واجب الادا'}</span>
+        <span class="doc-kpi-label-eng">${excessAmt > 0 ? 'Advance Credit' : 'Remaining Outstanding'}</span>
+        <div class="doc-kpi-value ${excessAmt > 0 ? 'ok' : (data.remainingBalance > 0 ? 'danger' : 'ok')}">
+          ${excessAmt > 0 ? `+Rs ${fmtMoney(excessAmt)}` : `Rs ${fmtMoney(data.remainingBalance)}`}
         </div>
       </div>
     </div>
@@ -1573,10 +1609,10 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
         <table class="doc-table">
           <thead>
             <tr>
-              <th>Invoice #</th>
-              <th class="num">Allocated Amount (Rs)</th>
-              <th class="num">Remaining Invoice Due</th>
-              <th style="text-align:center;">Status</th>
+              <th>انواﺋس نمبر <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Invoice #)</span></th>
+              <th class="num">وصول شدہ رقم <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Allocated Rs)</span></th>
+              <th class="num">بقیہ انواﺋس واجب <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Remaining Due)</span></th>
+              <th style="text-align:center;">حالت <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Status)</span></th>
             </tr>
           </thead>
           <tbody>
@@ -1599,29 +1635,44 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
   }
 
   const summary = `
-    <div class="doc-summary-box" style="margin-top:20px;">
-      <div class="doc-summary-card">
-        <div class="doc-summary-row">
-          <span>Previous Balance (سابقہ بقایا)</span>
-          <span class="mono">${fmtMoney(data.previousBalance)}</span>
+    <div class="doc-summary-wrap" style="margin-top:20px;">
+      <div class="doc-summary-box">
+        <div class="doc-summary-row prev">
+          <span class="label">
+            <span class="urdu-main" style="color:#991B1B;">سابقہ بقایا جات</span>
+            <span class="eng-sub">Previous Balance</span>
+          </span>
+          <span class="val">Rs ${fmtMoney(data.previousBalance)}</span>
         </div>
         ${data.currentBillAmount && data.currentBillAmount > 0 ? `
           <div class="doc-summary-row">
-            <span>Current Bill Amount</span>
-            <span class="mono">${fmtMoney(data.currentBillAmount)}</span>
+            <span class="label">
+              <span class="urdu-main">موجودہ بل</span>
+              <span class="eng-sub">Current Bill Amount</span>
+            </span>
+            <span class="val">Rs ${fmtMoney(data.currentBillAmount)}</span>
           </div>
         ` : ''}
-        <div class="doc-summary-row">
-          <span>Total Payable (کل واجب الادا)</span>
-          <span class="mono font-bold">${fmtMoney(data.totalPayable)}</span>
+        <div class="doc-summary-row total-row">
+          <span class="label">
+            <span class="urdu-main" style="color:#0284C7;">کل قابل ادائیگی (کل واجب الادا)</span>
+            <span class="eng-sub">Total Payable</span>
+          </span>
+          <span class="val">Rs ${fmtMoney(data.totalPayable)}</span>
         </div>
-        <div class="doc-summary-row text-green">
-          <span>Amount Received Today (آج کی ادائیگی)</span>
-          <span class="mono font-bold">${fmtMoney(data.amountReceived)}</span>
+        <div class="doc-summary-row paid-row">
+          <span class="label">
+            <span class="urdu-main" style="color:#166534;">وصول شدہ رقم (آج کی وصولی)</span>
+            <span class="eng-sub">Amount Received Today</span>
+          </span>
+          <span class="val" style="color:#166534;">- Rs ${fmtMoney(data.amountReceived)}</span>
         </div>
-        <div class="doc-summary-row grand-total">
-          <span>${excessAmt > 0 ? 'Advance Credit (ایڈوانس کریڈٹ)' : 'Remaining Outstanding (بقیہ واجب الادا)'}</span>
-          <span class="mono">${excessAmt > 0 ? `+${fmtMoney(excessAmt)}` : fmtMoney(data.remainingBalance)}</span>
+        <div class="doc-summary-row grand-row">
+          <span class="label">
+            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">${excessAmt > 0 ? 'ایڈوانس کریڈٹ' : 'بقیہ واجب الادا (بقایا رقم)'}</span>
+            <span class="eng-sub" style="color:rgba(255,255,255,0.85); font-size:11px;">${excessAmt > 0 ? 'Advance Credit' : 'Remaining Outstanding'}</span>
+          </span>
+          <span class="val" style="color:#FFFFFF; font-size:20px; font-weight:900;">${excessAmt > 0 ? `+Rs ${fmtMoney(excessAmt)}` : `Rs ${fmtMoney(data.remainingBalance)}`}</span>
         </div>
       </div>
     </div>
