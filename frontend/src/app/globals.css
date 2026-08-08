@@ -787,6 +787,7 @@ button.va-icon:hover { color: var(--danger); }
   .va-app:not(.sidebar-collapsed) .show-collapsed { display: none !important; }
   .hide-mobile { display: block !important; }
   .show-mobile { display: none !important; }
+  .show-mobile-block { display: none !important; }
   .col-span-2-desktop { grid-column: span 2 / span 2; }
 }
 
@@ -999,6 +1000,7 @@ button.va-icon:hover { color: var(--danger); }
   /* Responsive Helpers */
   .hide-mobile { display: none !important; }
   .show-mobile { display: flex !important; }
+  .show-mobile-block { display: block !important; }
   .col-span-2-desktop { grid-column: span 1 / span 1; }
 
   /* Filter bars — inline filters wrap and go full-width */

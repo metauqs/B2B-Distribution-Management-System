@@ -5,6 +5,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
 import { fetchWithCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import {
   mdiViewDashboard,
@@ -200,16 +201,17 @@ export default function ReportsPage() {
   return (
     <DashboardLayout>
       {/* Top Filter & Toolbar Bar */}
-      <div className="va-panel" style={{ padding: '16px 20px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+      <div className="va-panel" style={{ padding: '14px 16px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F8FAFC', padding: '4px 8px', border: '1px solid #CBD5E1', borderRadius: 8 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', flex: '1 1 auto', minWidth: 280 }}>
+            {/* Preset Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F8FAFC', padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 8, flex: '1 1 auto', minWidth: 160 }}>
               <Icon path={mdiFilterVariant} size={0.7} color="#64748B" />
               <select
                 value={datePreset}
                 onChange={e => handlePresetChange(e.target.value)}
-                style={{ background: 'transparent', border: 'none', fontSize: 13, fontWeight: 700, color: '#1E293B', cursor: 'pointer', outline: 'none' }}
+                style={{ background: 'transparent', border: 'none', fontSize: 13, fontWeight: 700, color: '#1E293B', cursor: 'pointer', outline: 'none', width: '100%' }}
               >
                 <option value="today">Today (Active Business Day)</option>
                 <option value="yesterday">Yesterday</option>
@@ -219,19 +221,25 @@ export default function ReportsPage() {
               </select>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>From</span>
-              <input type="date" value={from} onChange={e => setRState({ from: e.target.value, datePreset: 'custom' })} style={{ padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 13, fontWeight: 600 }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>To</span>
-              <input type="date" value={to} onChange={e => setRState({ to: e.target.value, datePreset: 'custom' })} style={{ padding: '6px 10px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 13, fontWeight: 600 }} />
+            {/* Date Pickers */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: '1 1 auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>From</span>
+                <input type="date" value={from} onChange={e => setRState({ from: e.target.value, datePreset: 'custom' })} style={{ padding: '6px 8px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 12, fontWeight: 600 }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>To</span>
+                <input type="date" value={to} onChange={e => setRState({ to: e.target.value, datePreset: 'custom' })} style={{ padding: '6px 8px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#F8FAFC', fontSize: 12, fontWeight: 600 }} />
+              </div>
             </div>
 
+            {/* Search Bar */}
             <input
               type="text"
               placeholder="Search invoice or client..."
               value={searchQuery}
               onChange={e => setRState({ searchQuery: e.target.value })}
-              style={{ padding: '6px 12px', border: '1px solid #CBD5E1', borderRadius: 6, fontSize: 13, width: 180 }}
+              style={{ padding: '6px 12px', border: '1px solid #CBD5E1', borderRadius: 6, fontSize: 13, flex: '1 1 180px', minWidth: 140 }}
             />
 
             <button className="va-btn small" style={{ fontWeight: 700, borderRadius: '6px', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => loadData(true)}>
@@ -239,35 +247,45 @@ export default function ReportsPage() {
             </button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Action Buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <button className="va-btn outline small" style={{ fontWeight: 700, borderRadius: '6px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={exportToCSV}>
-              <Icon path={mdiDownload} size={0.7} color="#2563EB" /> Export CSV
+              <Icon path={mdiDownload} size={0.7} color="#2563EB" /> CSV
             </button>
 
-            <button className="va-btn outline small" style={{ fontWeight: 700, borderRadius: '6px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => window.print()}>
+            <button className="va-btn outline small hide-mobile" style={{ fontWeight: 700, borderRadius: '6px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => window.print()}>
               <Icon path={mdiPrinter} size={0.7} color="#475569" /> Print
             </button>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F0FDF4', border: '1px solid #DCFCE7', padding: '6px 12px', borderRadius: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F0FDF4', border: '1px solid #DCFCE7', padding: '4px 10px', borderRadius: '20px' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16A34A', boxShadow: '0 0 0 3px rgba(22, 163, 74, 0.2)' }} />
               <span style={{ fontSize: 11, fontWeight: 700, color: '#166534' }}>
                 Real-Time {lastSyncTime && `(${lastSyncTime})`}
               </span>
             </div>
           </div>
+
         </div>
       </div>
 
       {/* Main Financial Module Tabs */}
       <div className="va-tabs-inline" style={{ marginTop: 12, borderBottom: '2px solid #E2E8F0', paddingBottom: 0 }}>
-        {(['Executive Dashboard', 'Sales', 'Purchases', 'Inventory', 'Finance', 'Management Analytics'] as MainCategory[]).map(t => (
+        {[
+          { id: 'Executive Dashboard', label: 'Executive', icon: mdiViewDashboard },
+          { id: 'Sales', label: 'Sales', icon: mdiReceiptText },
+          { id: 'Purchases', label: 'Purchases', icon: mdiCart },
+          { id: 'Inventory', label: 'Inventory', icon: mdiPackageVariantClosed },
+          { id: 'Finance', label: 'Finance', icon: mdiScaleBalance },
+          { id: 'Management Analytics', label: 'Analytics', icon: mdiAlertCircle },
+        ].map(t => (
           <button
-            key={t}
-            className={mainTab === t ? 'active' : ''}
-            onClick={() => setMainTab(t)}
-            style={{ fontWeight: 800, padding: '10px 18px', fontSize: 14 }}
+            key={t.id}
+            className={mainTab === t.id ? 'active' : ''}
+            onClick={() => setMainTab(t.id as MainCategory)}
+            style={{ fontWeight: 800, padding: '10px 16px', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
           >
-            {t}
+            <Icon path={t.icon} size={0.7} />
+            <span>{t.id}</span>
           </button>
         ))}
       </div>
@@ -422,7 +440,7 @@ export default function ReportsPage() {
               {/* Sub-tab 1: Invoice Profitability */}
               {salesTab === 'Invoice Profitability' && (
                 <div className="va-panel">
-                  <div className="va-panel-head" style={{ justifyContent: 'space-between' }}>
+                  <div className="va-panel-head" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                     <h3>Invoice Profitability Inspector</h3>
                     {invoiceReport?.summary && (
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
@@ -431,7 +449,8 @@ export default function ReportsPage() {
                     )}
                   </div>
 
-                  <div style={{ overflowX: 'auto' }}>
+                  {/* Desktop Table View */}
+                  <div className="hide-mobile" style={{ overflowX: 'auto' }}>
                     <table className="va-table">
                       <thead>
                         <tr>
@@ -481,6 +500,43 @@ export default function ReportsPage() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile Cards View */}
+                  <div className="show-mobile-block">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {(invoiceReport?.rows || []).map((row: any) => (
+                        <MobileCard
+                          key={row.id}
+                          title={
+                            <div>
+                              <strong style={{ fontSize: 14, color: '#1E293B' }}>Invoice #{row.invoiceNo}</strong>
+                              <div style={{ fontSize: 12, color: '#64748B', fontWeight: 500 }}>{row.clientName}</div>
+                            </div>
+                          }
+                          headerBadge={
+                            <MobileCardBadge variant={row.grossMarginPct >= 15 ? 'green' : 'red'}>
+                              {row.grossMarginPct}% Margin
+                            </MobileCardBadge>
+                          }
+                        >
+                          <MobileCardRow label="Date" value={fmtDate(row.date)} />
+                          <MobileCardRow label="Gross Sales" value={fmtMoney(row.grossSales)} isMono />
+                          {row.discount > 0 && <MobileCardRow label="Discount" value={`-${fmtMoney(row.discount)}`} valueColor="#991B1B" isMono />}
+                          <MobileCardRow label="Net Sales" value={fmtMoney(row.netSales)} isMono style={{ fontWeight: 700 }} />
+                          <MobileCardRow label="COGS" value={fmtMoney(row.cogs)} valueColor="#991B1B" isMono />
+                          <MobileCardRow label="Gross Profit" value={fmtMoney(row.grossProfit)} valueColor={row.grossProfit >= 0 ? '#166534' : '#DC2626'} isMono style={{ fontWeight: 800 }} />
+                          {row.deliveryCharge > 0 && <MobileCardRow label="Delivery Charge" value={fmtMoney(row.deliveryCharge)} isMono />}
+                          <MobileCardRow label="Contribution Profit" value={fmtMoney(row.contributionProfit)} valueColor={row.contributionProfit >= 0 ? '#0369A1' : '#991B1B'} isMono style={{ fontWeight: 700 }} />
+
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #F1F5F9' }}>
+                            <button className="va-btn small outline" onClick={() => setSelectedInvoiceModal(row)} style={{ width: '100%', justifyContent: 'center', fontWeight: 700 }}>
+                              🔍 View Items Profitability
+                            </button>
+                          </div>
+                        </MobileCard>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -488,7 +544,9 @@ export default function ReportsPage() {
               {salesTab === 'Customer Profitability' && (
                 <div className="va-panel">
                   <div className="va-panel-head"><h3>Customer Economics &amp; Profitability</h3></div>
-                  <div style={{ overflowX: 'auto' }}>
+                  
+                  {/* Desktop Table View */}
+                  <div className="hide-mobile" style={{ overflowX: 'auto' }}>
                     <table className="va-table">
                       <thead>
                         <tr>
@@ -522,6 +580,36 @@ export default function ReportsPage() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile Cards View */}
+                  <div className="show-mobile-block">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {customerReport.map(c => (
+                        <MobileCard
+                          key={c.clientId}
+                          title={
+                            <div>
+                              <strong style={{ fontSize: 14, color: '#1E293B' }}>{c.clientName}</strong>
+                              <div style={{ fontSize: 11, color: '#64748B' }}>Code: {c.clientCode} · {c.type}</div>
+                            </div>
+                          }
+                          headerBadge={
+                            <MobileCardBadge variant={c.grossMarginPct >= 15 ? 'green' : 'red'}>
+                              {c.grossMarginPct}% Margin
+                            </MobileCardBadge>
+                          }
+                        >
+                          <MobileCardRow label="Invoices Count" value={`${c.invoiceCount} Invoices`} isMono />
+                          <MobileCardRow label="Gross Sales" value={fmtMoney(c.grossSales)} isMono />
+                          {c.discounts > 0 && <MobileCardRow label="Discounts" value={`-${fmtMoney(c.discounts)}`} valueColor="#991B1B" isMono />}
+                          <MobileCardRow label="Net Sales" value={fmtMoney(c.netSales)} isMono style={{ fontWeight: 700 }} />
+                          <MobileCardRow label="COGS" value={fmtMoney(c.cogs)} valueColor="#991B1B" isMono />
+                          <MobileCardRow label="Gross Profit" value={fmtMoney(c.grossProfit)} valueColor={c.grossProfit >= 0 ? '#166534' : '#DC2626'} isMono style={{ fontWeight: 800 }} />
+                          <MobileCardRow label="Current Dues" value={fmtMoney(c.currentBalance)} valueColor={c.currentBalance > 0 ? '#B45309' : '#166534'} isMono style={{ fontWeight: 700 }} />
+                        </MobileCard>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -529,7 +617,9 @@ export default function ReportsPage() {
               {salesTab === 'Product Profitability' && (
                 <div className="va-panel">
                   <div className="va-panel-head"><h3>Product Line Profitability &amp; Cost Analysis</h3></div>
-                  <div style={{ overflowX: 'auto' }}>
+                  
+                  {/* Desktop Table View */}
+                  <div className="hide-mobile" style={{ overflowX: 'auto' }}>
                     <table className="va-table">
                       <thead>
                         <tr>
@@ -561,6 +651,35 @@ export default function ReportsPage() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile Cards View */}
+                  <div className="show-mobile-block">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {productReport.map(p => (
+                        <MobileCard
+                          key={p.productId}
+                          title={
+                            <div>
+                              <strong style={{ fontSize: 14, color: '#1E293B' }}>{p.name}</strong>
+                              <div style={{ fontSize: 11, color: '#64748B' }}>Category: {p.category}</div>
+                            </div>
+                          }
+                          headerBadge={
+                            <MobileCardBadge variant={p.marginPct >= 15 ? 'green' : 'yellow'}>
+                              {p.marginPct}% Margin
+                            </MobileCardBadge>
+                          }
+                        >
+                          <MobileCardRow label="Qty Sold" value={`${p.totalQty} ${p.unit}`} isMono />
+                          <MobileCardRow label="Avg Sell Rate" value={`Rs ${p.avgSellRate}`} isMono />
+                          <MobileCardRow label="Avg Unit Cost" value={`Rs ${p.avgUnitCost}`} valueColor="#991B1B" isMono />
+                          <MobileCardRow label="Gross Revenue" value={fmtMoney(p.grossRevenue)} isMono style={{ fontWeight: 700 }} />
+                          <MobileCardRow label="Total COGS" value={fmtMoney(p.totalCogs)} valueColor="#991B1B" isMono />
+                          <MobileCardRow label="Gross Profit" value={fmtMoney(p.grossProfit)} valueColor={p.grossProfit >= 0 ? '#166534' : '#DC2626'} isMono style={{ fontWeight: 800 }} />
+                        </MobileCard>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -571,7 +690,9 @@ export default function ReportsPage() {
           {mainTab === 'Purchases' && (
             <div className="va-panel">
               <div className="va-panel-head"><h3>Mandi Purchase Cost &amp; Rate History Log</h3></div>
-              <div style={{ overflowX: 'auto' }}>
+              
+              {/* Desktop Table View */}
+              <div className="hide-mobile" style={{ overflowX: 'auto' }}>
                 <table className="va-table">
                   <thead>
                     <tr>
@@ -599,13 +720,39 @@ export default function ReportsPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobile Cards View */}
+              <div className="show-mobile-block">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {costAnalysis.map(h => (
+                    <MobileCard
+                      key={h.id}
+                      title={
+                        <div>
+                          <strong style={{ fontSize: 14, color: '#1E293B' }}>{h.productName}</strong>
+                          <div style={{ fontSize: 11, color: '#64748B' }}>{fmtDate(h.date)} · {h.supplierName}</div>
+                        </div>
+                      }
+                      headerBadge={
+                        <MobileCardBadge variant="blue">
+                          Rs {h.buyPrice} / unit
+                        </MobileCardBadge>
+                      }
+                    >
+                      <MobileCardRow label="Category" value={h.category} />
+                      <MobileCardRow label="Purchase Qty" value={`${h.qty}`} isMono />
+                      <MobileCardRow label="Total Spent" value={fmtMoney(h.totalSpent)} isMono style={{ fontWeight: 800 }} />
+                    </MobileCard>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
           {/* ══════════════════ 4. INVENTORY MODULE ══════════════════ */}
           {mainTab === 'Inventory' && (
             <div className="va-panel">
-              <div className="va-panel-head" style={{ justifyContent: 'space-between' }}>
+              <div className="va-panel-head" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                 <h3>Inventory Valuation (Weighted Average Cost Basis)</h3>
                 {valuationReport?.summary && (
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
@@ -613,7 +760,9 @@ export default function ReportsPage() {
                   </div>
                 )}
               </div>
-              <div style={{ overflowX: 'auto' }}>
+
+              {/* Desktop Table View */}
+              <div className="hide-mobile" style={{ overflowX: 'auto' }}>
                 <table className="va-table">
                   <thead>
                     <tr>
@@ -640,6 +789,33 @@ export default function ReportsPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Mobile Cards View */}
+              <div className="show-mobile-block">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {(valuationReport?.rows || []).map((item: any) => (
+                    <MobileCard
+                      key={item.id}
+                      title={
+                        <div>
+                          <strong style={{ fontSize: 14, color: '#1E293B' }}>{item.productName}</strong>
+                          <div style={{ fontSize: 11, color: '#64748B' }}>Category: {item.category}</div>
+                        </div>
+                      }
+                      headerBadge={
+                        <MobileCardBadge variant="green">
+                          Stock: {item.qty} {item.unit}
+                        </MobileCardBadge>
+                      }
+                    >
+                      <MobileCardRow label="Average Cost" value={`Rs ${item.avgCost.toFixed(2)}`} isMono />
+                      <MobileCardRow label="Latest Buy Rate" value={`Rs ${item.currentBuyPrice.toFixed(2)}`} isMono />
+                      <MobileCardRow label="Avg Cost Valuation" value={fmtMoney(item.avgCostValuation)} valueColor="#16A34A" isMono style={{ fontWeight: 800 }} />
+                      <MobileCardRow label="Latest Buy Valuation" value={fmtMoney(item.latestBuyValuation)} valueColor="#0369A1" isMono style={{ fontWeight: 700 }} />
+                    </MobileCard>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -729,51 +905,53 @@ export default function ReportsPage() {
 
       {/* Invoice Profitability Line-Item Modal Inspector */}
       {selectedInvoiceModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
-          <div style={{ background: '#FFFFFF', borderRadius: 14, maxWidth: 700, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid #E2E8F0', paddingBottom: 12 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 12 }}>
+          <div style={{ background: '#FFFFFF', borderRadius: 14, maxWidth: 700, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: '16px 20px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, borderBottom: '1px solid #E2E8F0', paddingBottom: 10 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Invoice Profitability Breakdown</h3>
-                <div style={{ fontSize: 12, color: '#64748B' }}>Invoice: <strong>{selectedInvoiceModal.invoiceNo}</strong> | Customer: <strong>{selectedInvoiceModal.clientName}</strong></div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Invoice Profitability Breakdown</h3>
+                <div style={{ fontSize: 12, color: '#64748B' }}>Invoice: <strong>#{selectedInvoiceModal.invoiceNo}</strong> | Customer: <strong>{selectedInvoiceModal.clientName}</strong></div>
               </div>
               <button className="va-btn small outline" onClick={() => setSelectedInvoiceModal(null)}>Close</button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16, background: '#F8FAFC', padding: 12, borderRadius: 8 }}>
-              <div><span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>Net Sales</span><strong style={{ fontSize: 15 }}>{fmtMoney(selectedInvoiceModal.netSales)}</strong></div>
-              <div><span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>COGS</span><strong style={{ fontSize: 15, color: '#991B1B' }}>{fmtMoney(selectedInvoiceModal.cogs)}</strong></div>
-              <div><span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>Gross Profit</span><strong style={{ fontSize: 15, color: '#166534' }}>{fmtMoney(selectedInvoiceModal.grossProfit)} ({selectedInvoiceModal.grossMarginPct}%)</strong></div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 16, background: '#F8FAFC', padding: 12, borderRadius: 8 }}>
+              <div><span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>Net Sales</span><strong style={{ fontSize: 14 }}>{fmtMoney(selectedInvoiceModal.netSales)}</strong></div>
+              <div><span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>COGS</span><strong style={{ fontSize: 14, color: '#991B1B' }}>{fmtMoney(selectedInvoiceModal.cogs)}</strong></div>
+              <div><span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>Gross Profit</span><strong style={{ fontSize: 14, color: '#166534' }}>{fmtMoney(selectedInvoiceModal.grossProfit)} ({selectedInvoiceModal.grossMarginPct}%)</strong></div>
             </div>
 
-            <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Itemized Cost Basis &amp; Line Margins</h4>
-            <table className="va-table" style={{ fontSize: 12 }}>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Qty</th>
-                  <th>Sell Rate</th>
-                  <th>Cost Basis</th>
-                  <th>Line Revenue</th>
-                  <th>Line COGS</th>
-                  <th>Margin</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedInvoiceModal.items?.map((item: any) => (
-                  <tr key={item.id}>
-                    <td><strong>{item.itemName}</strong></td>
-                    <td className="mono">{item.qty} {item.unit}</td>
-                    <td className="mono">Rs {item.rate}</td>
-                    <td className="mono" style={{ color: '#991B1B' }}>Rs {item.costPrice}</td>
-                    <td className="mono">{fmtMoney(item.amount)}</td>
-                    <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(item.itemCogs)}</td>
-                    <td className="mono" style={{ fontWeight: 700, color: item.grossProfit >= 0 ? '#166534' : '#DC2626' }}>
-                      {fmtMoney(item.grossProfit)} ({item.grossMarginPct}%)
-                    </td>
+            <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Itemized Cost Basis &amp; Line Margins</h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="va-table" style={{ fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Sell Rate</th>
+                    <th>Cost Basis</th>
+                    <th>Line Revenue</th>
+                    <th>Line COGS</th>
+                    <th>Margin</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {selectedInvoiceModal.items?.map((item: any) => (
+                    <tr key={item.id}>
+                      <td><strong>{item.itemName}</strong></td>
+                      <td className="mono">{item.qty} {item.unit}</td>
+                      <td className="mono">Rs {item.rate}</td>
+                      <td className="mono" style={{ color: '#991B1B' }}>Rs {item.costPrice}</td>
+                      <td className="mono">{fmtMoney(item.amount)}</td>
+                      <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(item.itemCogs)}</td>
+                      <td className="mono" style={{ fontWeight: 700, color: item.grossProfit >= 0 ? '#166534' : '#DC2626' }}>
+                        {fmtMoney(item.grossProfit)} ({item.grossMarginPct}%)
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
