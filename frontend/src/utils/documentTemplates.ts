@@ -274,42 +274,42 @@ function buildDocStyles(b: BrandConfig): string {
     }
     .urdu-inline {
       font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 13px;
+      font-size: 14px;
       color: #FFFFFF;
       margin-left: 4px;
       direction: rtl;
       unicode-bidi: isolate;
       vertical-align: middle;
       display: inline-block;
-      line-height: 1.3;
+      line-height: 1.4;
       letter-spacing: normal !important;
       text-transform: none !important;
       font-weight: 700;
     }
     .urdu-inline-dark {
       font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 14px;
+      font-size: 15px;
       color: #000000;
       margin-left: 4px;
       direction: rtl;
       unicode-bidi: isolate;
       vertical-align: middle;
       display: inline-block;
-      line-height: 1.3;
+      line-height: 1.4;
       letter-spacing: normal !important;
       text-transform: none !important;
       font-weight: 700;
     }
     .urdu-inline-val {
       font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 14px;
+      font-size: 15px;
       color: #000000;
       margin-left: 4px;
       direction: rtl;
       unicode-bidi: isolate;
       vertical-align: middle;
       display: inline-block;
-      line-height: 1.3;
+      line-height: 1.4;
       letter-spacing: normal !important;
       text-transform: none !important;
       font-weight: 700;
@@ -698,7 +698,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
       <td class="center muted" style="font-size:10px;padding:4px 6px;">${startIndex + i + 1}</td>
       <td style="font-size:10px;padding:4px 6px;">
         <strong>${item.itemName}</strong>
-        ${item.urduName ? `<span class="urdu-inline-val" style="font-size:9px;">(${item.urduName})</span>` : ''}
+        ${item.urduName ? `<span class="urdu-inline-val">(${item.urduName})</span>` : ''}
       </td>
       <td class="center mono" style="font-size:10px;padding:4px 6px;">${item.qty} ${item.unit}</td>
       <td class="right mono" style="font-size:10px;padding:4px 6px;">${item.rate.toLocaleString()}</td>
@@ -990,17 +990,9 @@ export interface PriceListData {
 
 // ─── Price List HTML Generator ────────────────────────────────────────────────
 
+// ─── Price List HTML Generator ────────────────────────────────────────────────
+
 export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, origin = ''): string {
-  const printedOn = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Karachi' });
-
-  const header = buildHeader(
-    brand,
-    'DAILY PRICE LIST',
-    `Date: ${data.dateStr}`,
-    '',
-    origin
-  );
-
   // Split items into two halves for 2-column layout
   const half = Math.ceil(data.items.length / 2);
   const col1 = data.items.slice(0, half);
@@ -1009,33 +1001,33 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
   const getProductHtmlVisual = (name: string): string => {
     const n = (name || '').toLowerCase().trim();
 
-    // 1. Image Mappings (exact sequence matched from user prompt)
+    // 1. Image Mappings
     if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') {
-      return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫛</span>`;
+      return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫛</span>`;
     }
     if (n.includes('guava') || n.includes('amrood')) {
-      return `<img src="${origin}/guava.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍏</span>`;
+      return `<img src="${origin}/guava.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍏</span>`;
     }
     if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) {
-      return `<img src="${origin}/papaya.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍈</span>`;
+      return `<img src="${origin}/papaya.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍈</span>`;
     }
     if (n.includes('pomegranate') || n.includes('anar')) {
-      return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍎</span>`;
+      return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍎</span>`;
     }
     if (n.includes('turnip') || n.includes('shalgam')) {
-      return `<img src="${origin}/turnip.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
+      return `<img src="${origin}/turnip.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
     }
     if (n.includes('radish') || n.includes('mooli')) {
-      return `<img src="${origin}/radish.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
+      return `<img src="${origin}/radish.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
     }
     if (n.includes('beetroot') || n.includes('chukandar')) {
-      return `<img src="${origin}/beetroot.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
+      return `<img src="${origin}/beetroot.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
     }
     if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) {
-      return `<img src="${origin}/plum.png" alt="${name}" style="width:16px;height:16px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍑</span>`;
+      return `<img src="${origin}/plum.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍑</span>`;
     }
 
-    // 2. Standardized Emojis according to the user's list
+    // 2. Standardized Emojis
     let emoji = '🥬';
     if (n.includes('beans') || n.includes('phali')) emoji = '🫘';
     else if (n.includes('bitter') || n.includes('karela')) emoji = '🥒';
@@ -1081,48 +1073,49 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
   const buildPriceRows = (items: typeof data.items, startIdx: number) =>
     items.map((item, i) => {
       const htmlVisual = getProductHtmlVisual(item.itemName);
+      const bg = i % 2 === 0 ? '#072E1D' : '#0A3723';
       return `
-        <tr>
-          <td class="left mono" style="font-size:13px;padding:6px 8px;color:#000000;font-weight:700;vertical-align:middle;text-align:left;white-space:nowrap;">Rs ${item.sellRate.toLocaleString()}</td>
-          <td class="center muted" style="font-size:11px;padding:6px 8px;vertical-align:middle;text-align:center;text-transform:uppercase;color:#555555;">${item.unit}</td>
+        <tr style="background:${bg};border-bottom:1px solid #14492E;">
+          <td style="padding:6px 8px;vertical-align:middle;text-align:left;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:800;color:#FACC15;">Rs ${item.sellRate.toLocaleString()}</td>
+          <td style="padding:6px 8px;vertical-align:middle;text-align:center;text-transform:uppercase;font-size:11px;color:#CBD5E1;font-weight:600;">${item.unit}</td>
           <td style="padding:6px 8px;vertical-align:middle;">
-            <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
-              <span style="font-size:13px;color:#222222;font-weight:500;">${item.itemName}</span>
-              <div style="display:flex;align-items:center;gap:4px;">
-                <span class="urdu-inline-dark" style="font-size:15px;font-weight:700;color:#000000;">${item.urduName || ''}</span>
+            <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:6px;">
+              <span style="font-size:11px;color:#9ECBB2;font-weight:600;font-family:'Inter',sans-serif;">${item.itemName}</span>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:16px;font-weight:700;color:#FFFFFF;direction:rtl;line-height:1.4;display:inline-block;">${item.urduName || ''}</span>
                 ${htmlVisual}
               </div>
             </div>
           </td>
-          <td class="right muted" style="font-size:11px;padding:6px 8px;vertical-align:middle;text-align:right;color:#777777;">${startIdx + i + 1}</td>
+          <td style="padding:6px 8px;vertical-align:middle;text-align:right;font-size:11px;color:#789E89;font-weight:600;">${startIdx + i + 1}</td>
         </tr>
       `;
     }).join('');
 
   const priceColHeader = `
     <thead>
-      <tr>
-        <th class="left" style="font-size:10px;padding:6px 8px;width:80px;text-align:left;font-weight:700;">RATE (RS)</th>
-        <th class="center" style="font-size:10px;padding:6px 8px;width:55px;text-align:center;font-weight:700;">UNIT</th>
-        <th class="left" style="font-size:10px;padding:6px 8px;font-weight:700;">PRODUCT / پروڈکٹ</th>
-        <th class="right" style="font-size:10px;padding:6px 8px;width:25px;text-align:right;font-weight:700;">#</th>
+      <tr style="background:#0D4429;border-bottom:2px solid #E5A93C;">
+        <th style="font-size:10px;padding:8px;width:85px;text-align:left;font-weight:800;color:#FACC15;letter-spacing:0.08em;">RATE (RS)</th>
+        <th style="font-size:10px;padding:8px;width:55px;text-align:center;font-weight:800;color:#FACC15;letter-spacing:0.08em;">UNIT</th>
+        <th style="font-size:10px;padding:8px;text-align:right;font-weight:800;color:#FACC15;letter-spacing:0.08em;">PRODUCT / پروڈکٹ</th>
+        <th style="font-size:10px;padding:8px;width:25px;text-align:right;font-weight:800;color:#FACC15;">#</th>
       </tr>
     </thead>
   `;
 
   const table = `
-    <div style="display:flex;gap:12px;align-items:flex-start;margin-top:10px;">
+    <div style="display:flex;gap:12px;align-items:flex-start;margin-top:14px;">
       <div style="flex:1;min-width:0;">
-        <table class="doc-table" style="width:100%;">
+        <table style="width:100%;border-collapse:collapse;border:1px solid #14492E;">
           ${priceColHeader}
           <tbody>
-            ${col1.length > 0 ? buildPriceRows(col1, 0) : '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:20px;">No rates available</td></tr>'}
+            ${col1.length > 0 ? buildPriceRows(col1, 0) : '<tr><td colspan="4" style="text-align:center;color:#85A894;padding:20px;">No rates available</td></tr>'}
           </tbody>
         </table>
       </div>
       ${col2.length > 0 ? `
       <div style="flex:1;min-width:0;">
-        <table class="doc-table" style="width:100%;">
+        <table style="width:100%;border-collapse:collapse;border:1px solid #14492E;">
           ${priceColHeader}
           <tbody>
             ${buildPriceRows(col2, half)}
@@ -1132,18 +1125,60 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
     </div>
   `;
 
-  const notesBlock = '';
+  const bodyContent = `
+    <div style="max-width:780px;margin:0 auto;background:linear-gradient(180deg, #062315 0%, #082E1C 100%);border:4px double #E5A93C;border-radius:12px;padding:24px 28px 28px;color:#FFFFFF;box-sizing:border-box;">
+      
+      <!-- Header Bar -->
+      <div style="border-bottom:2px solid #E5A93C;padding-bottom:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:16px;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          ${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="Logo" style="height:56px;width:auto;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));" />` : ''}
+          <div>
+            <div style="font-size:20px;font-weight:900;color:#FDFBF7;letter-spacing:0.05em;line-height:1.1;text-transform:uppercase;">${brand.companyName || 'HALAL VEGG SUPPLIES'}</div>
+            <div style="font-size:10px;font-weight:800;color:#FACC15;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;">${brand.tagline || 'FRESH FROM MANDI . DAILY DELIVERY'}</div>
+          </div>
+        </div>
 
-  const footer = buildFooter(brand, `Printed: ${printedOn}`);
+        <div style="text-align:right;">
+          <div style="font-size:20px;font-weight:900;color:#FACC15;letter-spacing:0.08em;text-transform:uppercase;line-height:1.1;">TODAY'S PRICE LIST</div>
+          <div style="display:inline-block;margin-top:6px;background:#0D4429;border:1px solid #E5A93C;color:#FFFFFF;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;padding:4px 12px;border-radius:6px;letter-spacing:0.05em;">
+            📅 ${data.dateStr}
+          </div>
+        </div>
+      </div>
 
-  const body = `
-    ${header}
-    ${notesBlock}
-    ${table}
-    ${footer}
+      <!-- Two-Column Product Table -->
+      ${table}
+
+      <!-- Footer Bar -->
+      <div style="margin-top:20px;padding:12px 18px;background:#0D4429;border:1px solid #E5A93C;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:12px;font-weight:700;color:#FACC15;display:flex;align-items:center;gap:8px;">
+          <span>💬 For Payments &amp; WhatsApp Orders:</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#FFFFFF;font-weight:800;">${brand.contactNumber || '03061110041'}</span>
+        </div>
+        <div style="font-size:10px;font-weight:800;color:#FDFBF7;letter-spacing:0.08em;text-transform:uppercase;">
+          ${brand.companyName || 'HALAL VEGG SUPPLIES'} · GUARANTEED FRESHNESS
+        </div>
+      </div>
+
+    </div>
   `;
 
-  return buildDocShell(brand, `Daily Price List — ${data.dateStr}`, body);
+  const styles = buildDocStyles(brand);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Price List — ${data.dateStr}</title>
+  <style>
+    ${styles}
+    body { background: #062315 !important; color: #FFFFFF !important; padding: 20px 0; }
+  </style>
+</head>
+<body>
+  ${bodyContent}
+</body>
+</html>`;
 }
 
 // ─── Purchase Voucher Types ───────────────────────────────────────────────────
