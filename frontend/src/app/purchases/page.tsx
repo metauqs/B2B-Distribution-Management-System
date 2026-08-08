@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
@@ -19,6 +19,7 @@ interface Purchase {
 }
 interface Supplier { id: string; name: string; currentBalance: number; }
 interface Product  { id: string; name: string; urduName?: string | null; defaultUnit?: string; category?: string; }
+interface InventoryRecord { productId: string; qty: number; avgCost: number; currentBuyPrice: number; previousBuyPrice: number; latestPurchasePrice: number; }
 
 const blankItem = (): PurchaseItem => ({ itemName: '', qty: 1, unit: 'KG', rate: 0, amount: 0 });
 
@@ -56,6 +57,9 @@ export default function PurchasesPage() {
   const [products,  setProducts]  = useState<Product[]>(() => {
     return getCachedData<Product[]>('/api/products') || [];
   });
+  const [inventoryData, setInventoryData] = useState<InventoryRecord[]>(() => {
+    return (getCachedData<any>('/api/inventory')?.data as InventoryRecord[]) || [];
+  });
   const [loading,    setLoading]    = useState(() => {
     return !getCachedData<Purchase[]>('/api/purchases');
   });
@@ -83,12 +87,13 @@ export default function PurchasesPage() {
     currentList: PurchaseItem[];
   } | null>(null);
 
-  const [showDbMergeModal, setShowDbMergeModal] = useState(false);
-  const [dbMergeData, setDbMergeData] = useState<{
+  // Price Conflict Warning State (Replaces DB merge auto-overwrite)
+  const [showPriceConflictModal, setShowPriceConflictModal] = useState(false);
+  const [priceConflictData, setPriceConflictData] = useState<{
     itemName: string;
-    dbRate: number;
-    formRate: number;
-    itemIndex: number;
+    unit: string;
+    prevPrice: number;
+    newPrice: number;
     currentList: PurchaseItem[];
   } | null>(null);
 
@@ -109,20 +114,49 @@ export default function PurchasesPage() {
   const load = useCallback(async (isBackground = false) => {
     if (!isBackground && purchases.length === 0) setLoading(true);
     try {
-      const [pd, sd, prd] = await Promise.all([
+      const [pd, sd, prd, invRes] = await Promise.all([
         fetchWithCache<Purchase[]>('/api/purchases', { ttl: TTL_SHORT, forceRefresh: isBackground }),
         fetchWithCache<any[]>('/api/suppliers', { ttl: TTL_LONG, forceRefresh: isBackground }),
         fetchWithCache<any[]>('/api/products', { ttl: TTL_LONG, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/inventory', { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
       if (pd)  setPurchases(pd);
       if (sd)  setSuppliers(sd);
       if (prd) setProducts(prd);
+      if (invRes && invRes.data) setInventoryData(invRes.data);
     } catch (err) {
       console.error('purchases load error:', err);
     } finally {
       setLoading(false);
     }
   }, [purchases.length]);
+
+  const productRefMap = useMemo(() => {
+    const map = new Map<string, { prevPrice: number; avgCost: number; qty: number }>();
+    (inventoryData || []).forEach(inv => {
+      if (inv.productId) {
+        const prevPrice = inv.currentBuyPrice > 0 
+          ? inv.currentBuyPrice 
+          : (inv.latestPurchasePrice > 0 ? inv.latestPurchasePrice : (inv.previousBuyPrice || 0));
+        map.set(inv.productId, {
+          prevPrice,
+          avgCost: inv.avgCost || 0,
+          qty: inv.qty || 0,
+        });
+      }
+    });
+
+    (purchases || []).forEach(p => {
+      (p.items || []).forEach(it => {
+        const key = it.productId || it.itemName.toLowerCase().trim();
+        if (!map.has(key) && it.rate > 0) {
+          map.set(key, { prevPrice: it.rate, avgCost: it.rate, qty: 0 });
+        }
+      });
+    });
+
+    return map;
+  }, [inventoryData, purchases]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -327,33 +361,7 @@ export default function PurchasesPage() {
     return null;
   };
 
-  const getDbDuplicate = (currentItems: PurchaseItem[]) => {
-    const dayStr = date.slice(0, 10);
-    const sameDayPurchases = purchases.filter(p => p.date.startsWith(dayStr) && p.id !== purchaseId);
-    
-    for (let i = 0; i < currentItems.length; i++) {
-      const item = currentItems[i];
-      const name = item.itemName.trim().toLowerCase();
-      if (!name) continue;
-      
-      for (const p of sameDayPurchases) {
-        const matched = p.items?.find(it => 
-          (item.productId && it.productId === item.productId) || 
-          (it.itemName.toLowerCase() === name)
-        );
-        if (matched && matched.rate !== item.rate) {
-          return {
-            itemName: item.itemName,
-            dbRate: matched.rate,
-            formRate: item.rate,
-            itemIndex: i,
-            currentList: currentItems
-          };
-        }
-      }
-    }
-    return null;
-  };
+
 
   const savePurchaseToDb = async (itemsToSave: PurchaseItem[]) => {
     const finalSupplierId = source === 'MANDI' ? 'mandi' : supplierId;
@@ -385,23 +393,21 @@ export default function PurchasesPage() {
     }
   };
 
-  const checkAndSave = (currentItems: PurchaseItem[]) => {
-    // 1. Check for duplicates in the current form
+  const checkAndSave = (currentItems: PurchaseItem[], bypassConflictCheck = false) => {
+    // 1. Check for duplicate items within the current form
     const dup = findDuplicateItems(currentItems);
     if (dup) {
       const item1 = currentItems[dup.index1];
       const item2 = currentItems[dup.index2];
       
       if (item1.rate === item2.rate) {
-        // Automatically merge if rates are the same
         const merged = [...currentItems];
         merged[dup.index1].qty += item2.qty;
         merged[dup.index1].amount = merged[dup.index1].qty * item1.rate;
         const filtered = merged.filter((_, idx) => idx !== dup.index2);
         setItems(filtered);
-        checkAndSave(filtered);
+        checkAndSave(filtered, bypassConflictCheck);
       } else {
-        // Show merge modal for different rates
         setMergeData({
           itemName: dup.itemName,
           rate1: item1.rate,
@@ -415,21 +421,27 @@ export default function PurchasesPage() {
       return;
     }
 
-    // 2. Check for rate conflicts with previously saved purchases on the same day
-    const dbDup = getDbDuplicate(currentItems);
-    if (dbDup) {
-      setDbMergeData({
-        itemName: dbDup.itemName,
-        dbRate: dbDup.dbRate,
-        formRate: dbDup.formRate,
-        itemIndex: dbDup.itemIndex,
-        currentList: dbDup.currentList
-      });
-      setShowDbMergeModal(true);
-      return;
+    // 2. Check for Purchase Price Conflict against Previous Purchase Price (Informational Warning, NOT Block!)
+    if (!bypassConflictCheck) {
+      for (const item of currentItems) {
+        if (item.rate <= 0) continue;
+        const key = item.productId || item.itemName.toLowerCase().trim();
+        const ref = productRefMap.get(key);
+        if (ref && ref.prevPrice > 0 && Math.abs(item.rate - ref.prevPrice) > 0.01) {
+          setPriceConflictData({
+            itemName: item.itemName,
+            unit: item.unit,
+            prevPrice: ref.prevPrice,
+            newPrice: item.rate,
+            currentList: currentItems,
+          });
+          setShowPriceConflictModal(true);
+          return;
+        }
+      }
     }
 
-    // No duplicates, proceed to save
+    // Proceed to save with admin's entered rates
     savePurchaseToDb(currentItems);
   };
 
@@ -453,22 +465,7 @@ export default function PurchasesPage() {
     }, 50);
   };
 
-  const handleResolveDbMerge = (useRate: number) => {
-    if (!dbMergeData) return;
-    const { itemIndex, currentList } = dbMergeData;
-    
-    const updated = [...currentList];
-    updated[itemIndex].rate = useRate;
-    updated[itemIndex].amount = updated[itemIndex].qty * useRate;
-    setItems(updated);
-    
-    setShowDbMergeModal(false);
-    setDbMergeData(null);
-    
-    setTimeout(() => {
-      checkAndSave(updated);
-    }, 50);
-  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -714,6 +711,18 @@ export default function PurchasesPage() {
                                   style={{ width: '100%', padding: '5px 6px', border: '1.5px solid var(--mustard)', borderRadius: 6, background: 'var(--paper)', color: 'var(--forest)', fontSize: 13, fontWeight: 700 }}
                                 />
                               </div>
+                              {/* Reference Information Labels — guidance only, does not overwrite purchase price */}
+                              {(() => {
+                                const refKey = prod.id || prod.name.toLowerCase().trim();
+                                const ref = productRefMap.get(refKey) || productRefMap.get(prod.name.toLowerCase().trim());
+                                if (!ref) return null;
+                                return (
+                                  <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--muted)', padding: '3px 6px', background: 'rgba(0,0,0,0.03)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                    <span>Prev Price: <strong style={{ color: 'var(--ink)' }}>Rs {ref.prevPrice > 0 ? ref.prevPrice : '—'}</strong></span>
+                                    <span>Avg Cost: <strong style={{ color: 'var(--ink)' }}>Rs {ref.avgCost > 0 ? ref.avgCost : '—'}</strong> ({ref.qty} {prod.defaultUnit || 'KG'})</span>
+                                  </div>
+                                );
+                              })()}
                               {item.rate > 0 && (
                                 <div style={{ gridColumn: '1 / -1', textAlign: 'right', fontSize: 12, color: 'var(--forest)', fontWeight: 700, marginTop: 2 }}>
                                   = Rs {(item.qty * item.rate).toLocaleString()}
@@ -864,53 +873,73 @@ export default function PurchasesPage() {
         </div>
       )}
 
-      {/* DB Merge Conflict Modal (Cross-voucher same-day duplicates) */}
-      {showDbMergeModal && dbMergeData && (
+      {/* Price Conflict Warning Modal */}
+      {showPriceConflictModal && priceConflictData && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0,0,0,0.5)', zIndex: 99999,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
         }}>
-          <div className="va-panel" style={{ width: '100%', maxWidth: '460px', margin: 0, border: '1px solid var(--danger)' }}>
+          <div className="va-panel" style={{ width: '100%', maxWidth: '480px', margin: 0, border: '2px solid var(--mustard)' }}>
             <div className="va-panel-head">
-              <h3 style={{ color: 'var(--clay)' }}>⚠️ Price Conflict Warning</h3>
-              <button className="va-btn secondary small" onClick={() => { setShowDbMergeModal(false); setDbMergeData(null); }}>✕</button>
+              <h3 style={{ color: 'var(--ink)' }}>⚠️ Purchase Price Warning</h3>
+              <button className="va-btn secondary small" onClick={() => { setShowPriceConflictModal(false); setPriceConflictData(null); }}>✕</button>
             </div>
             <div style={{ padding: '16px', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.6 }}>
-              <p style={{ margin: 0 }}>
-                This product (<strong>{dbMergeData.itemName}</strong>) has already been purchased today.
+              <div style={{
+                fontFamily: "'Jameel Khushkhat L','Noto Nastaliq Urdu',serif",
+                fontSize: 18,
+                fontWeight: 700,
+                color: 'var(--forest)',
+                direction: 'rtl',
+                textAlign: 'right',
+                marginBottom: 8,
+              }}>
+                نئی خریداری کی قیمت پچھلی خریداری کی قیمت سے مختلف ہے۔
+              </div>
+              <p style={{ margin: '0 0 12px 0', fontWeight: 600 }}>
+                Purchase price differs from the previous purchase price.
               </p>
-              <p style={{ margin: '10px 0 0 0' }}>
-                The existing Buy Rate is <strong className="mono">Rs {dbMergeData.dbRate}</strong>, but the new Buy Rate is <strong className="mono">Rs {dbMergeData.formRate}</strong>.
-              </p>
-              <p style={{ margin: '12px 0 0 0', fontWeight: 500 }}>
-                Please confirm which Buy Rate should be used before merging the quantities:
+
+              <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px', marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}>{priceConflictData.itemName}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13 }}>
+                  <div>
+                    <span style={{ color: 'var(--muted)', fontSize: 11, display: 'block' }}>Previous Purchase Price (پچھلی قیمت)</span>
+                    <strong className="mono" style={{ color: 'var(--ink)', fontSize: 14 }}>Rs {priceConflictData.prevPrice} / {priceConflictData.unit}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--muted)', fontSize: 11, display: 'block' }}>New Purchase Price (نئی قیمت)</span>
+                    <strong className="mono" style={{ color: 'var(--forest)', fontSize: 15 }}>Rs {priceConflictData.newPrice} / {priceConflictData.unit}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>
+                Clicking <strong>Continue / Override</strong> will save this purchase using your entered price (Rs {priceConflictData.newPrice}).
               </p>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 16px 16px' }}>
-              <button 
-                type="button" 
-                className="va-btn" 
-                style={{ width: '100%', display: 'block' }}
-                onClick={() => handleResolveDbMerge(dbMergeData.dbRate)}
-              >
-                Keep Existing Buy Rate (Rs {dbMergeData.dbRate})
-              </button>
-              <button 
-                type="button" 
-                className="va-btn" 
-                style={{ width: '100%', background: 'var(--clay)', display: 'block' }}
-                onClick={() => handleResolveDbMerge(dbMergeData.formRate)}
-              >
-                Replace with New Buy Rate (Rs {dbMergeData.formRate})
-              </button>
+
+            <div style={{ display: 'flex', gap: 10, padding: '0 16px 16px', justifyContent: 'flex-end' }}>
               <button 
                 type="button" 
                 className="va-btn secondary" 
-                style={{ width: '100%', display: 'block' }}
-                onClick={() => { setShowDbMergeModal(false); setDbMergeData(null); }}
+                onClick={() => { setShowPriceConflictModal(false); setPriceConflictData(null); }}
               >
-                Cancel and edit the Buy Rate before saving
+                Cancel / Edit Price
+              </button>
+              <button 
+                type="button" 
+                className="va-btn" 
+                style={{ background: 'var(--forest)', color: '#fff' }}
+                onClick={() => {
+                  const listToSave = priceConflictData.currentList;
+                  setShowPriceConflictModal(false);
+                  setPriceConflictData(null);
+                  savePurchaseToDb(listToSave);
+                }}
+              >
+                Continue / Override (Rs {priceConflictData.newPrice})
               </button>
             </div>
           </div>
