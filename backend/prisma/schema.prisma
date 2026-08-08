@@ -186,6 +186,7 @@ model Sale {
   isLocked            Boolean           @default(false)
   deliveries          Delivery[]
   items               SaleItem[]
+  collectionAllocations CollectionAllocation[]
   branch              Branch            @relation(fields: [branchId], references: [id])
   client              Client            @relation(fields: [clientId], references: [id])
   user                User?             @relation(fields: [userId], references: [id])
@@ -307,6 +308,7 @@ model Collection {
   branchId      String
   createdAt     DateTime @db.Timestamptz(3)      @default(now())
   deletedAt     DateTime? @db.Timestamptz(3)
+  allocations   CollectionAllocation[]
   bankAccount   BankAccount?  @relation(fields: [bankAccountId], references: [id])
   branch        Branch        @relation(fields: [branchId], references: [id])
   cashAccount   CashAccount?  @relation(fields: [cashAccountId], references: [id])
@@ -319,6 +321,20 @@ model Collection {
   @@index([cashAccountId])
   @@index([bankAccountId])
   @@map("collections")
+}
+
+model CollectionAllocation {
+  id              String      @id @default(cuid())
+  collectionId    String
+  saleId          String
+  allocatedAmount Float
+  createdAt       DateTime    @default(now()) @db.Timestamptz(3)
+  collection      Collection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  sale            Sale        @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([collectionId])
+  @@index([saleId])
+  @@map("collection_allocations")
 }
 
 model Expense {

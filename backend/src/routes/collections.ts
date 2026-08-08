@@ -38,7 +38,14 @@ router.get('/', async (req: Request, res: Response) => {
 
     const collections = await prisma.collection.findMany({
       where,
-      include: { client: { select: { id: true, name: true } } },
+      include: {
+        client: { select: { id: true, name: true } },
+        allocations: {
+          include: {
+            sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
+          }
+        }
+      },
       orderBy: { date: 'asc' },
       take: limit,
     });
@@ -174,7 +181,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
 
-  const { clientId, saleId, amount, method = 'CASH', reference, notes, date } = req.body;
+  const { clientId, saleId, amount, method = 'CASH', reference, notes, date, manualAllocations } = req.body;
 
   const numAmount = Number(amount);
   if (!clientId || isNaN(numAmount) || numAmount <= 0) {
@@ -232,7 +239,7 @@ router.post('/', async (req: Request, res: Response) => {
         credit: numAmount,
       });
 
-      // FIFO Allocation across unpaid invoices
+      // Payment Allocations (FIFO by default, or manual allocations if specified)
       let unpaidSales = await tx.sale.findMany({
         where: {
           clientId,
@@ -242,10 +249,6 @@ router.post('/', async (req: Request, res: Response) => {
         },
         orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
       });
-
-      if (targetSale && ['PENDING', 'PARTIAL'].includes(targetSale.status)) {
-        unpaidSales = [targetSale, ...unpaidSales.filter(s => s.id !== targetSale.id)];
-      }
 
       let remainingPayment = numAmount;
       const allocations: Array<{
@@ -260,31 +263,87 @@ router.post('/', async (req: Request, res: Response) => {
         newStatus: string;
       }> = [];
 
-      for (const sale of unpaidSales) {
-        if (remainingPayment <= 0) break;
-        const toApply = Math.min(remainingPayment, sale.balance);
-        const newPaid = sale.paid + toApply;
-        const newBal = Math.max(0, sale.total - newPaid);
-        const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
+      if (Array.isArray(manualAllocations) && manualAllocations.length > 0) {
+        // Manual Allocation Mode
+        for (const item of manualAllocations) {
+          if (remainingPayment <= 0) break;
+          const sId = String(item.saleId);
+          const requestedAlloc = Math.max(0, Number(item.amount || 0));
+          if (requestedAlloc <= 0) continue;
 
-        await tx.sale.update({
-          where: { id: sale.id },
-          data: { paid: newPaid, balance: newBal, status: newStatus as any }
-        });
+          const sale = unpaidSales.find(s => s.id === sId) || await tx.sale.findUnique({ where: { id: sId } });
+          if (!sale) continue;
 
-        allocations.push({
-          saleId: sale.id,
-          invoiceNo: sale.invoiceNo,
-          date: sale.date.toISOString(),
-          invoiceTotal: sale.total,
-          previousPaid: sale.paid,
-          previousBalance: sale.balance,
-          allocatedAmount: toApply,
-          remainingBalance: newBal,
-          newStatus,
-        });
+          const toApply = Math.min(remainingPayment, sale.balance, requestedAlloc);
+          if (toApply <= 0) continue;
 
-        remainingPayment -= toApply;
+          const newPaid = sale.paid + toApply;
+          const newBal = Math.max(0, sale.total - newPaid);
+          const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
+
+          await tx.sale.update({
+            where: { id: sale.id },
+            data: { paid: newPaid, balance: newBal, status: newStatus as any }
+          });
+
+          await tx.collectionAllocation.create({
+            data: {
+              collectionId: coll.id,
+              saleId: sale.id,
+              allocatedAmount: toApply,
+            }
+          });
+
+          allocations.push({
+            saleId: sale.id,
+            invoiceNo: sale.invoiceNo,
+            date: sale.date.toISOString(),
+            invoiceTotal: sale.total,
+            previousPaid: sale.paid,
+            previousBalance: sale.balance,
+            allocatedAmount: toApply,
+            remainingBalance: newBal,
+            newStatus,
+          });
+
+          remainingPayment -= toApply;
+        }
+      } else {
+        // Automatic FIFO Allocation Mode
+        for (const sale of unpaidSales) {
+          if (remainingPayment <= 0) break;
+          const toApply = Math.min(remainingPayment, sale.balance);
+          const newPaid = sale.paid + toApply;
+          const newBal = Math.max(0, sale.total - newPaid);
+          const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
+
+          await tx.sale.update({
+            where: { id: sale.id },
+            data: { paid: newPaid, balance: newBal, status: newStatus as any }
+          });
+
+          await tx.collectionAllocation.create({
+            data: {
+              collectionId: coll.id,
+              saleId: sale.id,
+              allocatedAmount: toApply,
+            }
+          });
+
+          allocations.push({
+            saleId: sale.id,
+            invoiceNo: sale.invoiceNo,
+            date: sale.date.toISOString(),
+            invoiceTotal: sale.total,
+            previousPaid: sale.paid,
+            previousBalance: sale.balance,
+            allocatedAmount: toApply,
+            remainingBalance: newBal,
+            newStatus,
+          });
+
+          remainingPayment -= toApply;
+        }
       }
 
       await updateClientCreditRating(clientId, tx);

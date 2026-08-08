@@ -212,6 +212,13 @@ router.get('/:id', async (req: Request, res: Response) => {
       // Collections
       prisma.collection.findMany({
         where: { clientId: id, deletedAt: null },
+        include: {
+          allocations: {
+            include: {
+              sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
+            }
+          }
+        },
         orderBy: { date: 'desc' },
       }),
       // Deliveries
