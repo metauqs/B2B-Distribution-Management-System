@@ -470,19 +470,6 @@ router.put('/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Cannot edit invoice: Invoice is locked.' });
   }
 
-  if (existingSale.deliveryStatus === 'DELIVERED' || existingSale.deliveries.some((d: any) => d.status === 'DELIVERED' || d.status === 'FAILED' || d.status === 'RETURNED')) {
-    return res.status(400).json({ success: false, error: 'Cannot edit invoice: Delivery has already been completed or finalized.' });
-  }
-
-  const currentBusinessDayStr = getBusinessDateString(new Date());
-  const saleBusinessDayStr = getBusinessDateString(existingSale.date);
-  if (saleBusinessDayStr !== currentBusinessDayStr) {
-    return res.status(400).json({
-      success: false,
-      error: `Cannot edit invoice: Invoice belongs to business date ${saleBusinessDayStr}, but today is ${currentBusinessDayStr}. Editing is restricted to the current Business Day.`
-    });
-  }
-
   const subtotal = items.reduce((s: number, i: any) => s + (Number(i.qty) * Number(i.rate)), 0);
   const total = Math.max(0, subtotal - Number(discount) + Number(deliveryCharge));
   const paidAmt = Number(existingSale.paid);

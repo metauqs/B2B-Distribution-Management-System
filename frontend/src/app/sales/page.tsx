@@ -48,6 +48,7 @@ interface DeliveryInfo { id: string; status: string; zone?: string | null; deliv
 
 interface Sale {
   id: string; invoiceNo: string; date: string;
+  isLocked?: boolean;
   subtotal: number; discount: number; deliveryCharge: number;
   previousBalance: number;
   previousBalanceDate?: string | null;
@@ -179,11 +180,8 @@ export default function SalesPage() {
   const isInvoiceEditable = (s: Sale | null) => {
     if (!s) return false;
     if (s.status === 'CANCELLED') return false;
-    if (s.deliveryStatus === 'DELIVERED' || s.deliveryStatus === 'FAILED') return false;
-    if (s.deliveries && s.deliveries.some(d => d.status === 'DELIVERED' || d.status === 'FAILED' || d.status === 'RETURNED')) return false;
-    const currentBusinessDay = todayInputDate();
-    const saleDateStr = new Date(s.date).toISOString().slice(0, 10);
-    return saleDateStr === currentBusinessDay;
+    if (s.isLocked) return false;
+    return true;
   };
 
   const startEditInvoice = (sale: Sale) => {
