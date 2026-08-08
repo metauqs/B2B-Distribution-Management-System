@@ -348,11 +348,16 @@ export async function adjustInventory(
 
   let newAvgCost = existing.avgCost;
   if (newRate && deltaQty > 0) {
-    // Weighted average cost for purchases
-    const totalQty  = existing.qty + deltaQty;
-    newAvgCost = totalQty > 0
-      ? (existing.qty * existing.avgCost + deltaQty * newRate) / totalQty
-      : newRate;
+    const oldQty = Math.max(0, existing.qty);
+    const thresholdQty = deltaQty * 0.30;
+    if (oldQty < thresholdQty || oldQty <= 0) {
+      newAvgCost = newRate;
+    } else {
+      const totalQty = oldQty + deltaQty;
+      newAvgCost = totalQty > 0
+        ? (oldQty * existing.avgCost + deltaQty * newRate) / totalQty
+        : newRate;
+    }
   }
 
   await prisma.inventory.update({

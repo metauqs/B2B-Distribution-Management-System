@@ -53,7 +53,7 @@ export async function recalcAvgCostFromHistory(
     return;
   }
 
-  // Replay weighted average cost chronologically
+  // Replay weighted average cost chronologically applying 30% threshold rule
   let runningQty = 0;
   let runningAvg = 0;
 
@@ -62,11 +62,16 @@ export async function recalcAvgCostFromHistory(
     const r = move.buyPrice;
     if (q <= 0 || r <= 0) continue;
 
-    const totalQty = runningQty + q;
-    runningAvg = totalQty > 0
-      ? ((runningQty * runningAvg) + (q * r)) / totalQty
-      : r;
-    runningQty = totalQty;
+    const thresholdQty = q * 0.30;
+    if (runningQty < thresholdQty || runningQty <= 0) {
+      runningAvg = r;
+    } else {
+      const totalQty = runningQty + q;
+      runningAvg = totalQty > 0
+        ? ((runningQty * runningAvg) + (q * r)) / totalQty
+        : r;
+    }
+    runningQty = runningQty + q;
   }
 
   // Update avgCost if we have a valid value
@@ -110,15 +115,20 @@ export async function stockIn(tx: any, p: StockInParams): Promise<void> {
 
   const newQty = oldQty + p.qty;
 
-  // Moving Weighted Average Cost:
-  // New Average Cost = (Existing Inventory Value + New Purchase Value) / (Existing Quantity + New Purchase Quantity)
+  // 30% Threshold Rule for Average Cost:
+  // If Existing Stock Quantity < (Today's Purchase Quantity * 0.30) OR Existing Stock <= 0:
+  //   New Average Cost = Today's Purchase Unit Price (p.rate)
+  // Else (Existing Stock >= Today's Purchase Quantity * 0.30):
+  //   Use Moving Weighted Average Cost: ( (oldQty * oldAvgCost) + (p.qty * p.rate) ) / (oldQty + p.qty)
+  const thresholdQty = p.qty * 0.30;
   let newAvgCost: number;
-  if (oldQty > 0 && newQty > 0) {
+
+  if (oldQty < thresholdQty || oldQty <= 0) {
+    newAvgCost = p.rate;
+  } else {
     const existingValue = oldQty * oldAvgCost;
     const purchaseValue = p.qty * p.rate;
-    newAvgCost = (existingValue + purchaseValue) / newQty;
-  } else {
-    newAvgCost = p.rate;
+    newAvgCost = newQty > 0 ? (existingValue + purchaseValue) / newQty : p.rate;
   }
 
   // Preserve previous buy price and update current buy price
