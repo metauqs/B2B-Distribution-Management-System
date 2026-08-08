@@ -136,12 +136,26 @@ const updateProduct = async (req: Request, res: Response) => {
       },
     });
 
-    // If product name changed, synchronize active PriceItems linked by productId
+    // If product name changed, synchronize all PriceItems, PurchaseItems, SaleItems, and Wastages linked by productId
     if (trimmedName && trimmedName !== existingProduct.name) {
-      await prisma.priceItem.updateMany({
-        where: { productId: id },
-        data: { itemName: trimmedName },
-      });
+      await Promise.all([
+        prisma.priceItem.updateMany({
+          where: { productId: id },
+          data: { itemName: trimmedName },
+        }),
+        prisma.purchaseItem.updateMany({
+          where: { productId: id },
+          data: { itemName: trimmedName },
+        }),
+        prisma.saleItem.updateMany({
+          where: { productId: id },
+          data: { itemName: trimmedName },
+        }),
+        prisma.wastage.updateMany({
+          where: { productId: id },
+          data: { itemName: trimmedName },
+        }),
+      ]);
     }
 
     // Record Audit Log for Product Update

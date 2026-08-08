@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { apiFetch } from '@/utils/apiFetch';
+import { invalidateCache } from '@/utils/cacheStore';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 
 type SettingsTab = 'branch' | 'users' | 'products' | 'suppliers' | 'vehicles' | 'whatsapp';
@@ -86,7 +87,13 @@ export default function SettingsPage() {
     e.preventDefault();
     const res = await apiFetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newProduct) });
     const d = await res.json();
-    if (res.ok) { setProdMsg('✅ Product added'); setNewProduct({ name: '', urduName: '', category: 'vegetable', defaultUnit: 'KG', minStock: 10 }); loadProducts(); }
+    if (res.ok) {
+      invalidateCache();
+      window.dispatchEvent(new Event('app-revalidate'));
+      setProdMsg('✅ Product added');
+      setNewProduct({ name: '', urduName: '', category: 'vegetable', defaultUnit: 'KG', minStock: 10 });
+      loadProducts();
+    }
     else         setProdMsg('❌ ' + (d.error ?? 'Failed'));
     setTimeout(() => setProdMsg(''), 3000);
   };

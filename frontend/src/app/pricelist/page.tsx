@@ -606,8 +606,8 @@ export default function PriceListPage() {
       });
       const data = await res.json();
       if (data.success) {
-        invalidateCache('/api/products');
-        invalidateCache('/api/pricelist');
+        invalidateCache();
+        window.dispatchEvent(new Event('app-revalidate'));
         showToast(`✅ ${newProdName} added to master catalog`);
         setNewProdName('');
         setNewProdUrdu('');
@@ -630,8 +630,8 @@ export default function PriceListPage() {
       });
       const data = await res.json();
       if (data.success) {
-        invalidateCache('/api/products');
-        invalidateCache('/api/pricelist');
+        invalidateCache();
+        window.dispatchEvent(new Event('app-revalidate'));
         showToast('✅ Status updated');
         await loadProducts();
         await loadDateList(targetDate, true);
@@ -676,8 +676,8 @@ export default function PriceListPage() {
       });
       const data = await res.json();
       if (data.success) {
-        invalidateCache('/api/products');
-        invalidateCache('/api/pricelist');
+        invalidateCache();
+        window.dispatchEvent(new Event('app-revalidate'));
         showToast(`✅ Updated "${editName.trim()}" successfully`);
         setEditingProduct(null);
         await loadProducts();
