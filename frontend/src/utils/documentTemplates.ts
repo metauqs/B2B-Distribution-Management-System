@@ -260,21 +260,21 @@ function buildDocStyles(b: BrandConfig): string {
     }
     .doc-kpi-urdu {
       font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 15px;
+      font-size: 17px;
       color: #000000;
       direction: rtl;
       unicode-bidi: isolate;
       display: block;
-      margin-top: 2px;
+      margin-top: 3px;
       margin-bottom: 2px;
-      line-height: 1.3;
+      line-height: 1.4;
       letter-spacing: normal !important;
       text-transform: none !important;
       font-weight: 700;
     }
     .urdu-inline {
       font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 14px;
+      font-size: 16px;
       color: #FFFFFF;
       margin-left: 4px;
       direction: rtl;
@@ -288,7 +288,7 @@ function buildDocStyles(b: BrandConfig): string {
     }
     .urdu-inline-dark {
       font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 15px;
+      font-size: 17px;
       color: #000000;
       margin-left: 4px;
       direction: rtl;
@@ -302,7 +302,7 @@ function buildDocStyles(b: BrandConfig): string {
     }
     .urdu-inline-val {
       font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: 15px;
+      font-size: 16px;
       color: #000000;
       margin-left: 4px;
       direction: rtl;
@@ -768,7 +768,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     <div class="doc-summary-row prev">
       <span class="label">
         Previous Outstanding
-        <span class="urdu-sub">بقایا</span>
+        <span class="urdu-sub">بقایا جات (سابقہ بقایا)</span>
       </span>
       <span class="val">Rs ${prevBal.toLocaleString()}</span>
     </div>
@@ -781,30 +781,30 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
         <div class="doc-summary-row">
           <span class="label">
             Current Bill
-            <span class="urdu-sub">آج کا بل</span>
+            <span class="urdu-sub">موجودہ بل</span>
           </span>
           <span class="val">Rs ${inv.total.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row total-row">
           <span class="label">
             Total Payable Amount
-            <span class="urdu-sub">کل واجب الادا</span>
+            <span class="urdu-sub">کل قابل ادائیگی (کل واجب الادا)</span>
           </span>
           <span class="val">Rs ${grandTotal.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row paid-row">
           <span class="label">
             Amount Paid
-            <span class="urdu-sub">کل ادائیگی</span>
+            <span class="urdu-sub">وصول شدہ رقم (کل ادائیگی)</span>
           </span>
           <span class="val" style="color:#2D6A4F;">- Rs ${inv.paid.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row grand-row ${remaining <= 0 ? 'paid-row' : ''}">
           <span class="label">
             Remaining Balance
-            <span class="urdu-sub">بقیہ رقم</span>
+            <span class="urdu-sub" style="color:#FFFFFF !important; font-size:18px; font-weight:800;">بقایا رقم (بقیہ واجب الادا)</span>
           </span>
-          <span class="val">Rs ${Math.max(0, remaining).toLocaleString()}</span>
+          <span class="val" style="color:#FFFFFF; font-size:19px; font-weight:900;">Rs ${Math.max(0, remaining).toLocaleString()}</span>
         </div>
       </div>
     </div>
@@ -1125,13 +1125,17 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
     </div>
   `;
 
+  const logoSrc = (brand.logoUrl && (brand.logoUrl.startsWith('data:') || brand.logoUrl.startsWith('http')))
+    ? brand.logoUrl
+    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
+
   const bodyContent = `
     <div style="max-width:780px;margin:0 auto;background:linear-gradient(180deg, #062315 0%, #082E1C 100%);border:4px double #E5A93C;border-radius:12px;padding:24px 28px 28px;color:#FFFFFF;box-sizing:border-box;">
       
       <!-- Header Bar -->
       <div style="border-bottom:2px solid #E5A93C;padding-bottom:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:16px;">
         <div style="display:flex;align-items:center;gap:14px;">
-          ${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="Logo" style="height:56px;width:auto;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));" />` : ''}
+          <img src="${logoSrc}" alt="${brand.companyName}" style="height:56px;width:auto;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));" />
           <div>
             <div style="font-size:20px;font-weight:900;color:#FDFBF7;letter-spacing:0.05em;line-height:1.1;text-transform:uppercase;">${brand.companyName || 'HALAL VEGG SUPPLIES'}</div>
             <div style="font-size:10px;font-weight:800;color:#FACC15;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;">${brand.tagline || 'FRESH FROM MANDI . DAILY DELIVERY'}</div>
