@@ -361,37 +361,39 @@ export default function ReportsPage() {
               </div>
 
               {/* Financial Position & Inventory Overview Panel */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: 16 }}>
                 <div className="va-panel">
                   <div className="va-panel-head">
                     <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Icon path={mdiScaleBalance} size={0.8} color="#0EA5E9" /> Balance Sheet Asset Summary
                     </h3>
                   </div>
-                  <table className="va-table">
-                    <tbody>
-                      <tr>
-                        <td>Cash &amp; Bank Balances</td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary?.cashBankTotal ?? 0)}</td>
-                      </tr>
-                      <tr>
-                        <td>Accounts Receivable (Client Dues)</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#B45309', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary?.receivables ?? 0)}</td>
-                      </tr>
-                      <tr>
-                        <td>Inventory Valuation (Avg Cost)</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#16A34A', fontWeight: 700 }}>{fmtMoney(execData.balanceSheetSummary?.inventoryValue ?? 0)}</td>
-                      </tr>
-                      <tr style={{ background: '#F8FAFC', fontWeight: 800 }}>
-                        <td>Total Current Assets</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#0369A1' }}>{fmtMoney(execData.balanceSheetSummary?.totalAssets ?? 0)}</td>
-                      </tr>
-                      <tr style={{ borderTop: '2px solid #E2E8F0' }}>
-                        <td>Accounts Payable (Supplier Dues)</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B', fontWeight: 700 }}>-{fmtMoney(execData.balanceSheetSummary?.payables ?? 0)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  <div style={{ overflowX: 'auto', width: '100%' }}>
+                    <table className="va-table va-table-fit">
+                      <tbody>
+                        <tr>
+                          <td>Cash &amp; Bank Balances</td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtMoney(execData.balanceSheetSummary?.cashBankTotal ?? 0)}</td>
+                        </tr>
+                        <tr>
+                          <td>Accounts Receivable (Client Dues)</td>
+                          <td className="mono" style={{ textAlign: 'right', color: '#B45309', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtMoney(execData.balanceSheetSummary?.receivables ?? 0)}</td>
+                        </tr>
+                        <tr>
+                          <td>Inventory Valuation (Avg Cost)</td>
+                          <td className="mono" style={{ textAlign: 'right', color: '#16A34A', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtMoney(execData.balanceSheetSummary?.inventoryValue ?? 0)}</td>
+                        </tr>
+                        <tr style={{ background: '#F8FAFC', fontWeight: 800 }}>
+                          <td>Total Current Assets</td>
+                          <td className="mono" style={{ textAlign: 'right', color: '#0369A1', whiteSpace: 'nowrap' }}>{fmtMoney(execData.balanceSheetSummary?.totalAssets ?? 0)}</td>
+                        </tr>
+                        <tr style={{ borderTop: '2px solid #E2E8F0' }}>
+                          <td>Accounts Payable (Supplier Dues)</td>
+                          <td className="mono" style={{ textAlign: 'right', color: '#991B1B', fontWeight: 700, whiteSpace: 'nowrap' }}>-{fmtMoney(execData.balanceSheetSummary?.payables ?? 0)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 <div className="va-panel">
@@ -400,28 +402,30 @@ export default function ReportsPage() {
                       <Icon path={mdiPackageVariantClosed} size={0.8} color="#16A34A" /> Inventory &amp; Wastage KPIs
                     </h3>
                   </div>
-                  <table className="va-table">
-                    <tbody>
-                      <tr>
-                        <td>Total Stock Asset Value</td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(execData.inventoryKpis?.totalValue ?? 0)}</td>
-                      </tr>
-                      <tr>
-                        <td>Tracked Inventory Items</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{execData.inventoryKpis?.totalCount ?? 0} Products</td>
-                      </tr>
-                      <tr>
-                        <td>Low Stock Items Alert</td>
-                        <td className="mono" style={{ textAlign: 'right', color: (execData.inventoryKpis?.lowStockCount ?? 0) > 0 ? '#DC2626' : '#166534', fontWeight: 700 }}>
-                          {execData.inventoryKpis?.lowStockCount ?? 0} Items
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>Wastage Loss Quantity</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B' }}>{execData.inventoryKpis?.wastageQty ?? 0} KG ({execData.inventoryKpis?.wastageCount ?? 0} Records)</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  <div style={{ overflowX: 'auto', width: '100%' }}>
+                    <table className="va-table va-table-fit">
+                      <tbody>
+                        <tr>
+                          <td>Total Stock Asset Value</td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtMoney(execData.inventoryKpis?.totalValue ?? 0)}</td>
+                        </tr>
+                        <tr>
+                          <td>Tracked Inventory Items</td>
+                          <td className="mono" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{execData.inventoryKpis?.totalCount ?? 0} Products</td>
+                        </tr>
+                        <tr>
+                          <td>Low Stock Items Alert</td>
+                          <td className="mono" style={{ textAlign: 'right', color: (execData.inventoryKpis?.lowStockCount ?? 0) > 0 ? '#DC2626' : '#166534', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            {execData.inventoryKpis?.lowStockCount ?? 0} Items
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>Wastage Loss Quantity</td>
+                          <td className="mono" style={{ textAlign: 'right', color: '#991B1B', whiteSpace: 'nowrap' }}>{execData.inventoryKpis?.wastageQty ?? 0} KG ({execData.inventoryKpis?.wastageCount ?? 0} Records)</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 
@@ -822,61 +826,65 @@ export default function ReportsPage() {
 
           {/* ══════════════════ 5. FINANCE MODULE ══════════════════ */}
           {mainTab === 'Finance' && balanceSheet && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: 20 }}>
               <div className="va-panel">
                 <div className="va-panel-head"><h3>Balance Sheet Statement - Assets</h3></div>
-                <table className="va-table">
-                  <tbody>
-                    {balanceSheet.assets?.cashAccounts?.map((c: any, i: number) => (
-                      <tr key={i}>
-                        <td>{c.name}</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(c.balance)}</td>
+                <div style={{ overflowX: 'auto', width: '100%' }}>
+                  <table className="va-table va-table-fit">
+                    <tbody>
+                      {balanceSheet.assets?.cashAccounts?.map((c: any, i: number) => (
+                        <tr key={i}>
+                          <td>{c.name}</td>
+                          <td className="mono" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtMoney(c.balance)}</td>
+                        </tr>
+                      ))}
+                      {balanceSheet.assets?.bankAccounts?.map((b: any, i: number) => (
+                        <tr key={i}>
+                          <td>{b.name}</td>
+                          <td className="mono" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtMoney(b.balance)}</td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td>Accounts Receivable (Client Dues)</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#B45309', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtMoney(balanceSheet.assets?.receivables ?? 0)}</td>
                       </tr>
-                    ))}
-                    {balanceSheet.assets?.bankAccounts?.map((b: any, i: number) => (
-                      <tr key={i}>
-                        <td>{b.name}</td>
-                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(b.balance)}</td>
+                      <tr>
+                        <td>Inventory Asset Value</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#16A34A', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtMoney(balanceSheet.assets?.inventoryAssetValue ?? 0)}</td>
                       </tr>
-                    ))}
-                    <tr>
-                      <td>Accounts Receivable (Client Dues)</td>
-                      <td className="mono" style={{ textAlign: 'right', color: '#B45309', fontWeight: 700 }}>{fmtMoney(balanceSheet.assets?.receivables ?? 0)}</td>
-                    </tr>
-                    <tr>
-                      <td>Inventory Asset Value</td>
-                      <td className="mono" style={{ textAlign: 'right', color: '#16A34A', fontWeight: 700 }}>{fmtMoney(balanceSheet.assets?.inventoryAssetValue ?? 0)}</td>
-                    </tr>
-                    <tr style={{ background: '#F0FDF4', fontWeight: 800, fontSize: 15 }}>
-                      <td>TOTAL ASSETS</td>
-                      <td className="mono" style={{ textAlign: 'right', color: '#15803D' }}>{fmtMoney(balanceSheet.assets?.totalAssets ?? 0)}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                      <tr style={{ background: '#F0FDF4', fontWeight: 800, fontSize: 15 }}>
+                        <td>TOTAL ASSETS</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#15803D', whiteSpace: 'nowrap' }}>{fmtMoney(balanceSheet.assets?.totalAssets ?? 0)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <div className="va-panel">
                 <div className="va-panel-head"><h3>Liabilities &amp; Equity</h3></div>
-                <table className="va-table">
-                  <tbody>
-                    <tr>
-                      <td>Accounts Payable (Supplier Dues)</td>
-                      <td className="mono" style={{ textAlign: 'right', color: '#991B1B', fontWeight: 700 }}>{fmtMoney(balanceSheet.liabilities?.payables ?? 0)}</td>
-                    </tr>
-                    <tr style={{ background: '#FEF2F2', fontWeight: 800 }}>
-                      <td>TOTAL LIABILITIES</td>
-                      <td className="mono" style={{ textAlign: 'right', color: '#991B1B' }}>{fmtMoney(balanceSheet.liabilities?.totalLiabilities ?? 0)}</td>
-                    </tr>
-                    <tr style={{ borderTop: '2px solid #E2E8F0' }}>
-                      <td>Retained Equity</td>
-                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(balanceSheet.equity?.retainedEarnings ?? 0)}</td>
-                    </tr>
-                    <tr style={{ background: '#F8FAFC', fontWeight: 800, fontSize: 15 }}>
-                      <td>TOTAL LIABILITIES &amp; EQUITY</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney((balanceSheet.liabilities?.totalLiabilities ?? 0) + (balanceSheet.equity?.retainedEarnings ?? 0))}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div style={{ overflowX: 'auto', width: '100%' }}>
+                  <table className="va-table va-table-fit">
+                    <tbody>
+                      <tr>
+                        <td>Accounts Payable (Supplier Dues)</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtMoney(balanceSheet.liabilities?.payables ?? 0)}</td>
+                      </tr>
+                      <tr style={{ background: '#FEF2F2', fontWeight: 800 }}>
+                        <td>TOTAL LIABILITIES</td>
+                        <td className="mono" style={{ textAlign: 'right', color: '#991B1B', whiteSpace: 'nowrap' }}>{fmtMoney(balanceSheet.liabilities?.totalLiabilities ?? 0)}</td>
+                      </tr>
+                      <tr style={{ borderTop: '2px solid #E2E8F0' }}>
+                        <td>Retained Equity</td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtMoney(balanceSheet.equity?.retainedEarnings ?? 0)}</td>
+                      </tr>
+                      <tr style={{ background: '#F8FAFC', fontWeight: 800, fontSize: 15 }}>
+                        <td>TOTAL LIABILITIES &amp; EQUITY</td>
+                        <td className="mono" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtMoney((balanceSheet.liabilities?.totalLiabilities ?? 0) + (balanceSheet.equity?.retainedEarnings ?? 0))}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
