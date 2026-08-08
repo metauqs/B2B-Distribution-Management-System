@@ -17,6 +17,7 @@
 
 import html2canvas from 'html2canvas';
 import { DEFAULT_LOGO_BASE64 } from './logoBase64';
+import { PRICELIST_LOGO_BASE64 } from './pricelistLogoBase64';
 import { fmtMoney } from './formatters';
 
 // ─── Brand Configuration ───────────────────────────────────────────────────────
@@ -1152,23 +1153,19 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
 
   const logoSrc = (brand.logoUrl && (brand.logoUrl.startsWith('data:') || brand.logoUrl.startsWith('http')))
     ? brand.logoUrl
-    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
+    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : PRICELIST_LOGO_BASE64);
 
   const bodyContent = `
     <div style="max-width:780px;margin:0 auto;background:linear-gradient(180deg, #062315 0%, #082E1C 100%);border:4px double #E5A93C;border-radius:12px;padding:24px 28px 28px;color:#FFFFFF;box-sizing:border-box;">
       
       <!-- Header Bar -->
       <div style="border-bottom:2px solid #E5A93C;padding-bottom:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:16px;">
-        <div style="display:flex;align-items:center;gap:14px;">
-          <img src="${logoSrc}" alt="${brand.companyName}" style="height:56px;width:auto;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));" />
-          <div>
-            <div style="font-size:20px;font-weight:900;color:#FDFBF7;letter-spacing:0.05em;line-height:1.1;text-transform:uppercase;">${brand.companyName || 'HALAL VEGG SUPPLIES'}</div>
-            <div style="font-size:10px;font-weight:800;color:#FACC15;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;">${brand.tagline || 'FRESH FROM MANDI . DAILY DELIVERY'}</div>
-          </div>
+        <div style="background:#FFFFFF;padding:6px 14px;border-radius:10px;border:1.5px solid #E5A93C;box-shadow:0 4px 14px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;">
+          <img src="${logoSrc}" alt="${brand.companyName || 'HALAL VEGG SUPPLIES'}" style="height:54px;width:auto;object-fit:contain;" />
         </div>
 
         <div style="text-align:right;">
-          <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:24px;font-weight:800;color:#FACC15;direction:rtl;line-height:1.2;">آج کی ریٹ لسٹ</div>
+          <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:28px;font-weight:800;color:#FACC15;direction:rtl;line-height:1.2;">آج کی ریٹ لسٹ</div>
           <div style="font-size:12px;font-weight:800;color:#FDFBF7;letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;">TODAY'S PRICE LIST</div>
           <div style="display:inline-block;margin-top:6px;background:#0D4429;border:1px solid #E5A93C;color:#FFFFFF;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;padding:4px 12px;border-radius:6px;letter-spacing:0.05em;">
             📅 ${data.dateStr}
