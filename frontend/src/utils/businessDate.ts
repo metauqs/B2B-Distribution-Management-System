@@ -13,7 +13,7 @@
  * taking into account the 5:00 AM cutoff rule.
  * If input is already a YYYY-MM-DD string, returns it directly as it is already a business date.
  */
-export function getTodayBusinessDateString(input?: Date | string | number): string {
+export function getTodayBusinessDateString(input?: Date | string | number | null): string {
   if (!input) input = new Date();
   if (typeof input === 'string') {
     const trimmed = input.trim();
@@ -60,60 +60,71 @@ export function getTodayBusinessDateString(input?: Date | string | number): stri
 }
 
 /**
- * Returns today's input-ready datetime string (YYYY-MM-DDTHH:mm) in Asia/Karachi time
+ * Returns today's input-ready datetime string (YYYY-MM-DDTHH:mm) in Asia/Karachi time,
+ * using the active Business Date.
  */
 export function getTodayBusinessInputDateTime(): string {
   const d = new Date();
-  const formatter = new Intl.DateTimeFormat('en-US', {
+  const bDate = getTodayBusinessDateString(d);
+  const timeFormatter = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Karachi',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   });
-
-  const parts = Object.fromEntries(
-    formatter.formatToParts(d).map(p => [p.type, p.value])
-  );
-
-  const yyyy = parts.year;
-  const mm = parts.month.padStart(2, '0');
-  const dd = parts.day.padStart(2, '0');
-  const hh = parts.hour.padStart(2, '0');
-  const min = parts.minute.padStart(2, '0');
-
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  const timePart = timeFormatter.format(d);
+  return `${bDate}T${timePart}`;
 }
 
 /**
- * Format a Date or string for display in PKT (Asia/Karachi)
+ * Format a Date or string for display in PKT (Asia/Karachi) adhering to 5:00 AM Business Day.
  */
-export function fmtBusinessDate(dateInput: Date | string): string {
-  const d = new Date(dateInput);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', {
+export function fmtBusinessDate(dateInput: Date | string | null | undefined): string {
+  if (!dateInput) return '—';
+  const bStr = getTodayBusinessDateString(dateInput);
+  if (!bStr || bStr === '—') return '—';
+  const [yStr, mStr, dStr] = bStr.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+  const day = parseInt(dStr, 10);
+  const utcDate = new Date(Date.UTC(year, month, day, 12, 0, 0));
+  return utcDate.toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-    timeZone: 'Asia/Karachi',
+    timeZone: 'UTC',
   });
 }
 
 /**
- * Format a Date or string for display with time in PKT (Asia/Karachi)
+ * Format a Date or string for display with time in PKT adhering to 5:00 AM Business Day.
  */
-export function fmtBusinessDateTime(dateInput: Date | string): string {
-  const d = new Date(dateInput);
+export function fmtBusinessDateTime(dateInput: Date | string | null | undefined): string {
+  if (!dateInput) return '—';
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   if (isNaN(d.getTime())) return '—';
-  return d.toLocaleString('en-GB', {
+
+  const bStr = getTodayBusinessDateString(dateInput);
+  if (!bStr || bStr === '—') return '—';
+  const [yStr, mStr, dStr] = bStr.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+  const day = parseInt(dStr, 10);
+  const utcDate = new Date(Date.UTC(year, month, day, 12, 0, 0));
+  const formattedDate = utcDate.toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+    timeZone: 'UTC',
+  });
+
+  const formattedTime = d.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
     timeZone: 'Asia/Karachi',
   });
+
+  return `${formattedDate} ${formattedTime}`;
 }
+

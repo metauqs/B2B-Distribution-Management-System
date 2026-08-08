@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { writeAuditLog, getValidUserId } from '../lib/business';
-import { getCurrentBusinessDateRange } from '../lib/businessDate';
+import { getCurrentBusinessDateRange, getBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
 
 const router = Router();
 
@@ -244,8 +244,7 @@ router.post('/duplicate', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'No source price list found to duplicate' });
     }
 
-    const todayStart = new Date(Date.now() - 5 * 60 * 60 * 1000); todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(todayStart); todayEnd.setHours(23, 59, 59, 999);
+    const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
 
     const existing = await prisma.priceList.findFirst({
       where: { branchId, date: { gte: todayStart, lte: todayEnd } },
@@ -258,8 +257,7 @@ router.post('/duplicate', async (req: Request, res: Response) => {
       });
     }
 
-    const today = new Date(Date.now() - 5 * 60 * 60 * 1000);
-    today.setHours(12, 0, 0, 0);
+    const today = parseInputDateToUtc();
 
     const newList = await prisma.priceList.create({
       data: {
@@ -434,11 +432,8 @@ router.post('/', async (req: Request, res: Response) => {
 
     const { date, items = [], notes } = req.body;
 
-    const listDate = date ? new Date(date) : new Date(Date.now() - 5 * 60 * 60 * 1000);
-    listDate.setHours(12, 0, 0, 0);
-
-    const dayStart = new Date(listDate); dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(listDate); dayEnd.setHours(23, 59, 59, 999);
+    const listDate = parseInputDateToUtc(date);
+    const { start: dayStart, end: dayEnd } = getBusinessDateRange(date);
 
     let existing = await prisma.priceList.findFirst({
       where: { branchId, date: { gte: dayStart, lte: dayEnd } },

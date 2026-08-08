@@ -266,8 +266,7 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
     const balance = total - finalPaid;
     const status = finalPaid >= total ? 'PAID' : finalPaid > 0 ? 'PARTIAL' : 'PENDING';
 
-    const pDate = new Date(date);
-    pDate.setHours(12, 0, 0, 0);
+    const pDate = parseInputDateToUtc(date);
 
     const updatedPurchase = await prisma.$transaction(async tx => {
       // 1. Reverse previous stock movements for old purchase items

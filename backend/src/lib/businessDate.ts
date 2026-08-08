@@ -12,21 +12,11 @@
 const PKT_OFFSET_HOURS = 5;
 
 /**
- * Convert any instant (Date/string/number) into Pakistan Standard Time (PKT) Date object
- */
-export function toPKTDate(input?: Date | string | number): Date {
-  const d = input ? new Date(input) : new Date();
-  if (isNaN(d.getTime())) return new Date();
-  const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
-  return new Date(utcMs + PKT_OFFSET_HOURS * 3600000);
-}
-
-/**
  * Returns the Business Date string (YYYY-MM-DD) in PKT for any given instant.
  * If input is already formatted as YYYY-MM-DD, it is returned directly as it is already a business date string.
  * If PKT time hour is < 5 AM, it falls into the previous calendar day's business date.
  */
-export function getBusinessDateString(input?: Date | string | number): string {
+export function getBusinessDateString(input?: Date | string | number | null): string {
   if (!input) input = new Date();
   if (typeof input === 'string') {
     const trimmed = input.trim();
@@ -82,26 +72,8 @@ export interface BusinessDateRange {
  * Given a business date string (YYYY-MM-DD) or an instant, return the exact start (05:00:00 AM PKT)
  * and end (04:59:59.999 AM PKT next day) as UTC Date objects suitable for Prisma queries.
  */
-export function getBusinessDateRange(dateInput?: Date | string): BusinessDateRange {
-  let businessDateStr: string;
-
-  if (typeof dateInput === 'string') {
-    const trimmed = dateInput.trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      businessDateStr = trimmed;
-    } else if (trimmed.includes('T') || trimmed.includes(' ')) {
-      const datePart = trimmed.slice(0, 10);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-        businessDateStr = datePart;
-      } else {
-        businessDateStr = getBusinessDateString(dateInput);
-      }
-    } else {
-      businessDateStr = getBusinessDateString(dateInput);
-    }
-  } else {
-    businessDateStr = getBusinessDateString(dateInput);
-  }
+export function getBusinessDateRange(dateInput?: Date | string | null): BusinessDateRange {
+  const businessDateStr = getBusinessDateString(dateInput);
 
   const [yStr, mStr, dStr] = businessDateStr.split('-');
   const year = parseInt(yStr, 10);
@@ -126,34 +98,46 @@ export function getCurrentBusinessDateRange(): BusinessDateRange {
 
 /**
  * Safely parse a date string or timestamp into a Date object suitable for saving in database.
- * If input is a bare YYYY-MM-DD string, saves it at 12:00 PM PKT (07:00 AM UTC) to position it safely within the Business Day range.
+ * Anchors the date at 12:00 PM PKT (07:00:00.000 UTC) of its corresponding Business Date.
  */
-export function parseInputDateToUtc(dateInput?: Date | string | number): Date {
-  if (!dateInput) return new Date();
-  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
-    const [yStr, mStr, dStr] = dateInput.trim().split('-');
-    const year = parseInt(yStr, 10);
-    const month = parseInt(mStr, 10) - 1;
-    const day = parseInt(dStr, 10);
-    return new Date(Date.UTC(year, month, day, 7, 0, 0, 0));
-  }
-  const d = new Date(dateInput);
-  return isNaN(d.getTime()) ? new Date() : d;
+export function parseInputDateToUtc(dateInput?: Date | string | number | null): Date {
+  const bStr = getBusinessDateString(dateInput);
+  const [yStr, mStr, dStr] = bStr.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+  const day = parseInt(dStr, 10);
+  return new Date(Date.UTC(year, month, day, 7, 0, 0, 0));
 }
 
 /**
- * Format a Date or string for display in PKT (Asia/Karachi)
+ * Format a Date or string for display in PKT (Asia/Karachi) adhering to 5:00 AM Business Day.
  */
-export function formatPKTDateTime(dateInput: Date | string): string {
-  const d = new Date(dateInput);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleString('en-GB', {
+export function formatPKTDateTime(dateInput: Date | string | null | undefined): string {
+  if (!dateInput) return '—';
+  const bStr = getBusinessDateString(dateInput);
+  const [yStr, mStr, dStr] = bStr.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+  const day = parseInt(dStr, 10);
+  const utcDate = new Date(Date.UTC(year, month, day, 12, 0, 0));
+
+  const formattedDate = utcDate.toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+    timeZone: 'UTC',
+  });
+
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return formattedDate;
+
+  const formattedTime = d.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
     timeZone: 'Asia/Karachi',
   });
+
+  return `${formattedDate} ${formattedTime}`;
 }
+

@@ -628,7 +628,7 @@ router.put('/:id', async (req: Request, res: Response) => {
           where: { saleId: existingSale.id },
           data: {
             employeeId: employeeId || undefined,
-            date: deliveryDate ? new Date(deliveryDate) : existingSale.date,
+            date: deliveryDate ? parseInputDateToUtc(deliveryDate) : existingSale.date,
             scheduledTime: deliveryTime || undefined,
           }
         });

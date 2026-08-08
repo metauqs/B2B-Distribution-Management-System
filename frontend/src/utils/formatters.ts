@@ -8,38 +8,57 @@ export function fmtMoney(n: number): string {
 
 export const PKT_TIMEZONE = 'Asia/Karachi';
 
+import { getTodayBusinessDateString } from './businessDate';
+
 // ─── Date ─────────────────────────────────────────────────────────────────────
-// "15 Jul 2026" in Pakistan Time (Asia/Karachi, UTC+05:00)
-export function fmtDate(d: string | Date): string {
+// Format date adhering to 5:00 AM PKT business day cutoff
+export function fmtDate(d: string | Date | null | undefined): string {
   if (!d) return '—';
-  const date = typeof d === 'string' ? new Date(d.includes('T') ? d : d + 'T00:00:00') : d;
-  if (isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString('en-GB', {
+  const bStr = getTodayBusinessDateString(d);
+  if (!bStr || bStr === '—') return '—';
+  const [yStr, mStr, dStr] = bStr.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+  const day = parseInt(dStr, 10);
+  const utcDate = new Date(Date.UTC(year, month, day, 12, 0, 0));
+  return utcDate.toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-    timeZone: PKT_TIMEZONE,
+    timeZone: 'UTC',
   });
 }
 
-// Format date and time: "15 Jul 2026 03:30 PM" in Pakistan Time (Asia/Karachi, UTC+05:00)
+// Format date and time in PKT adhering to 5:00 AM PKT business day cutoff
 export function fmtDateTime(d: string | Date | null | undefined): string {
   if (!d) return '—';
-  const date = typeof d === 'string' ? new Date(d) : d;
-  if (isNaN(date.getTime())) return '—';
-  return date.toLocaleString('en-GB', {
+  const dateObj = typeof d === 'string' ? new Date(d) : d;
+  if (isNaN(dateObj.getTime())) return '—';
+
+  const bStr = getTodayBusinessDateString(d);
+  if (!bStr || bStr === '—') return '—';
+  const [yStr, mStr, dStr] = bStr.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+  const day = parseInt(dStr, 10);
+  const utcDate = new Date(Date.UTC(year, month, day, 12, 0, 0));
+  const formattedDate = utcDate.toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+    timeZone: 'UTC',
+  });
+
+  const formattedTime = dateObj.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
     timeZone: PKT_TIMEZONE,
-  }).replace(',', ''); // e.g. "17 Jul 2026 03:30 PM"
+  });
+
+  return `${formattedDate} ${formattedTime}`;
 }
 
-
-import { getTodayBusinessDateString } from './businessDate';
 
 // ─── Today as YYYY-MM-DD in Pakistan Time (Asia/Karachi, UTC+05:00) ──────────
 // Daily reset boundary shifted from 12:00 A.M. to 5:00 A.M. (5:00 AM cutoff)

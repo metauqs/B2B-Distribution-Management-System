@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { stockReturn } from '../lib/inventoryService';
-import { getBusinessDateRange } from '../lib/businessDate';
+import { getBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
 
 const router = Router();
 
@@ -292,7 +292,7 @@ router.patch('/', async (req: Request, res: Response) => {
         ...(employeeId !== undefined ? { employeeId: employeeId || null } : {}),
         ...(zone ? { zone } : {}),
         ...(notes ? { notes } : {}),
-        ...(date ? { date: new Date(date) } : {}),
+        ...(date ? { date: parseInputDateToUtc(date) } : {}),
         ...(scheduledTime ? { scheduledTime } : {}),
         ...(deliveredAt ? { deliveredAt } : {}),
       },
