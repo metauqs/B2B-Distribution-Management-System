@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, syncPriceListFromSale } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
-import { stockOut } from '../lib/inventoryService';
+import { stockOut, syncInvoiceEditStock } from '../lib/inventoryService';
 import { getBusinessDateRange, getBusinessDateString, getCurrentBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
 import { postSaleLedger } from '../lib/financialLedgerService';
 
@@ -488,91 +488,25 @@ router.put('/:id', async (req: Request, res: Response) => {
     const updatedSale = await prisma.$transaction(async tx => {
       const validatedUserId = await getValidUserId(userId, tx);
 
-      // 1. Revert stock for OLD items
-      for (const oldItem of existingSale.items) {
-        if (oldItem.productId) {
-          const inv = await tx.inventory.findUnique({
-            where: { productId_branchId: { productId: oldItem.productId, branchId } },
-            select: { qty: true }
-          });
-          const currentQty = inv?.qty ?? 0;
-          const restoredQty = currentQty + oldItem.qty;
-
-          await tx.inventory.upsert({
-            where: { productId_branchId: { productId: oldItem.productId, branchId } },
-            update: { qty: restoredQty },
-            create: { productId: oldItem.productId, branchId, qty: restoredQty, avgCost: 0 }
-          });
-
-          await tx.stockMovement.create({
-            data: {
-              productId: oldItem.productId,
-              branchId,
-              type: 'ADJUSTMENT',
-              qty: oldItem.qty,
-              previousStock: currentQty,
-              newStock: restoredQty,
-              refType: 'sale_edit_reversal',
-              refId: existingSale.id,
-              userId: validatedUserId ?? undefined,
-              date: new Date(),
-              note: `Invoice Edit Stock Reversal — ${existingSale.invoiceNo} | Restored +${oldItem.qty} ${oldItem.unit}`,
-            }
-          });
-        }
-      }
-
-      // 2. Validate & deduct stock for NEW items
-      for (const newItem of items) {
-        if (newItem.productId) {
-          const inv = await tx.inventory.findUnique({
-            where: { productId_branchId: { productId: newItem.productId, branchId } },
-            select: { qty: true, reservedQty: true }
-          });
-          const currentQty = inv?.qty ?? 0;
-          const reserved = inv?.reservedQty ?? 0;
-          const available = Math.max(0, currentQty - reserved);
-          const requestedQty = Number(newItem.qty);
-
-          if (requestedQty > available) {
-            const prodName = newItem.itemName ?? newItem.name ?? 'Product';
-            throw new Error(`Insufficient inventory stock for ${prodName}. Available: ${available} ${newItem.unit ?? 'KG'}, Requested: ${requestedQty} ${newItem.unit ?? 'KG'}`);
-          }
-        }
-      }
-
-      for (const newItem of items) {
-        if (newItem.productId) {
-          const inv = await tx.inventory.findUnique({
-            where: { productId_branchId: { productId: newItem.productId, branchId } },
-            select: { qty: true }
-          });
-          const currentQty = inv?.qty ?? 0;
-          const newQty = Math.max(0, currentQty - Number(newItem.qty));
-
-          await tx.inventory.upsert({
-            where: { productId_branchId: { productId: newItem.productId, branchId } },
-            update: { qty: newQty },
-            create: { productId: newItem.productId, branchId, qty: 0, avgCost: 0 }
-          });
-
-          await tx.stockMovement.create({
-            data: {
-              productId: newItem.productId,
-              branchId,
-              type: 'SALE',
-              qty: -Number(newItem.qty),
-              previousStock: currentQty,
-              newStock: newQty,
-              refType: 'sale',
-              refId: existingSale.id,
-              userId: validatedUserId ?? undefined,
-              date: existingSale.date,
-              note: `Invoice Edit Stock Out — ${existingSale.invoiceNo} | Qty: -${newItem.qty} ${newItem.unit ?? 'KG'}`,
-            }
-          });
-        }
-      }
+      // 1. Difference-based stock synchronization (calculates exact delta per product)
+      await syncInvoiceEditStock(tx, {
+        saleId: existingSale.id,
+        invoiceNo: existingSale.invoiceNo,
+        branchId,
+        userId: validatedUserId ?? undefined,
+        oldItems: existingSale.items.map(i => ({
+          productId: i.productId || '',
+          qty: i.qty,
+          unit: i.unit,
+          itemName: i.itemName,
+        })),
+        newItems: items.map((i: any) => ({
+          productId: i.productId || '',
+          qty: Number(i.qty),
+          unit: i.unit ?? 'KG',
+          itemName: i.itemName ?? i.name ?? 'Item',
+        })),
+      });
 
       // 3. Replace SaleItems and update Sale record
       await tx.saleItem.deleteMany({ where: { saleId: existingSale.id } });

@@ -119,6 +119,24 @@ export interface StockInParams {
 
 export async function stockIn(tx: any, p: StockInParams): Promise<void> {
   const db = tx || prisma;
+
+  // Idempotency Check: Prevent duplicate StockMovement for the same purchase/transaction
+  if (p.refType && p.refId) {
+    const existingMovement = await db.stockMovement.findFirst({
+      where: {
+        productId: p.productId,
+        branchId: p.branchId,
+        refType: p.refType,
+        refId: p.refId,
+        type: 'PURCHASE',
+      }
+    });
+    if (existingMovement) {
+      console.log(`[stockIn] Movement already logged for ${p.refType}:${p.refId} product ${p.productId}. Skipping duplicate.`);
+      return;
+    }
+  }
+
   const existing = await db.inventory.findUnique({
     where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
   });
@@ -223,6 +241,24 @@ export interface StockOutParams {
 
 export async function stockOut(tx: any, p: StockOutParams): Promise<void> {
   const db = tx || prisma;
+
+  // Idempotency Check: Prevent duplicate StockMovement for the same sale/checkout
+  if (p.refType && p.refId) {
+    const existingMovement = await db.stockMovement.findFirst({
+      where: {
+        productId: p.productId,
+        branchId: p.branchId,
+        refType: p.refType,
+        refId: p.refId,
+        type: 'SALE',
+      }
+    });
+    if (existingMovement) {
+      console.log(`[stockOut] Movement already logged for ${p.refType}:${p.refId} product ${p.productId}. Skipping duplicate.`);
+      return;
+    }
+  }
+
   const existing = await db.inventory.findUnique({
     where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
     select: { qty: true, avgCost: true, reservedQty: true },
@@ -256,6 +292,123 @@ export async function stockOut(tx: any, p: StockOutParams): Promise<void> {
         : `Stock OUT | Qty: -${p.qty} ${p.unit ?? 'KG'}`),
     },
   });
+}
+
+// ── 2b. syncInvoiceEditStock — Difference-Based Invoice Edit Engine ─────────────
+
+export interface InvoiceEditItemSync {
+  productId: string;
+  qty: number;
+  unit?: string;
+  itemName?: string;
+}
+
+export async function syncInvoiceEditStock(
+  tx: any,
+  params: {
+    saleId: string;
+    invoiceNo: string;
+    branchId: string;
+    userId?: string;
+    oldItems: InvoiceEditItemSync[];
+    newItems: InvoiceEditItemSync[];
+  }
+): Promise<void> {
+  const db = tx || prisma;
+  const { saleId, invoiceNo, branchId, userId, oldItems, newItems } = params;
+
+  const oldMap = new Map<string, InvoiceEditItemSync>();
+  for (const item of oldItems) {
+    if (item.productId) oldMap.set(item.productId, item);
+  }
+
+  const newMap = new Map<string, InvoiceEditItemSync>();
+  for (const item of newItems) {
+    if (item.productId) newMap.set(item.productId, item);
+  }
+
+  const allProductIds = new Set<string>([...oldMap.keys(), ...newMap.keys()]);
+
+  for (const productId of allProductIds) {
+    const oldItem = oldMap.get(productId);
+    const newItem = newMap.get(productId);
+
+    const oldQty = oldItem ? oldItem.qty : 0;
+    const newQty = newItem ? newItem.qty : 0;
+    const delta = newQty - oldQty; // positive = quantity increased (deduct stock), negative = quantity decreased (restore stock)
+
+    if (Math.abs(delta) < 0.00001) continue; // No change for this product
+
+    const unit = newItem?.unit || oldItem?.unit || 'KG';
+    const itemName = newItem?.itemName || oldItem?.itemName || 'Item';
+
+    const existing = await db.inventory.findUnique({
+      where: { productId_branchId: { productId, branchId } },
+      select: { qty: true, avgCost: true, reservedQty: true }
+    });
+
+    const currentQty = existing?.qty ?? 0;
+    const reserved = existing?.reservedQty ?? 0;
+    const available = Math.max(0, currentQty - reserved);
+
+    if (delta > 0) {
+      // Quantity INCREASED — system must deduct delta from stock
+      if (delta > available) {
+        throw new Error(`Insufficient inventory stock for ${itemName}. Available: ${available} ${unit}, Additional Required: ${delta} ${unit}`);
+      }
+
+      const finalQty = Math.max(0, currentQty - delta);
+      const finalAvgCost = finalQty <= 0 ? 0 : (existing?.avgCost ?? 0);
+
+      await db.inventory.upsert({
+        where: { productId_branchId: { productId, branchId } },
+        update: { qty: finalQty, avgCost: finalAvgCost },
+        create: { productId, branchId, qty: 0, avgCost: 0 }
+      });
+
+      await db.stockMovement.create({
+        data: {
+          productId,
+          branchId,
+          type: 'SALE',
+          qty: -delta,
+          previousStock: currentQty,
+          newStock: finalQty,
+          refType: 'sale_edit',
+          refId: saleId,
+          userId: userId ?? undefined,
+          date: new Date(),
+          note: `Invoice Edit Stock Out — ${invoiceNo} | Qty: -${delta} ${unit} (Qty changed ${oldQty} → ${newQty})`,
+        }
+      });
+    } else {
+      // Quantity DECREASED or item removed — system must restore Math.abs(delta) to stock
+      const restoreQty = Math.abs(delta);
+      const finalQty = currentQty + restoreQty;
+
+      await db.inventory.upsert({
+        where: { productId_branchId: { productId, branchId } },
+        update: { qty: finalQty },
+        create: { productId, branchId, qty: restoreQty, avgCost: 0 }
+      });
+
+      await db.stockMovement.create({
+        data: {
+          productId,
+          branchId,
+          type: 'ADJUSTMENT',
+          qty: restoreQty,
+          previousStock: currentQty,
+          newStock: finalQty,
+          refType: 'sale_edit_restore',
+          refId: saleId,
+          userId: userId ?? undefined,
+          date: new Date(),
+          note: `Invoice Edit Stock Return — ${invoiceNo} | Qty: +${restoreQty} ${unit} (Qty changed ${oldQty} → ${newQty})`,
+        }
+      });
+    }
+  }
 }
 
 // ── 3. recordWastage — Called from Wastage Entry ─────────────────────────────
