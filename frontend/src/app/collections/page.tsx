@@ -34,6 +34,11 @@ interface Collection {
   reference?: string | null;
   notes?: string | null;
   clientId: string;
+  remainingBalance?: number | null;
+  runningBalance?: number | null;
+  receivedByUserId?: string | null;
+  receivedByUser?: { id: string; name: string; role?: string } | null;
+  allocations?: Array<{ saleId: string; allocatedAmount: number; sale?: { invoiceNo: string } }>;
 }
 
 interface Client { id: string; clientId?: string | null; name: string; currentBalance: number; openingBalance: number; }
@@ -199,6 +204,7 @@ export default function CollectionsPage() {
           whatsapp: (clientObj as any)?.whatsapp || (clientObj as any)?.phone || undefined,
           paymentMethod: form.method,
           reference: form.reference || undefined,
+          receivedBy: data.data.receivedByUser?.name || 'Muhammad Ali',
           previousBalance: data.data.summary?.previousBalance ?? 0,
           currentBillAmount: data.data.summary?.currentBillAmount ?? 0,
           totalPayable: data.data.summary?.totalPayable ?? 0,
@@ -582,10 +588,78 @@ export default function CollectionsPage() {
                                     );
                                   })}
                                 </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
+                               </table>
+                             </div>
+
+                             {/* ────── PAYMENT HISTORY SECTION ────── */}
+                             {(() => {
+                               const clientCols = collections
+                                 .filter(c => c.clientId === g.clientId)
+                                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                               return (
+                                 <div style={{ marginTop: 16, borderTop: '2px dashed #CBD5E1', paddingTop: 14 }}>
+                                   <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                     <span>💳 PAYMENT HISTORY ({clientCols.length} receipt{clientCols.length === 1 ? '' : 's'})</span>
+                                     {clientCols.length > 0 && (
+                                       <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>Ordered newest-first</span>
+                                     )}
+                                   </div>
+
+                                   {clientCols.length === 0 ? (
+                                     <div style={{ fontSize: 12, color: '#64748B', fontStyle: 'italic', padding: '10px 14px', background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                                       No payment receipts recorded yet for this client.
+                                     </div>
+                                   ) : (
+                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                                       {clientCols.map((col, idx) => {
+                                         const empName = col.receivedByUser?.name || 'Muhammad Ali (Admin)';
+                                         const remBal = col.remainingBalance ?? col.runningBalance ?? 0;
+                                         const refNo = col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`;
+
+                                         return (
+                                           <div key={col.id} style={{ background: '#F8FAFC', border: '1.5px solid #CBD5E1', borderRadius: 10, padding: '12px 14px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: '1px solid #E2E8F0', paddingBottom: 6 }}>
+                                               <span style={{ fontWeight: 800, fontSize: 12, color: '#0F172A' }}>
+                                                 Payment #{clientCols.length - idx}
+                                               </span>
+                                               <span className="mono" style={{ fontSize: 11, background: '#E2E8F0', color: '#334155', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
+                                                 {refNo}
+                                               </span>
+                                             </div>
+
+                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
+                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                 <span style={{ color: '#64748B', fontWeight: 600 }}>Amount Received:</span>
+                                                 <strong className="mono" style={{ color: '#166534', fontSize: 14 }}>{fmtMoney(col.amount)}</strong>
+                                               </div>
+                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                 <span style={{ color: '#64748B', fontWeight: 600 }}>Date &amp; Time:</span>
+                                                 <span style={{ fontWeight: 600, color: '#1E293B' }}>{fmtDateTime(col.date)}</span>
+                                               </div>
+                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                 <span style={{ color: '#64748B', fontWeight: 600 }}>Payment Method:</span>
+                                                 <span style={{ fontWeight: 800, textTransform: 'uppercase', color: '#1E40AF', background: '#DBEAFE', padding: '1px 6px', borderRadius: 4, fontSize: 10 }}>{col.method}</span>
+                                               </div>
+                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                 <span style={{ color: '#64748B', fontWeight: 600 }}>Received By:</span>
+                                                 <span style={{ fontWeight: 700, color: '#0F172A' }}>👤 {empName}</span>
+                                               </div>
+                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #CBD5E1', paddingTop: 6, marginTop: 2 }}>
+                                                 <span style={{ color: '#64748B', fontWeight: 700 }}>Remaining Balance:</span>
+                                                 <strong className="mono" style={{ color: remBal > 0 ? '#991B1B' : '#166534', fontSize: 13 }}>{fmtMoney(remBal)}</strong>
+                                               </div>
+                                             </div>
+                                           </div>
+                                         );
+                                       })}
+                                     </div>
+                                   )}
+                                 </div>
+                               );
+                             })()}
+                           </div>
+                         )}
                       </div>
                     );
                   })}
@@ -692,6 +766,51 @@ export default function CollectionsPage() {
                           })}
                         </div>
                       )}
+
+                      {/* Mobile Payment History Section */}
+                      {isExpanded && (() => {
+                        const clientCols = collections
+                          .filter(c => c.clientId === g.clientId)
+                          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                        return (
+                          <div style={{ marginTop: 12, borderTop: '1px dashed #CBD5E1', paddingTop: 10 }}>
+                            <div style={{ fontWeight: 800, fontSize: 12, color: '#1E293B', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>💳 PAYMENT HISTORY ({clientCols.length})</span>
+                            </div>
+
+                            {clientCols.length === 0 ? (
+                              <div style={{ fontSize: 11, color: '#64748B', fontStyle: 'italic', padding: '8px 10px', background: '#F8FAFC', borderRadius: 6 }}>
+                                No payment receipts recorded yet.
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {clientCols.map((col, idx) => {
+                                  const empName = col.receivedByUser?.name || 'Muhammad Ali (Admin)';
+                                  const remBal = col.remainingBalance ?? col.runningBalance ?? 0;
+                                  const refNo = col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`;
+
+                                  return (
+                                    <MobileCardBox key={col.id} bg="#F8FAFC" borderColor="#CBD5E1">
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                        <span style={{ fontWeight: 800, fontSize: 11, color: '#0F172A' }}>Payment #{clientCols.length - idx}</span>
+                                        <span className="mono" style={{ fontSize: 10, background: '#E2E8F0', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{refNo}</span>
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>
+                                        <MobileCardRow label="Amount Received" value={fmtMoney(col.amount)} valueColor="#166534" isMono />
+                                        <MobileCardRow label="Date & Time" value={fmtDateTime(col.date)} />
+                                        <MobileCardRow label="Method" value={col.method} />
+                                        <MobileCardRow label="Received By" value={`👤 ${empName}`} />
+                                        <MobileCardRow label="Remaining Balance" value={fmtMoney(remBal)} valueColor={remBal > 0 ? '#991B1B' : '#166534'} isMono />
+                                      </div>
+                                    </MobileCardBox>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </MobileCard>
                   );
                 })}

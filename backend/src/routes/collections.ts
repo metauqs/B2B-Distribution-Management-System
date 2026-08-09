@@ -39,14 +39,15 @@ router.get('/', async (req: Request, res: Response) => {
     const collections = await prisma.collection.findMany({
       where,
       include: {
-        client: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true, clientId: true } },
+        receivedByUser: { select: { id: true, name: true, role: true } },
         allocations: {
           include: {
             sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
           }
         }
       },
-      orderBy: { date: 'asc' },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       take: limit,
     });
 
@@ -63,7 +64,8 @@ router.get('/', async (req: Request, res: Response) => {
 
     const data = collections.map(c => ({
       ...c,
-      runningBalance: ledgerMap[c.id] ?? null
+      remainingBalance: c.remainingBalance ?? ledgerMap[c.id] ?? null,
+      runningBalance: ledgerMap[c.id] ?? c.remainingBalance ?? null
     }));
 
     return res.json({ success: true, data });
@@ -212,8 +214,19 @@ router.post('/', async (req: Request, res: Response) => {
       const remainingBalance = Math.max(0, totalPayable - amountReceived);
       const excessPayment = Math.max(0, amountReceived - totalPayable);
 
+      // Determine receivedByUserId from request header x-user-id or fallback to active User
+      let receivedByUserId: string | undefined = undefined;
+      if (userId) {
+        const u = await tx.user.findUnique({ where: { id: userId } });
+        if (u) receivedByUserId = u.id;
+      }
+      if (!receivedByUserId) {
+        const adminUser = await tx.user.findFirst({ where: { isActive: true } });
+        if (adminUser) receivedByUserId = adminUser.id;
+      }
+
       // Create Collection master record
-      const coll = await tx.collection.create({
+      let coll = await tx.collection.create({
         data: {
           clientId,
           branchId,
@@ -222,8 +235,13 @@ router.post('/', async (req: Request, res: Response) => {
           date: date ? parseInputDateToUtc(date) : parseInputDateToUtc(),
           reference: reference || (targetSale ? `INV-${targetSale.invoiceNo}` : undefined),
           notes: notes || (targetSale ? `Payment for Invoice ${targetSale.invoiceNo}` : undefined),
+          receivedByUserId,
+          remainingBalance: remainingBalance,
         },
-        include: { client: { select: { id: true, name: true } } },
+        include: {
+          client: { select: { id: true, name: true, clientId: true } },
+          receivedByUser: { select: { id: true, name: true, role: true } },
+        },
       });
 
       // Customer Ledger Entry (Credit decreases customer dues / increases advance credit)
@@ -237,6 +255,16 @@ router.post('/', async (req: Request, res: Response) => {
         description: targetSale ? `Payment for Invoice ${targetSale.invoiceNo}` : `Payment Received (${coll.method})`,
         debit: 0,
         credit: numAmount,
+      });
+
+      // Update exact post-ledger remaining balance on collection
+      coll = await tx.collection.update({
+        where: { id: coll.id },
+        data: { remainingBalance: ledgerRes.balance },
+        include: {
+          client: { select: { id: true, name: true, clientId: true } },
+          receivedByUser: { select: { id: true, name: true, role: true } },
+        },
       });
 
       // Payment Allocations (FIFO by default, or manual allocations if specified)

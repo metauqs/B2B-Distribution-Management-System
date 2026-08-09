@@ -1531,6 +1531,7 @@ export interface CollectionSlipData {
   phone?: string;
   paymentMethod: string;
   reference?: string;
+  receivedBy?: string;
   previousBalance: number;
   currentBillAmount?: number;
   totalPayable: number;
@@ -1568,6 +1569,7 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
         <div class="doc-info-label-urdu">ادائیگی تفصیل <span class="doc-info-sub-eng">(Payment Details)</span></div>
         <div class="doc-info-value"><strong>طریقہ (Method):</strong> ${data.paymentMethod}</div>
         ${data.reference ? `<div class="doc-info-value"><strong>Ref:</strong> ${data.reference}</div>` : ''}
+        ${data.receivedBy ? `<div class="doc-info-value"><strong>وصول کنندہ (Received By):</strong> ${data.receivedBy}</div>` : ''}
         <div class="doc-info-value"><strong>تاریخ (Date):</strong> ${data.date}</div>
       </div>
     </div>

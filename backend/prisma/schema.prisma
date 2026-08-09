@@ -63,6 +63,7 @@ model User {
   sales             Sale[]
   expensesCreated   Expense[]        @relation("ExpenseCreator")
   stockMovements    StockMovement[]
+  collectionsReceived Collection[]   @relation("CollectionReceivedBy")
   branch            Branch           @relation(fields: [branchId], references: [id])
 
   @@index([branchId])
@@ -296,23 +297,26 @@ model SupplierPayment {
 }
 
 model Collection {
-  id            String        @id @default(cuid())
-  clientId      String
-  amount        Float
-  method        PaymentMethod @default(CASH)
-  cashAccountId String?
-  bankAccountId String?
-  date          DateTime @db.Timestamptz(3)      @default(now())
-  reference     String?
-  notes         String?
-  branchId      String
-  createdAt     DateTime @db.Timestamptz(3)      @default(now())
-  deletedAt     DateTime? @db.Timestamptz(3)
-  allocations   CollectionAllocation[]
-  bankAccount   BankAccount?  @relation(fields: [bankAccountId], references: [id])
-  branch        Branch        @relation(fields: [branchId], references: [id])
-  cashAccount   CashAccount?  @relation(fields: [cashAccountId], references: [id])
-  client        Client        @relation(fields: [clientId], references: [id])
+  id               String        @id @default(cuid())
+  clientId         String
+  amount           Float
+  method           PaymentMethod @default(CASH)
+  cashAccountId    String?
+  bankAccountId    String?
+  receivedByUserId String?
+  remainingBalance Float?
+  date             DateTime      @default(now()) @db.Timestamptz(3)
+  reference        String?
+  notes            String?
+  branchId         String
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  deletedAt        DateTime?     @db.Timestamptz(3)
+  allocations      CollectionAllocation[]
+  bankAccount      BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  branch           Branch        @relation(fields: [branchId], references: [id])
+  cashAccount      CashAccount?  @relation(fields: [cashAccountId], references: [id])
+  client           Client        @relation(fields: [clientId], references: [id])
+  receivedByUser   User?         @relation("CollectionReceivedBy", fields: [receivedByUserId], references: [id])
 
   @@index([clientId])
   @@index([branchId])
@@ -320,6 +324,7 @@ model Collection {
   @@index([date])
   @@index([cashAccountId])
   @@index([bankAccountId])
+  @@index([receivedByUserId])
   @@map("collections")
 }
 
