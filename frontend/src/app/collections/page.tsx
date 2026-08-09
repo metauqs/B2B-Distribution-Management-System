@@ -1,16 +1,18 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime, todayInputDate, todayInputDateTime } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
-import { DueStatementModal } from '@/components/modals/DueStatementModal';
-import { CollectionReceiptModal } from '@/components/modals/CollectionReceiptModal';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiCashRegister } from '@mdi/js';
+
+const DueStatementModal = dynamic(() => import('@/components/modals/DueStatementModal').then(m => m.DueStatementModal), { ssr: false });
+const CollectionReceiptModal = dynamic(() => import('@/components/modals/CollectionReceiptModal').then(m => m.CollectionReceiptModal), { ssr: false });
 
 interface Sale {
   id: string;
@@ -200,49 +202,51 @@ export default function CollectionsPage() {
 
   const clientInvoices = sales.filter(s => s.clientId === form.clientId && s.balance > 0);
 
-  // Group sales invoices per client using official invoice fields
-  const groupedSales = clients.reduce((acc: { [key: string]: { clientId: string; clientNo: string; clientName: string; dueBalance: number; items: any[] } }, client) => {
-    const clientSales = sales.filter(s => s.clientId === client.id);
-    if (clientSales.length === 0 && client.currentBalance === 0) return acc;
+  // Group sales invoices per client using official invoice fields (Memoized for high-speed rendering)
+  const groupedList = useMemo(() => {
+    const groupedSales = clients.reduce((acc: { [key: string]: { clientId: string; clientNo: string; clientName: string; dueBalance: number; items: any[] } }, client) => {
+      const clientSales = sales.filter(s => s.clientId === client.id);
+      if (clientSales.length === 0 && client.currentBalance === 0) return acc;
 
-    const sortedSales = [...clientSales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    let runningDue = client.openingBalance ?? 0;
+      const sortedSales = [...clientSales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      let runningDue = client.openingBalance ?? 0;
 
-    const items = sortedSales.map(sale => {
-      const previousOutstanding = runningDue;
-      const currentOrder        = sale.total;
-      const totalPayable        = previousOutstanding + currentOrder;
-      const collectedAmount     = sale.paid;
-      const dueBalance          = Math.max(0, totalPayable - collectedAmount);
-      runningDue = dueBalance;
+      const items = sortedSales.map(sale => {
+        const previousOutstanding = runningDue;
+        const currentOrder        = sale.total;
+        const totalPayable        = previousOutstanding + currentOrder;
+        const collectedAmount     = sale.paid;
+        const dueBalance          = Math.max(0, totalPayable - collectedAmount);
+        runningDue = dueBalance;
 
-      return {
-        id:                  sale.id,
-        invoiceNo:           sale.invoiceNo,
-        date:                sale.date,
-        paymentMode:         sale.paymentMode,
-        previousOutstanding,
-        currentOrder,
-        totalPayable,
-        payNow:              sale.paid,   // amount paid at checkout time
-        collectedAmount,
-        dueBalance,
-        status:              sale.status,
+        return {
+          id:                  sale.id,
+          invoiceNo:           sale.invoiceNo,
+          date:                sale.date,
+          paymentMode:         sale.paymentMode,
+          previousOutstanding,
+          currentOrder,
+          totalPayable,
+          payNow:              sale.paid,   // amount paid at checkout time
+          collectedAmount,
+          dueBalance,
+          status:              sale.status,
+        };
+      });
+
+      acc[client.id] = {
+        clientId:   client.id,
+        clientNo:   client.clientId || 'WH-0000',
+        clientName: client.name,
+        dueBalance: client.currentBalance,
+        items
       };
-    });
 
-    acc[client.id] = {
-      clientId:   client.id,
-      clientNo:   client.clientId || 'WH-0000',
-      clientName: client.name,
-      dueBalance: client.currentBalance,
-      items
-    };
+      return acc;
+    }, {});
 
-    return acc;
-  }, {});
-
-  const groupedList = Object.values(groupedSales).filter(g => g.items.length > 0 || g.dueBalance > 0);
+    return Object.values(groupedSales).filter(g => g.items.length > 0 || g.dueBalance > 0);
+  }, [clients, sales]);
 
   return (
     <DashboardLayout>

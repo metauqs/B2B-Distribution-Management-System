@@ -12,9 +12,11 @@ import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
+import dynamic from 'next/dynamic';
 import { usePreservedState } from '@/hooks/usePreservedState';
-import { WhatsAppShareModal } from '@/components/modals/WhatsAppShareModal';
 import { salesService } from '@/services/salesService';
+
+const WhatsAppShareModal = dynamic(() => import('@/components/modals/WhatsAppShareModal').then(m => m.WhatsAppShareModal), { ssr: false });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

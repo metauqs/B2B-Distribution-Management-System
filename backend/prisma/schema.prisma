@@ -201,6 +201,7 @@ model Sale {
   @@index([status])
   @@index([invoiceNo])
   @@index([employeeId])
+  @@index([clientId, status, deletedAt])
   @@map("sales")
 }
 
@@ -325,6 +326,7 @@ model Collection {
   @@index([cashAccountId])
   @@index([bankAccountId])
   @@index([receivedByUserId])
+  @@index([clientId, deletedAt])
   @@map("collections")
 }
 
