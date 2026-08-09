@@ -10,7 +10,7 @@ import { DueStatementModal } from '@/components/modals/DueStatementModal';
 import { CollectionReceiptModal } from '@/components/modals/CollectionReceiptModal';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
-import { mdiCashRegister, mdiFormatListBulleted } from '@mdi/js';
+import { mdiCashRegister } from '@mdi/js';
 
 interface Sale {
   id: string;
@@ -60,7 +60,7 @@ export default function CollectionsPage() {
   });
   const [saving,      setSaving]      = useState(false);
   const [toast,       setToast]       = useState('');
-  const [view,        setView]        = useState<'list' | 'add' | 'registry'>('list');
+  const [view,        setView]        = useState<'list' | 'add'>('list');
   const [form,        setForm]        = useState({ ...BLANK_FORM });
   const [expandedClients, setExpandedClients] = useState<{ [key: string]: boolean }>({});
 
@@ -102,36 +102,7 @@ export default function CollectionsPage() {
     setStatementMode('share');
   };
 
-  // ── Registry state ────────────────────────────────────────────────────────────
-  const [regRows,    setRegRows]    = useState<any[]>([]);
-  const [regTotals,  setRegTotals]  = useState<any>(null);
-  const [regLoading, setRegLoading] = useState(false);
-  const [regSrch,    setRegSrch]    = useState('');
-  const [regStatus,  setRegStatus]  = useState('all');
-  const [regFrom,    setRegFrom]    = useState('');
-  const [regTo,      setRegTo]      = useState('');
-
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
-
-  // ── Load registry ─────────────────────────────────────────────────────────────
-  const loadRegistry = useCallback(async (isBackground = false) => {
-    if (!isBackground) setRegLoading(true);
-    try {
-      const p = new URLSearchParams({ limit: '500' });
-      if (regSrch)             p.set('search', regSrch);
-      if (regStatus !== 'all') p.set('status', regStatus);
-      if (regFrom)             p.set('from', regFrom);
-      if (regTo)               p.set('to', regTo + 'T23:59:59');
-      const key = `/api/reports/invoice-registry?${p}`;
-      const data = await fetchWithCache<any>(key, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
-      if (data) {
-        setRegRows(data.data ?? []);
-        setRegTotals(data.totals ?? null);
-      }
-    } catch (err) {
-      console.error('loadRegistry error:', err);
-    } finally { setRegLoading(false); }
-  }, [regSrch, regStatus, regFrom, regTo]);
 
   const toggleExpand = (cid: string) => {
     setExpandedClients(prev => ({ ...prev, [cid]: !prev[cid] }));
@@ -165,13 +136,10 @@ export default function CollectionsPage() {
   useEffect(() => {
     const handleRevalidate = () => {
       load(true);
-      if (view === 'registry') {
-        loadRegistry(true);
-      }
     };
     window.addEventListener('app-revalidate', handleRevalidate);
     return () => window.removeEventListener('app-revalidate', handleRevalidate);
-  }, [load, view, loadRegistry]);
+  }, [load]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,10 +263,7 @@ export default function CollectionsPage() {
             <p style={{ color: 'var(--muted)', fontSize: 13, margin: '4px 0 0 0' }}>Outstanding invoice collections, cash tracking, and payment matching</p>
           </div>
           {view === 'list' ? (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="va-btn secondary small" onClick={() => { setView('registry'); loadRegistry(); }} style={{ fontWeight: 700 }}>📋 Registry</button>
-              <button className="va-btn" onClick={() => { setForm({ ...BLANK_FORM, date: todayInputDateTime() }); setView('add'); }}>+ Record Payment</button>
-            </div>
+            <button className="va-btn" onClick={() => { setForm({ ...BLANK_FORM, date: todayInputDateTime() }); setView('add'); }}>+ Record Payment</button>
           ) : (
             <button className="va-btn secondary small" onClick={() => setView('list')}>← Back</button>
           )}
@@ -836,186 +801,6 @@ export default function CollectionsPage() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════ */}
-      {/* VIEW: INVOICE COLLECTIONS REGISTRY               */}
-      {/* ══════════════════════════════════════════════════ */}
-      {view === 'registry' && (
-        <>
-          {/* Registry Header */}
-          <div className="va-panel" style={{ padding: '16px 20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-              <div>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, verticalAlign: 'middle' }}>
-                  <Icon path={mdiFormatListBulleted} size={1} color="var(--primary)" />
-                  <h2 style={{ margin: 0 }}>Invoice Collections Registry</h2>
-                </div>
-                <p style={{ color: 'var(--muted)', fontSize: 13, margin: '4px 0 0 0' }}>Complete financial view — Previous Dues, Current Order, Total Bill, Collections, and Balance per invoice</p>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="va-btn secondary small" onClick={() => setView('list')}>← Back</button>
-                <button className="va-btn secondary small" onClick={() => loadRegistry()}>↻ Refresh</button>
-                <button className="va-btn secondary small" onClick={() => {
-                  if (!regRows.length) return;
-                  const headers = ['Invoice ID','Date & Time','Client ID','Client Name','Previous Dues (Rs)','Current Order (Rs)','Total Bill (Rs)','Pay Now (Rs)','Collected (Rs)','Due Balance (Rs)','Status'];
-                  const rows = regRows.map(r => [
-                    r.invoiceNo,
-                    new Date(r.date).toLocaleString('en-GB'),
-                    r.clientId,
-                    r.clientName,
-                    r.previousDues,
-                    r.currentOrderAmount,
-                    r.totalBill,
-                    r.payNow,
-                    r.collectedAmount,
-                    r.dueBalance,
-                    r.status,
-                  ]);
-                  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-                  const blob = new Blob([csv], { type: 'text/csv' });
-                  const a = document.createElement('a');
-                  a.href = URL.createObjectURL(blob);
-                  a.download = `invoice-registry-${new Date().toISOString().slice(0,10)}.csv`;
-                  a.click();
-                }} style={{ background: '#1F3D2B', color: '#fff', border: 'none' }}>⬇ Export CSV</button>
-              </div>
-            </div>
-          </div>
-
-          {/* Registry Filters */}
-          <div className="va-panel" style={{ padding: '10px 16px' }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <input
-                value={regSrch} onChange={e => setRegSrch(e.target.value)}
-                placeholder="🔍 Invoice # or client…"
-                style={{ flex: 2, minWidth: 180, padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}
-              />
-              <select value={regStatus} onChange={e => setRegStatus(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}>
-                <option value="all">All Status</option>
-                {['PENDING','PARTIAL','PAID','CANCELLED'].map(s => <option key={s}>{s}</option>)}
-              </select>
-              <input type="date" value={regFrom} onChange={e => setRegFrom(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }} />
-              <span style={{ color: 'var(--muted)', fontSize: 12 }}>to</span>
-              <input type="date" value={regTo} onChange={e => setRegTo(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }} />
-              <button className="va-btn secondary small" onClick={() => loadRegistry()}>Apply</button>
-            </div>
-          </div>
-
-          {/* Summary KPI Cards */}
-          {regTotals && (
-            <div className="va-cards">
-              <div className="va-card">
-                <div className="label">Total Previous Dues</div>
-                <div className="value" style={{ color: 'var(--clay)' }}>{fmtMoney(regTotals.previousDues)}</div>
-                <div className="foot">carried forward balances</div>
-              </div>
-              <div className="va-card">
-                <div className="label">Total Current Orders</div>
-                <div className="value" style={{ color: 'var(--forest)' }}>{fmtMoney(regTotals.currentOrderAmount)}</div>
-                <div className="foot">this period invoices</div>
-              </div>
-              <div className="va-card">
-                <div className="label">Total Collected</div>
-                <div className="value" style={{ color: 'var(--ok)' }}>{fmtMoney(regTotals.collectedAmount)}</div>
-                <div className="foot">payments received</div>
-              </div>
-              <div className="va-card">
-                <div className="label">Total Outstanding</div>
-                <div className="value" style={{ color: regTotals.dueBalance > 0 ? 'var(--clay)' : 'var(--ok)' }}>{fmtMoney(regTotals.dueBalance)}</div>
-                <div className="foot">remaining receivables</div>
-              </div>
-            </div>
-          )}
-
-          {/* Registry Table */}
-          <div className="va-panel">
-            {regLoading ? (
-              <div className="va-loading">Loading registry…</div>
-            ) : regRows.length === 0 ? (
-              <div className="va-empty">
-                <div className="big">No invoices found</div>
-                <div>Try adjusting the filters or date range</div>
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <table className="va-table" style={{ minWidth: 800 }}>
-                  <thead>
-                    <tr>
-                      <th>Invoice ID</th>
-                      <th>Date &amp; Time</th>
-                      <th>Client ID</th>
-                      <th>Client Name</th>
-                      <th style={{ textAlign: 'right' }}>Previous Dues</th>
-                      <th style={{ textAlign: 'right' }}>Current Order</th>
-                      <th style={{ textAlign: 'right' }}>Total Bill</th>
-                      <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Pay Now</th>
-                      <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Collected</th>
-                      <th style={{ textAlign: 'right', color: 'var(--clay)' }}>Due Balance</th>
-                      <th style={{ textAlign: 'center' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {regRows.map(r => {
-                      const statusColor =
-                        r.status === 'PAID'      ? { bg: '#F0FAF3', badge: 'var(--ok)' }
-                        : r.status === 'PARTIAL' ? { bg: '#FFFBF0', badge: '#B87333' }
-                        : r.status === 'CANCELLED' ? { bg: '#F5F5F5', badge: '#9E9E9E' }
-                        :                          { bg: '#FFF5F0', badge: 'var(--clay)' };
-                      return (
-                        <tr key={r.id} style={{ background: statusColor.bg }}>
-                          <td className="mono" style={{ fontWeight: 700, color: 'var(--forest)', whiteSpace: 'nowrap' }}>{r.invoiceNo}</td>
-                          <td style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDateTime(r.date)}</td>
-                          <td className="mono" style={{ fontSize: 12, color: 'var(--muted)' }}>{r.clientId}</td>
-                          <td style={{ fontWeight: 600, minWidth: 140 }}>{r.clientName}</td>
-                          <td className="mono" style={{ textAlign: 'right', color: r.previousDues > 0 ? 'var(--clay)' : 'var(--muted)' }}>
-                            {r.previousDues > 0 ? fmtMoney(r.previousDues) : '—'}
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(r.currentOrderAmount)}</td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(r.totalBill)}</td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: r.payNow > 0 ? 'var(--ok)' : 'var(--muted)' }}>
-                            {r.payNow > 0 ? fmtMoney(r.payNow) : '—'}
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', color: r.collectedAmount > 0 ? 'var(--ok)' : 'var(--muted)' }}>
-                            {r.collectedAmount > 0 ? fmtMoney(r.collectedAmount) : '—'}
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: r.dueBalance > 0 ? 'var(--clay)' : 'var(--muted)' }}>
-                            {r.dueBalance > 0 ? fmtMoney(r.dueBalance) : '✓ 0'}
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', fontSize: 11, fontWeight: 700,
-                              padding: '3px 9px', borderRadius: 10,
-                              background: statusColor.badge + '22', color: statusColor.badge,
-                              border: `1px solid ${statusColor.badge}44`
-                            }}>{r.status}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  {/* Totals footer row */}
-                  {regTotals && (
-                    <tfoot>
-                      <tr style={{ background: '#1F3D2B', color: '#fff', fontWeight: 700 }}>
-                        <td colSpan={4} style={{ color: '#fff', fontWeight: 700 }}>Totals ({regRows.length} invoices)</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#FFD080' }}>{fmtMoney(regTotals.previousDues)}</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#A8D5B5' }}>{fmtMoney(regTotals.currentOrderAmount)}</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#fff', fontWeight: 800 }}>{fmtMoney(regTotals.totalBill)}</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#6FD89A', fontWeight: 700 }}>{fmtMoney(regTotals.payNow)}</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#6FD89A' }}>{fmtMoney(regTotals.collectedAmount)}</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#FF8A80', fontWeight: 800 }}>{fmtMoney(regTotals.dueBalance)}</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-            )}
-          </div>
-        </>
-      )}
       {statementClient && (
         <DueStatementModal
           client={statementClient}
