@@ -204,7 +204,7 @@ export default function CollectionsPage() {
           whatsapp: (clientObj as any)?.whatsapp || (clientObj as any)?.phone || undefined,
           paymentMethod: form.method,
           reference: form.reference || undefined,
-          receivedBy: data.data.receivedByUser?.name || 'Muhammad Ali',
+          receivedBy: data.data.receivedByUser?.name || undefined,
           previousBalance: data.data.summary?.previousBalance ?? 0,
           currentBillAmount: data.data.summary?.currentBillAmount ?? 0,
           totalPayable: data.data.summary?.totalPayable ?? 0,
@@ -613,7 +613,7 @@ export default function CollectionsPage() {
                                    ) : (
                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
                                        {clientCols.map((col, idx) => {
-                                         const empName = col.receivedByUser?.name || 'Muhammad Ali (Admin)';
+                                         const empName = col.receivedByUser?.name || 'Unrecorded (Historical)';
                                          const remBal = col.remainingBalance ?? col.runningBalance ?? 0;
                                          const refNo = col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`;
 
@@ -786,7 +786,7 @@ export default function CollectionsPage() {
                             ) : (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 {clientCols.map((col, idx) => {
-                                  const empName = col.receivedByUser?.name || 'Muhammad Ali (Admin)';
+                                  const empName = col.receivedByUser?.name || 'Unrecorded (Historical)';
                                   const remBal = col.remainingBalance ?? col.runningBalance ?? 0;
                                   const refNo = col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`;
 

@@ -11,7 +11,7 @@ const router = Router();
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
-    const { clientId, from, to, limit: limitQuery } = req.query;
+    const { clientId, employeeId, method, search, from, to, limit: limitQuery } = req.query;
     const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 500) : 100;
 
     const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
@@ -28,6 +28,15 @@ router.get('/', async (req: Request, res: Response) => {
       deletedAt: null,
       ...(branchId ? { branchId } : {}),
       ...(clientId ? { clientId: String(clientId) } : {}),
+      ...(employeeId ? { receivedByUserId: String(employeeId) } : {}),
+      ...(method && method !== 'all' ? { method: String(method).toUpperCase() } : {}),
+      ...(search ? {
+        OR: [
+          { reference: { contains: String(search), mode: 'insensitive' } },
+          { notes: { contains: String(search), mode: 'insensitive' } },
+          { client: { name: { contains: String(search), mode: 'insensitive' } } },
+        ]
+      } : {}),
       ...(dateFrom || dateTo ? {
         date: {
           ...(dateFrom ? { gte: dateFrom } : {}),
@@ -52,7 +61,11 @@ router.get('/', async (req: Request, res: Response) => {
     });
 
     if (collections.length === 0) {
-      return res.json({ success: true, data: [] });
+      return res.json({
+        success: true,
+        data: [],
+        summary: { totalAmount: 0, count: 0, byMethod: {}, byEmployee: {} }
+      });
     }
 
     const collectionIds = collections.map(c => c.id);
@@ -68,7 +81,27 @@ router.get('/', async (req: Request, res: Response) => {
       runningBalance: ledgerMap[c.id] ?? c.remainingBalance ?? null
     }));
 
-    return res.json({ success: true, data });
+    const totalAmount = collections.reduce((sum, c) => sum + c.amount, 0);
+    const count = collections.length;
+    const byMethod: { [key: string]: number } = {};
+    const byEmployee: { [key: string]: number } = {};
+
+    collections.forEach(c => {
+      byMethod[c.method] = (byMethod[c.method] || 0) + c.amount;
+      const empName = c.receivedByUser?.name || 'Unrecorded (Historical)';
+      byEmployee[empName] = (byEmployee[empName] || 0) + c.amount;
+    });
+
+    return res.json({
+      success: true,
+      data,
+      summary: {
+        totalAmount,
+        count,
+        byMethod,
+        byEmployee,
+      }
+    });
   } catch (err: any) {
     console.error('Error in GET /api/collections:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load collections' });
@@ -195,6 +228,19 @@ router.post('/', async (req: Request, res: Response) => {
   const client = await prisma.client.findUnique({ where: { id: clientId, deletedAt: null } });
   if (!client) return res.status(404).json({ success: false, error: 'Client not found' });
 
+  // Idempotency / Duplicate Check: Prevent accidental double-clicking within 5 seconds
+  const recentDuplicate = await prisma.collection.findFirst({
+    where: {
+      clientId,
+      amount: numAmount,
+      deletedAt: null,
+      createdAt: { gte: new Date(Date.now() - 5000) }
+    }
+  });
+  if (recentDuplicate) {
+    return res.status(409).json({ success: false, error: 'Duplicate payment detected. Please wait a moment before submitting again.' });
+  }
+
   try {
     const result = await prisma.$transaction(async tx => {
       const currentClient = await tx.client.findUnique({
@@ -214,15 +260,11 @@ router.post('/', async (req: Request, res: Response) => {
       const remainingBalance = Math.max(0, totalPayable - amountReceived);
       const excessPayment = Math.max(0, amountReceived - totalPayable);
 
-      // Determine receivedByUserId from request header x-user-id or fallback to active User
+      // Determine receivedByUserId strictly from authenticated user token (No hardcoded fallback!)
       let receivedByUserId: string | undefined = undefined;
       if (userId) {
         const u = await tx.user.findUnique({ where: { id: userId } });
         if (u) receivedByUserId = u.id;
-      }
-      if (!receivedByUserId) {
-        const adminUser = await tx.user.findFirst({ where: { isActive: true } });
-        if (adminUser) receivedByUserId = adminUser.id;
       }
 
       // Create Collection master record
