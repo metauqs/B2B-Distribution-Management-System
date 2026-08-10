@@ -275,37 +275,38 @@ router.post('/', async (req: Request, res: Response) => {
         },
       });
 
-      // Execute Delivery assignment, Inventory StockOuts, and Ledger in parallel
-      await Promise.all([
-        tx.delivery.create({
-          data: {
-            saleId: s.id,
-            clientId,
-            branchId,
-            employeeId: employeeId || undefined,
-            date: deliveryDate ? new Date(deliveryDate) : s.date,
-            scheduledTime: deliveryTime || undefined,
-            status: 'PENDING',
-          }
-        }),
-        Promise.all(
-          items
-            .filter((item: any) => item.productId)
-            .map((item: any) =>
-              stockOut(tx, {
-                productId: item.productId,
-                branchId,
-                qty: Number(item.qty),
-                unit: item.unit ?? 'KG',
-                refType: 'sale',
-                refId: s.id,
-                refNo: invoiceNo,
-                userId: validatedUserId ?? undefined,
-                date: s.date,
-              })
-            )
-        )
-      ]);
+      // Create Delivery record
+      await tx.delivery.create({
+        data: {
+          saleId: s.id,
+          clientId,
+          branchId,
+          employeeId: employeeId || undefined,
+          date: deliveryDate ? new Date(deliveryDate) : s.date,
+          scheduledTime: deliveryTime || undefined,
+          status: 'PENDING',
+        }
+      });
+
+      // Inventory StockOuts — sequential to prevent idempotency race condition.
+      // Using Promise.all() inside a single Prisma tx causes all concurrent reads
+      // to see zero existing movements (uncommitted writes are invisible to parallel
+      // reads in the same tx), so every call passes the idempotency check and writes,
+      // producing duplicate SALE deductions. Sequential for...of guarantees each
+      // stockOut's movement is committed before the next idempotency check runs.
+      for (const item of items.filter((item: any) => item.productId)) {
+        await stockOut(tx, {
+          productId: item.productId,
+          branchId,
+          qty: Number(item.qty),
+          unit: item.unit ?? 'KG',
+          refType: 'sale',
+          refId: s.id,
+          refNo: invoiceNo,
+          userId: validatedUserId ?? undefined,
+          date: s.date,
+        });
+      }
 
       await recordCustomerLedgerEntry(tx, {
         clientId,

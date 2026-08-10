@@ -242,13 +242,16 @@ export interface StockOutParams {
 export async function stockOut(tx: any, p: StockOutParams): Promise<void> {
   const db = tx || prisma;
 
-  // Idempotency Check: Prevent duplicate StockMovement for the same sale/checkout
+  // Idempotency Check: Prevent duplicate StockMovement for the same sale/checkout.
+  // IMPORTANT: refType is included in the filter so that 'sale' and 'sale_edit'
+  // are treated as separate idempotency domains — an edit-increase on the same
+  // saleId must not be blocked by the original 'sale' movement.
   if (p.refType && p.refId) {
     const existingMovement = await db.stockMovement.findFirst({
       where: {
         productId: p.productId,
         branchId: p.branchId,
-        refType: p.refType,
+        refType: p.refType,   // 'sale' vs 'sale_edit' are distinct domains
         refId: p.refId,
         type: 'SALE',
       }
@@ -374,11 +377,11 @@ export async function syncInvoiceEditStock(
           qty: -delta,
           previousStock: currentQty,
           newStock: finalQty,
-          refType: 'sale_edit',
+          refType: 'sale_edit',           // standardized: deduction from invoice edit
           refId: saleId,
           userId: userId ?? undefined,
           date: new Date(),
-          note: `Invoice Edit Stock Out — ${invoiceNo} | Qty: -${delta} ${unit} (Qty changed ${oldQty} → ${newQty})`,
+          note: `Invoice Edit Stock Out — ${invoiceNo} | ${productId.slice(-6)} Qty: ${oldQty} → ${newQty} (−${delta} ${unit})`,
         }
       });
     } else {
@@ -400,11 +403,11 @@ export async function syncInvoiceEditStock(
           qty: restoreQty,
           previousStock: currentQty,
           newStock: finalQty,
-          refType: 'sale_edit_restore',
+          refType: 'sale_edit_restore',   // standardized: restoration from invoice edit
           refId: saleId,
           userId: userId ?? undefined,
           date: new Date(),
-          note: `Invoice Edit Stock Return — ${invoiceNo} | Qty: +${restoreQty} ${unit} (Qty changed ${oldQty} → ${newQty})`,
+          note: `Invoice Edit Stock Restore — ${invoiceNo} | ${productId.slice(-6)} Qty: ${oldQty} → ${newQty} (+${restoreQty} ${unit})`,
         }
       });
     }
@@ -622,6 +625,26 @@ export interface StockReturnParams {
 
 export async function stockReturn(tx: any, p: StockReturnParams): Promise<void> {
   const db = tx || prisma;
+
+  // Idempotency Check: Prevent double-restoration on network retries or repeated
+  // failed-delivery calls. A return movement with the same refType+refId+productId
+  // should only ever be recorded once.
+  if (p.refType && p.refId) {
+    const existingReturn = await db.stockMovement.findFirst({
+      where: {
+        productId: p.productId,
+        branchId: p.branchId,
+        refType: p.refType,
+        refId: p.refId,
+        qty: { gt: 0 },
+      }
+    });
+    if (existingReturn) {
+      console.log(`[stockReturn] Return already logged for ${p.refType}:${p.refId} product ${p.productId}. Skipping duplicate.`);
+      return;
+    }
+  }
+
   const existing = await db.inventory.findUnique({
     where: { productId_branchId: { productId: p.productId, branchId: p.branchId } },
     select: { qty: true },
