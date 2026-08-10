@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
@@ -14,6 +15,8 @@ import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
 import { ProductVisual } from '@/components/ui/ProductVisual';
 import { useAccess } from '@/hooks/useAccess';
+
+const WhatsAppShareModal = dynamic(() => import('@/components/modals/WhatsAppShareModal').then(m => m.WhatsAppShareModal), { ssr: false });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -136,6 +139,7 @@ export default function PriceListPage() {
   const [showShareOptionsModal, setShowShareOptionsModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewImgUrl, setPreviewImgUrl] = useState<string | null>(null);
+  const [waShareModal, setWaShareModal] = useState<{ jpgBase64: string; whatsappUrl: string; filename: string; displayPhone?: string } | null>(null);
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [broadcastFilter, setBroadcastFilter] = useState<'ALL' | 'CATEGORY' | 'SELECTED'>('ALL');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -525,34 +529,33 @@ export default function PriceListPage() {
     }
   };
 
-  const downloadPriceListJpg = async () => {
-    showToast('⏳ Generating image...');
+  const openWhatsAppDownloadModal = async (filenamePrefix = 'PriceList') => {
+    showToast('⏳ Generating Price List image...');
     try {
       const base64Img = await generateBroadcastImageBase64();
       if (!base64Img) {
-        showToast('❌ Unable to generate the image. Please try again.');
+        showToast('❌ Unable to generate Price List image.');
         return;
       }
-      showToast('📦 Preparing download...');
-      await downloadImage(base64Img, `PriceList_${targetDate}.jpg`, showToast);
+      setShowShareOptionsModal(false);
+      setShowPreviewModal(false);
+      setWaShareModal({
+        jpgBase64: base64Img,
+        whatsappUrl: 'https://wa.me/',
+        filename: `${filenamePrefix}_${targetDate}.jpg`,
+        displayPhone: 'WhatsApp',
+      });
     } catch (err: any) {
-      showToast('❌ Unable to generate the image. Please try again.');
+      showToast('❌ Unable to prepare WhatsApp share image.');
     }
   };
 
+  const downloadPriceListJpg = async () => {
+    await openWhatsAppDownloadModal('PriceList');
+  };
+
   const shareWhatsAppStatus = async () => {
-    showToast('⏳ Generating image...');
-    try {
-      const base64Img = await generateBroadcastImageBase64();
-      if (!base64Img) {
-        showToast('❌ Unable to generate the image. Please try again.');
-        return;
-      }
-      showToast('📦 Preparing download...');
-      await downloadImage(base64Img, `PriceList_Status_${targetDate}.jpg`, showToast);
-    } catch (err: any) {
-      showToast('❌ Unable to generate the image. Please try again.');
-    }
+    await openWhatsAppDownloadModal('PriceList_Status');
   };
 
   const previewPriceListImage = async () => {
@@ -2395,6 +2398,17 @@ export default function PriceListPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {waShareModal && (
+        <WhatsAppShareModal
+          imageBase64={waShareModal.jpgBase64}
+          filename={waShareModal.filename}
+          whatsappUrl={waShareModal.whatsappUrl}
+          displayPhone={waShareModal.displayPhone}
+          onClose={() => setWaShareModal(null)}
+          onToast={showToast}
+        />
       )}
     </DashboardLayout>
   );

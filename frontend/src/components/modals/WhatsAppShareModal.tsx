@@ -50,6 +50,16 @@ export function WhatsAppShareModal({
     );
   }, []);
 
+  const docTypeLabel = filename.toLowerCase().includes('pricelist')
+    ? 'Price List'
+    : filename.toLowerCase().includes('due') || filename.toLowerCase().includes('statement')
+    ? 'Due Statement'
+    : filename.toLowerCase().includes('receipt') || filename.toLowerCase().includes('collection')
+    ? 'Payment Receipt'
+    : filename.toLowerCase().includes('invoice')
+    ? 'Invoice'
+    : 'Document';
+
   // ── Copy image to clipboard (PNG) ─────────────────────────────────────────
   const copyImageToClipboard = async () => {
     try {
@@ -87,7 +97,13 @@ export function WhatsAppShareModal({
       if (onToast) onToast('✅ Image copied! Now open WhatsApp and paste.');
       setTimeout(() => setCopied(false), 5000);
     } catch {
-      // Fallback — download the image
+      downloadImageDirectly();
+    }
+  };
+
+  // ── Direct download of image file ──────────────────────────────────────────
+  const downloadImageDirectly = () => {
+    try {
       const link = document.createElement('a');
       link.href = imageBase64;
       link.download = filename;
@@ -96,14 +112,15 @@ export function WhatsAppShareModal({
       document.body.removeChild(link);
       setStep(2);
       if (onToast) onToast('📦 Image downloaded! Attach it inside WhatsApp.');
+    } catch {
+      if (onToast) onToast('❌ Failed to download image.');
     }
   };
 
-  // ── Open WhatsApp main screen (NO phone number — avoids lookup error) ────────
+  // ── Open WhatsApp main screen ─────────────────────────────────────────────
   const openWhatsApp = () => {
-    // Open WhatsApp without pre-dialing so we NEVER hit the "Couldn't look up number" error.
-    // User will paste the copied image into any chat they choose.
-    window.open('https://wa.me/', '_blank');
+    const targetUrl = (whatsappUrl && whatsappUrl !== 'https://wa.me/') ? whatsappUrl : 'https://wa.me/';
+    window.open(targetUrl, '_blank');
     setStep(3);
   };
 
@@ -132,7 +149,7 @@ export function WhatsAppShareModal({
         backgroundColor: '#fff',
         borderRadius: '20px',
         width: '100%',
-        maxWidth: '460px',
+        maxWidth: '480px',
         maxHeight: '92vh',
         display: 'flex',
         flexDirection: 'column',
@@ -151,7 +168,7 @@ export function WhatsAppShareModal({
           flexShrink: 0,
         }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: '15px' }}>📲 Share via WhatsApp</div>
+            <div style={{ fontWeight: 700, fontSize: '15px' }}>📲 Share {docTypeLabel} via WhatsApp</div>
             <div style={{ fontSize: '11px', opacity: 0.75, marginTop: '2px' }}>{filename}</div>
           </div>
           <button
@@ -202,12 +219,10 @@ export function WhatsAppShareModal({
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: '13px', color: stepColor(1) }}>
-                {copySupported ? 'Copy the Invoice Image' : 'Download the Invoice Image'}
+                Copy or Download the {docTypeLabel} Image
               </div>
               <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px', lineHeight: 1.4 }}>
-                {copySupported
-                  ? 'Tap the green button below. The image is copied to your clipboard.'
-                  : 'Tap the green button below. The image will download to your device.'}
+                Tap <strong>Copy Image</strong> to copy to clipboard, or <strong>Download Image</strong> to save the file.
               </div>
             </div>
           </div>
@@ -224,9 +239,9 @@ export function WhatsAppShareModal({
               {step > 2 ? '✓' : '2'}
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: '13px', color: stepColor(2) }}>Open WhatsApp & find the client</div>
+              <div style={{ fontWeight: 700, fontSize: '13px', color: stepColor(2) }}>Open WhatsApp & find the chat</div>
               <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px', lineHeight: 1.4 }}>
-                Tap "Open WhatsApp" below. Search for the client{displayPhone ? ` (${displayPhone})` : ''} and open their chat.
+                Tap "Open WhatsApp" below. Search for the recipient{displayPhone ? ` (${displayPhone})` : ''} and open their chat.
               </div>
             </div>
           </div>
@@ -252,23 +267,45 @@ export function WhatsAppShareModal({
         </div>
 
         {/* ── Action Buttons ── */}
-        <div style={{ padding: '0 16px 14px', display: 'flex', gap: '10px', flexShrink: 0 }}>
-          {/* Step 1 button: Copy / Download */}
+        <div style={{ padding: '0 16px 14px', display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
+          {/* Step 1 button: Copy */}
+          {copySupported && (
+            <button
+              onClick={copyImageToClipboard}
+              style={{
+                flex: 1,
+                minWidth: '110px',
+                padding: '12px 10px',
+                background: copied ? '#16a34a' : 'linear-gradient(135deg, #1A3C28, #2D6A4F)',
+                color: '#fff', border: 'none',
+                borderRadius: '12px', fontWeight: 700,
+                fontSize: '12.5px', cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                boxShadow: copied ? '0 4px 12px rgba(22,163,74,0.3)' : '0 4px 12px rgba(26,60,40,0.25)',
+              }}
+            >
+              {copied ? '✅ Image Copied!' : '📋 Copy Image'}
+            </button>
+          )}
+
+          {/* Step 1 button: Download */}
           <button
-            onClick={copyImageToClipboard}
+            onClick={downloadImageDirectly}
             style={{
               flex: 1,
-              padding: '12px 14px',
-              background: copied ? '#16a34a' : 'linear-gradient(135deg, #1A3C28, #2D6A4F)',
+              minWidth: '110px',
+              padding: '12px 10px',
+              background: '#0F766E',
               color: '#fff', border: 'none',
               borderRadius: '12px', fontWeight: 700,
-              fontSize: '13px', cursor: 'pointer',
+              fontSize: '12.5px', cursor: 'pointer',
               transition: 'all 0.2s',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-              boxShadow: copied ? '0 4px 12px rgba(22,163,74,0.3)' : '0 4px 12px rgba(26,60,40,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+              boxShadow: '0 4px 12px rgba(15,118,110,0.25)',
             }}
           >
-            {copied ? '✅ Image Copied!' : (copySupported ? '📋 Copy Image' : '⬇ Save Image')}
+            ⬇️ Save / Download
           </button>
 
           {/* Step 2 button: Open WhatsApp */}
@@ -277,14 +314,15 @@ export function WhatsAppShareModal({
             disabled={step < 2}
             style={{
               flex: 1,
-              padding: '12px 14px',
+              minWidth: '110px',
+              padding: '12px 10px',
               background: step >= 2 ? '#25D366' : '#d1fae5',
               color: step >= 2 ? '#fff' : '#6b7280',
               border: 'none', borderRadius: '12px',
-              fontWeight: 700, fontSize: '13px',
+              fontWeight: 700, fontSize: '12.5px',
               cursor: step >= 2 ? 'pointer' : 'not-allowed',
               transition: 'all 0.2s',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
               boxShadow: step >= 2 ? '0 4px 12px rgba(37,211,102,0.3)' : 'none',
             }}
           >
