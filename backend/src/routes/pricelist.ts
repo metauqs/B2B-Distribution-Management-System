@@ -52,10 +52,8 @@ router.get('/active', async (req: Request, res: Response) => {
 
       const draftItems = activeProducts.map((prod) => {
         const inv = inventoryMap.get(prod.id);
-        const avgBuyCost = (inv?.avgCost && inv.avgCost > 0)
-          ? inv.avgCost
-          : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
-        const latestPurchasePrice = inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
+        const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : 0;
+        const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
         const previousBuyPrice = inv?.previousBuyPrice ?? 0;
         const currentStock = inv?.qty ?? 0;
         const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
@@ -108,10 +106,8 @@ router.get('/active', async (req: Request, res: Response) => {
     // Enrich existing price items with live Inventory buy rates and stock
     const enrichedItems = list.items.map(item => {
       const inv = item.productId ? inventoryMap.get(item.productId) : null;
-      const avgBuyCost = (inv?.avgCost && inv.avgCost > 0)
-        ? inv.avgCost
-        : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : item.buyRate);
-      const latestPurchasePrice = inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
+      const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (item.buyRate ?? 0);
+      const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
       const previousBuyPrice = inv?.previousBuyPrice ?? 0;
       const currentStock = inv?.qty ?? 0;
       const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
@@ -329,10 +325,8 @@ router.get('/', async (req: Request, res: Response) => {
       if (list) {
         const enrichedItems = list.items.map(item => {
           const inv = item.productId ? inventoryMap.get(item.productId) : null;
-          const avgBuyCost = (inv?.avgCost && inv.avgCost > 0)
-            ? inv.avgCost
-            : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : item.buyRate);
-          const latestPurchasePrice = inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
+          const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (item.buyRate ?? 0);
+          const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
           const previousBuyPrice = inv?.previousBuyPrice ?? 0;
           const currentStock = inv?.qty ?? 0;
           const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
@@ -362,10 +356,8 @@ router.get('/', async (req: Request, res: Response) => {
 
       const draftItems = activeProducts.map((prod) => {
         const inv = inventoryMap.get(prod.id);
-        const avgBuyCost = (inv?.avgCost && inv.avgCost > 0)
-          ? inv.avgCost
-          : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
-        const latestPurchasePrice = inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
+        const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : 0;
+        const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
         const previousBuyPrice = inv?.previousBuyPrice ?? 0;
         const currentStock = inv?.qty ?? 0;
         const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
@@ -447,8 +439,8 @@ router.post('/', async (req: Request, res: Response) => {
     }) : [];
     const invBuyMap = new Map<string, number>();
     inventories.forEach(inv => {
-      // Use avgCost (weighted average) as primary; fall back to currentBuyPrice
-      const effectiveBuyRate = (inv.avgCost && inv.avgCost > 0) ? inv.avgCost : inv.currentBuyPrice;
+      // Use avgCost (weighted average) as primary — 0 if stock/avgCost is 0
+      const effectiveBuyRate = inv.avgCost > 0 ? inv.avgCost : 0;
       invBuyMap.set(inv.productId, effectiveBuyRate);
     });
 
@@ -548,10 +540,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     const enrichedItems = list.items.map(item => {
       const inv = item.productId ? invMap.get(item.productId) : null;
-      const avgBuyCost = (inv?.avgCost && inv.avgCost > 0)
-        ? inv.avgCost
-        : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : item.buyRate);
-      const latestPurchasePrice = inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
+      const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (item.buyRate ?? 0);
+      const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
 
       return {
         ...item,
@@ -597,7 +587,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       }) : [];
       const invBuyMap = new Map<string, number>();
       inventories.forEach(inv => {
-        const effectiveBuyRate = (inv.avgCost && inv.avgCost > 0) ? inv.avgCost : inv.currentBuyPrice;
+        const effectiveBuyRate = inv.avgCost > 0 ? inv.avgCost : 0;
         invBuyMap.set(inv.productId, effectiveBuyRate);
       });
 
