@@ -191,12 +191,18 @@ export async function stockIn(tx: any, p: StockInParams): Promise<void> {
     },
   });
 
+  let validPurchaseId: string | undefined = p.purchaseId ?? undefined;
+  if (!validPurchaseId && p.refType === 'purchase' && p.refId) {
+    const pExists = await db.purchase.findUnique({ where: { id: p.refId }, select: { id: true } });
+    if (pExists) validPurchaseId = pExists.id;
+  }
+
   // Record Purchase Price History log
   await db.purchasePriceHistory.create({
     data: {
       productId: p.productId,
       branchId: p.branchId,
-      purchaseId: p.purchaseId ?? (p.refType === 'purchase' ? p.refId : undefined),
+      purchaseId: validPurchaseId,
       supplierId: p.supplierId ?? undefined,
       buyPrice: p.rate,
       qty: p.qty,
