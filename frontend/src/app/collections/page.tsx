@@ -679,7 +679,8 @@ export default function CollectionsPage() {
                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
                                        {clientCols.map((col, idx) => {
                                          const empName = col.receivedByUser?.name || 'Unrecorded (Historical)';
-                                         const remBal = col.remainingBalance ?? col.runningBalance ?? 0;
+                                         const rawRemBal = col.remainingBalance ?? col.runningBalance ?? 0;
+                                         const remBal = Math.abs(rawRemBal) < 0.99 ? 0 : rawRemBal;
                                          const refNo = col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`;
 
                                          return (
@@ -875,7 +876,8 @@ export default function CollectionsPage() {
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 {clientCols.map((col, idx) => {
                                   const empName = col.receivedByUser?.name || 'Unrecorded (Historical)';
-                                  const remBal = col.remainingBalance ?? col.runningBalance ?? 0;
+                                  const rawRemBal = col.remainingBalance ?? col.runningBalance ?? 0;
+                                  const remBal = Math.abs(rawRemBal) < 0.99 ? 0 : rawRemBal;
                                   const refNo = col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`;
 
                                   return (

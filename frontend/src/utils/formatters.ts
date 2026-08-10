@@ -1,9 +1,11 @@
 // ─── Currency ─────────────────────────────────────────────────────────────────
 // Exact same as fmtMoney() in original: "Rs 1,23,456" with negative support
 export function fmtMoney(n: number): string {
-  if (isNaN(n)) return 'Rs 0';
-  const abs = Math.abs(Math.round(n));
-  return (n < 0 ? '- ' : '') + 'Rs ' + abs.toLocaleString();
+  if (isNaN(n) || !n) return 'Rs 0';
+  const rounded = Math.round(n);
+  if (rounded === 0 || Math.abs(n) < 0.99) return 'Rs 0';
+  const abs = Math.abs(rounded);
+  return (rounded < 0 ? '- ' : '') + 'Rs ' + abs.toLocaleString();
 }
 
 export const PKT_TIMEZONE = 'Asia/Karachi';
