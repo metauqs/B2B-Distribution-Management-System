@@ -96,7 +96,8 @@ router.get('/daily-history', async (req: Request, res: Response) => {
         timeZone: 'Asia/Karachi',
       });
 
-      const rawRemBal = col.remainingBalance ?? ledgerMap[col.id] ?? null;
+      const clientCurrBal = col.client?.currentBalance ?? 0;
+      const rawRemBal = (clientCurrBal <= 0) ? 0 : (col.remainingBalance ?? ledgerMap[col.id] ?? null);
       const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
 
       return {

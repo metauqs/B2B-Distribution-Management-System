@@ -263,12 +263,14 @@ export default function CollectionsPage() {
       let runningDue = client.openingBalance ?? 0;
 
       const items = sortedSales.map(sale => {
-        const previousOutstanding = runningDue;
+        const isSalePaid          = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.99);
+        const previousOutstanding = (Math.abs(runningDue) < 0.99) ? 0 : runningDue;
         const currentOrder        = sale.total;
         const totalPayable        = previousOutstanding + currentOrder;
-        const collectedAmount     = sale.paid;
-        const dueBalance          = Math.max(0, totalPayable - collectedAmount);
-        runningDue = dueBalance;
+        const collectedAmount     = isSalePaid ? Math.max(sale.paid, currentOrder) : sale.paid;
+        const rawDue              = isSalePaid ? 0 : Math.max(0, totalPayable - collectedAmount);
+        const dueBalance          = (Math.abs(rawDue) < 0.99) ? 0 : rawDue;
+        runningDue                = dueBalance;
 
         return {
           id:                  sale.id,
@@ -281,7 +283,7 @@ export default function CollectionsPage() {
           payNow:              sale.paid,   // amount paid at checkout time
           collectedAmount,
           dueBalance,
-          status:              sale.status,
+          status:              isSalePaid ? 'PAID' : sale.status,
         };
       });
 
@@ -617,12 +619,12 @@ export default function CollectionsPage() {
                                         <td style={{ color: 'var(--muted)', fontSize: 12 }}>{g.clientNo}</td>
                                         <td style={{ fontWeight: 600 }}>{g.clientName}</td>
                                         <td style={{ color: 'var(--muted)' }}>{fmtDateTime(item.date)}</td>
-                                        <td className="mono" style={{ textAlign: 'right', color: item.previousOutstanding > 0 ? 'var(--clay)' : 'var(--muted)' }}>{fmtMoney(item.previousOutstanding)}</td>
+                                        <td className="mono" style={{ textAlign: 'right', color: item.previousOutstanding > 0.99 ? 'var(--clay)' : 'var(--muted)' }}>{item.previousOutstanding > 0.99 ? fmtMoney(item.previousOutstanding) : 'Rs 0'}</td>
                                         <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{fmtMoney(item.currentOrder)}</td>
                                         <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(item.totalPayable)}</td>
                                         <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: item.payNow > 0 ? 'var(--ok)' : 'var(--muted)' }}>{item.payNow > 0 ? fmtMoney(item.payNow) : '—'}</td>
                                         <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: item.collectedAmount > 0 ? 'var(--ok)' : 'var(--muted)' }}>{fmtMoney(item.collectedAmount)}</td>
-                                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: item.dueBalance > 0 ? 'var(--clay)' : 'var(--ok)' }}>{item.dueBalance > 0 ? fmtMoney(item.dueBalance) : '✓ 0'}</td>
+                                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: (item.dueBalance > 0.99 && !isPaid) ? 'var(--clay)' : 'var(--ok)' }}>{(item.dueBalance > 0.99 && !isPaid) ? fmtMoney(item.dueBalance) : '✓ 0'}</td>
                                         <td>{statusBadge}</td>
                                       </tr>
                                     );
