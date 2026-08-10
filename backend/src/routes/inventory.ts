@@ -290,6 +290,11 @@ router.post('/reset', async (req: Request, res: Response) => {
           data: {
             qty: 0,
             reservedQty: 0,
+            avgCost: 0,
+            currentBuyPrice: 0,
+            previousBuyPrice: 0,
+            lastPurchaseDate: null,
+            lastPurchaseQty: 0,
           }
         });
 
