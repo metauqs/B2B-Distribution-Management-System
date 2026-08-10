@@ -385,8 +385,9 @@ router.post('/return', async (req: Request, res: Response) => {
         const updatedItems = await tx.saleItem.findMany({ where: { saleId: delivery.saleId } });
         const newSubtotal = updatedItems.reduce((sum, i) => sum + i.amount, 0);
         const newTotal = Math.max(0, newSubtotal - delivery.sale.discount + delivery.sale.deliveryCharge);
-        const newBalance = Math.max(0, newTotal - delivery.sale.paid);
-        const newStatus = newBalance === 0 ? 'PAID' : (delivery.sale.paid > 0 ? 'PARTIAL' : 'PENDING');
+        const rawBal = newTotal - delivery.sale.paid;
+        const newBalance = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
+        const newStatus = newBalance <= 0 ? 'PAID' : (delivery.sale.paid > 0 ? 'PARTIAL' : 'PENDING');
 
         await tx.sale.update({
           where: { id: delivery.saleId },

@@ -306,7 +306,8 @@ router.get('/preview', async (req: Request, res: Response) => {
       if (remainingPayment <= 0) break;
       const toApply = Math.min(remainingPayment, sale.balance);
       const newPaid = sale.paid + toApply;
-      const newBal = Math.max(0, sale.total - newPaid);
+      const rawBal = sale.total - newPaid;
+      const newBal = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
       const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
 
       allocations.push({
@@ -482,7 +483,8 @@ router.post('/', async (req: Request, res: Response) => {
           if (toApply <= 0) continue;
 
           const newPaid = sale.paid + toApply;
-          const newBal = Math.max(0, sale.total - newPaid);
+          const rawBal = sale.total - newPaid;
+          const newBal = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
           const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
 
           await tx.sale.update({
@@ -518,7 +520,8 @@ router.post('/', async (req: Request, res: Response) => {
           if (remainingPayment <= 0) break;
           const toApply = Math.min(remainingPayment, sale.balance);
           const newPaid = sale.paid + toApply;
-          const newBal = Math.max(0, sale.total - newPaid);
+          const rawBal = sale.total - newPaid;
+          const newBal = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
           const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
 
           await tx.sale.update({

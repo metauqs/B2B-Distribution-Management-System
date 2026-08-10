@@ -169,8 +169,9 @@ router.post('/', async (req: Request, res: Response) => {
     });
   }
 
-  const balance = Math.max(0, total - paidAmt);
-  const status = paidAmt >= total ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING';
+  const rawBal = total - paidAmt;
+  const balance = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
+  const status = balance <= 0 ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING';
 
   const startTime = Date.now();
   try {
@@ -483,8 +484,9 @@ router.put('/:id', async (req: Request, res: Response) => {
     });
   }
 
-  const balance = Math.max(0, total - paidAmt);
-  const status = paidAmt >= total ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING';
+  const rawBal = total - paidAmt;
+  const balance = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
+  const status = balance <= 0 ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING';
 
   try {
     const updatedSale = await prisma.$transaction(async tx => {
@@ -686,7 +688,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
       }
 
       const newPaid = sale.paid + amt;
-      const newBalance = Math.max(0, sale.balance - amt);
+      const rawBal = sale.balance - amt;
+      const newBalance = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
       const newStatus = newBalance <= 0 ? 'PAID' : 'PARTIAL';
 
       const updatedSale = await tx.sale.update({
