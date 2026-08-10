@@ -96,7 +96,8 @@ router.get('/daily-history', async (req: Request, res: Response) => {
         timeZone: 'Asia/Karachi',
       });
 
-      const remBal = col.remainingBalance ?? ledgerMap[col.id] ?? null;
+      const rawRemBal = col.remainingBalance ?? ledgerMap[col.id] ?? null;
+      const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
 
       return {
         seqNo: index + 1,
@@ -209,11 +210,15 @@ router.get('/', async (req: Request, res: Response) => {
 
     const ledgerMap = Object.fromEntries(ledgers.map(l => [l.referenceId, l.balance]));
 
-    const data = collections.map(c => ({
-      ...c,
-      remainingBalance: c.remainingBalance ?? ledgerMap[c.id] ?? null,
-      runningBalance: ledgerMap[c.id] ?? c.remainingBalance ?? null
-    }));
+    const data = collections.map(c => {
+      const rawRemBal = c.remainingBalance ?? ledgerMap[c.id] ?? null;
+      const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
+      return {
+        ...c,
+        remainingBalance: remBal,
+        runningBalance: remBal
+      };
+    });
 
     const totalAmount = collections.reduce((sum, c) => sum + c.amount, 0);
     const count = collections.length;

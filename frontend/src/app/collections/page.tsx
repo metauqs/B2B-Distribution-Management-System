@@ -1104,6 +1104,8 @@ export default function CollectionsPage() {
                     {dailyData.transactions.map((tx: any) => {
                       const mUpper = (tx.method || 'CASH').toUpperCase();
                       const isCash = mUpper === 'CASH';
+                      const rawBal = tx.remainingBalance;
+                      const remBal = (rawBal !== null && rawBal !== undefined && Math.abs(rawBal) < 0.99) ? 0 : rawBal;
 
                       return (
                         <tr key={tx.id}>
@@ -1129,8 +1131,8 @@ export default function CollectionsPage() {
                           <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: '#166534', fontSize: 14 }}>
                             {fmtMoney(tx.amount)}
                           </td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: (tx.remainingBalance ?? 0) > 0 ? '#991B1B' : '#166534' }}>
-                            {tx.remainingBalance !== null && tx.remainingBalance !== undefined ? fmtMoney(tx.remainingBalance) : '—'}
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: (remBal ?? 0) > 0 ? '#991B1B' : '#166534' }}>
+                            {remBal !== null && remBal !== undefined ? fmtMoney(remBal) : '—'}
                           </td>
                         </tr>
                       );
@@ -1143,6 +1145,9 @@ export default function CollectionsPage() {
               <div className="show-mobile" style={{ flexDirection: 'column', gap: 10, width: '100%' }}>
                 {dailyData.transactions.map((tx: any) => {
                   const mUpper = (tx.method || 'CASH').toUpperCase();
+                  const rawBal = tx.remainingBalance;
+                  const remBal = (rawBal !== null && rawBal !== undefined && Math.abs(rawBal) < 0.99) ? 0 : rawBal;
+
                   return (
                     <MobileCardBox key={tx.id} bg="#FFF" borderColor="#CBD5E1">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -1155,11 +1160,11 @@ export default function CollectionsPage() {
                         <MobileCardRow label="Payment Method" value={mUpper} />
                         <MobileCardRow label="Received By" value={`👤 ${tx.receivedBy}`} />
                         <MobileCardRow label="Amount Received" value={fmtMoney(tx.amount)} valueColor="#166534" isMono />
-                        {tx.remainingBalance !== null && tx.remainingBalance !== undefined && (
+                        {remBal !== null && remBal !== undefined && (
                           <MobileCardRow
                             label="Balance After Payment"
-                            value={fmtMoney(tx.remainingBalance)}
-                            valueColor={tx.remainingBalance > 0 ? '#991B1B' : '#166534'}
+                            value={fmtMoney(remBal)}
+                            valueColor={remBal > 0 ? '#991B1B' : '#166534'}
                             isMono
                           />
                         )}
