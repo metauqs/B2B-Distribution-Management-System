@@ -370,6 +370,13 @@ router.post('/', async (req: Request, res: Response) => {
       return s;
     }, { maxWait: 10000, timeout: 30000 });
 
+    // Self-healing trigger: Ensure client balance & running ledger are perfectly recalculated and synced
+    try {
+      await recalculateClientLedgerAndBalance(clientId);
+    } catch (e) {
+      console.error('[POST /api/sales] Self-heal error:', e);
+    }
+
     // Non-blocking credit rating update outside transaction
     updateClientCreditRating(clientId).catch(err =>
       console.warn('[POST /api/sales] Async credit rating update warning:', err)
@@ -750,6 +757,13 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
       return { sale: updatedSale, collection: coll };
     }, { maxWait: 10000, timeout: 30000 });
+
+    // Self-healing trigger: Ensure client balance & running ledger are perfectly recalculated and synced
+    try {
+      await recalculateClientLedgerAndBalance(result.sale.clientId);
+    } catch (e) {
+      console.error('[PATCH /api/sales/:id] Self-heal error:', e);
+    }
 
     await writeAuditLog({
       userId: userId ?? undefined,
