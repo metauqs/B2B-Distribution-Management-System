@@ -252,6 +252,62 @@ router.post('/adjust', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/inventory/reset — Reset all inventory stock to 0 for fresh manual setup
+router.post('/reset', async (req: Request, res: Response) => {
+  try {
+    let branchId = (req.headers['x-branch-id'] as string) || undefined;
+    if (!branchId) {
+      const firstBranch = await prisma.branch.findFirst();
+      branchId = firstBranch?.id ?? '';
+    }
+
+    const userId = (req.headers['x-user-id'] as string) || null;
+
+    const inventories = await prisma.inventory.findMany({
+      where: { ...(branchId ? { branchId } : {}) }
+    });
+
+    let resetCount = 0;
+    for (const inv of inventories) {
+      if (inv.qty !== 0 || inv.reservedQty !== 0) {
+        await prisma.stockMovement.create({
+          data: {
+            productId: inv.productId,
+            branchId: inv.branchId,
+            type: 'ADJUSTMENT',
+            qty: 0,
+            previousStock: inv.qty,
+            newStock: 0,
+            refType: 'admin_reset',
+            note: 'Admin reset inventory stock to 0 to start fresh',
+            userId: userId ?? undefined,
+            date: new Date(),
+          }
+        });
+
+        await prisma.inventory.update({
+          where: { id: inv.id },
+          data: {
+            qty: 0,
+            reservedQty: 0,
+          }
+        });
+
+        resetCount++;
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Inventory successfully reset. ${resetCount} items updated to 0 stock.`,
+      resetCount,
+    });
+  } catch (err: any) {
+    console.error('[POST /api/inventory/reset]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to reset inventory' });
+  }
+});
+
 // POST /api/inventory/buy-price (Admin manual buy price adjustment)
 router.post('/buy-price', async (req: Request, res: Response) => {
   try {
