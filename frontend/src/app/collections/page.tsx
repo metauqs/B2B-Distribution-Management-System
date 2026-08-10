@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDateTime, todayInputDate, todayInputDateTime, dateOffset } from '@/utils/formatters';
+import { getTodayBusinessDateString } from '@/utils/businessDate';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
@@ -68,6 +69,10 @@ export default function CollectionsPage() {
   const [view,        setView]        = useState<'list' | 'add'>('list');
   const [form,        setForm]        = useState({ ...BLANK_FORM });
   const [expandedClients, setExpandedClients] = useState<{ [key: string]: boolean }>({});
+  const [showAllHistory, setExpandedShowAllHistory] = useState<{ [key: string]: boolean }>({});
+  const toggleShowAllHistory = (cid: string) => {
+    setExpandedShowAllHistory(prev => ({ ...prev, [cid]: !prev[cid] }));
+  };
 
   const [activeTab,    setActiveTab]   = useState<'registry' | 'daily_history'>('registry');
   const [dailyDate,    setDailyDate]    = useState<string>(() => todayInputDate());
@@ -626,24 +631,49 @@ export default function CollectionsPage() {
                                </table>
                              </div>
 
-                             {/* ────── PAYMENT HISTORY SECTION ────── */}
+                             {/* ────── PAYMENT HISTORY SECTION (Today Onward By Default) ────── */}
                              {(() => {
-                               const clientCols = collections
+                               const todayBDate = getTodayBusinessDateString();
+                               const allClientCols = collections
                                  .filter(c => c.clientId === g.clientId)
                                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+                               const todayOnwardCols = allClientCols.filter(c => getTodayBusinessDateString(c.date) >= todayBDate);
+                               const showAll = !!showAllHistory[g.clientId];
+                               const clientCols = showAll ? allClientCols : todayOnwardCols;
+
                                return (
                                  <div style={{ marginTop: 16, borderTop: '2px dashed #CBD5E1', paddingTop: 14 }}>
-                                   <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                     <span>💳 PAYMENT HISTORY ({clientCols.length} receipt{clientCols.length === 1 ? '' : 's'})</span>
-                                     {clientCols.length > 0 && (
+                                   <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                                     <span>
+                                       💳 PAYMENT HISTORY ({clientCols.length} receipt{clientCols.length === 1 ? '' : 's'} {showAll ? '— All History' : '— Today Onward'})
+                                     </span>
+                                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                       {allClientCols.length > todayOnwardCols.length && (
+                                         <button
+                                           className="va-btn secondary small"
+                                           style={{ padding: '2px 8px', fontSize: 11, fontWeight: 700 }}
+                                           onClick={() => toggleShowAllHistory(g.clientId)}
+                                         >
+                                           {showAll ? 'Show Today Only' : `Show All History (${allClientCols.length})`}
+                                         </button>
+                                       )}
                                        <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>Ordered newest-first</span>
-                                     )}
+                                     </div>
                                    </div>
 
                                    {clientCols.length === 0 ? (
-                                     <div style={{ fontSize: 12, color: '#64748B', fontStyle: 'italic', padding: '10px 14px', background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                                       No payment receipts recorded yet for this client.
+                                     <div style={{ fontSize: 12, color: '#64748B', fontStyle: 'italic', padding: '10px 14px', background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                       <span>No payment receipts recorded today for this client.</span>
+                                       {allClientCols.length > 0 && !showAll && (
+                                         <button
+                                           className="va-btn secondary small"
+                                           style={{ padding: '2px 8px', fontSize: 11, fontWeight: 700 }}
+                                           onClick={() => toggleShowAllHistory(g.clientId)}
+                                         >
+                                           View Older History ({allClientCols.length})
+                                         </button>
+                                       )}
                                      </div>
                                    ) : (
                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
@@ -804,19 +834,42 @@ export default function CollectionsPage() {
 
                       {/* Mobile Payment History Section */}
                       {isExpanded && (() => {
-                        const clientCols = collections
+                        const todayBDate = getTodayBusinessDateString();
+                        const allClientCols = collections
                           .filter(c => c.clientId === g.clientId)
                           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+                        const todayOnwardCols = allClientCols.filter(c => getTodayBusinessDateString(c.date) >= todayBDate);
+                        const showAll = !!showAllHistory[g.clientId];
+                        const clientCols = showAll ? allClientCols : todayOnwardCols;
+
                         return (
                           <div style={{ marginTop: 12, borderTop: '1px dashed #CBD5E1', paddingTop: 10 }}>
-                            <div style={{ fontWeight: 800, fontSize: 12, color: '#1E293B', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span>💳 PAYMENT HISTORY ({clientCols.length})</span>
+                            <div style={{ fontWeight: 800, fontSize: 12, color: '#1E293B', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                              <span>💳 PAYMENT HISTORY ({clientCols.length} {showAll ? '— All' : '— Today Onward'})</span>
+                              {allClientCols.length > todayOnwardCols.length && (
+                                <button
+                                  className="va-btn secondary small"
+                                  style={{ padding: '2px 6px', fontSize: 10, fontWeight: 700 }}
+                                  onClick={() => toggleShowAllHistory(g.clientId)}
+                                >
+                                  {showAll ? 'Today Only' : `Show All (${allClientCols.length})`}
+                                </button>
+                              )}
                             </div>
 
                             {clientCols.length === 0 ? (
-                              <div style={{ fontSize: 11, color: '#64748B', fontStyle: 'italic', padding: '8px 10px', background: '#F8FAFC', borderRadius: 6 }}>
-                                No payment receipts recorded yet.
+                              <div style={{ fontSize: 11, color: '#64748B', fontStyle: 'italic', padding: '8px 10px', background: '#F8FAFC', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>No payment receipts recorded today.</span>
+                                {allClientCols.length > 0 && !showAll && (
+                                  <button
+                                    className="va-btn secondary small"
+                                    style={{ padding: '2px 6px', fontSize: 10, fontWeight: 700 }}
+                                    onClick={() => toggleShowAllHistory(g.clientId)}
+                                  >
+                                    View Older ({allClientCols.length})
+                                  </button>
+                                )}
                               </div>
                             ) : (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
