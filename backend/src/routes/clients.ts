@@ -202,6 +202,14 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Client not found' });
     }
 
+    // Auto-heal client balance & ledger in real time
+    try {
+      const healedBal = await recalculateClientLedgerAndBalance(id);
+      client.currentBalance = healedBal;
+    } catch (e) {
+      console.error('[GET /api/clients/:id] Self-heal error:', e);
+    }
+
     const [sales, collections, deliveries, ledger] = await Promise.all([
       // Sales
       prisma.sale.findMany({

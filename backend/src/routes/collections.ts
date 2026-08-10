@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { recordCustomerLedgerEntry, writeAuditLog } from '../lib/business';
+import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBalance } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { getBusinessDateRange, getBusinessDateString, formatPKTDateTime, parseInputDateToUtc } from '../lib/businessDate';
 import { postCollectionLedger } from '../lib/financialLedgerService';
@@ -583,6 +583,13 @@ router.post('/', async (req: Request, res: Response) => {
         allocations,
       };
     }, { maxWait: 10000, timeout: 30000 });
+
+    // Self-healing trigger: Ensure client balance & running ledger are perfectly recalculated and synced
+    try {
+      await recalculateClientLedgerAndBalance(clientId);
+    } catch (e) {
+      console.error('[POST /api/collections] Self-heal error:', e);
+    }
 
     await writeAuditLog({
       userId: userId ?? undefined,

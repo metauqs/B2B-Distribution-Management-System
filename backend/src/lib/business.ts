@@ -273,8 +273,7 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
   if (!client) return 0;
 
   const ledgerEntries = await db.customerLedger.findMany({
-    where: { clientId },
-    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
+    where: { clientId }
   });
 
   if (ledgerEntries.length === 0) {
@@ -285,6 +284,22 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
     return client.openingBalance;
   }
 
+  // Type weight for same-day sorting: ADJUSTMENT(1) -> INVOICE/DEBIT_NOTE(2) -> PAYMENT/CREDIT_NOTE(3)
+  const typeWeight = (t: string) => {
+    if (t === 'ADJUSTMENT') return 1;
+    if (t === 'INVOICE' || t === 'DEBIT_NOTE') return 2;
+    if (t === 'PAYMENT' || t === 'CREDIT_NOTE') return 3;
+    return 4;
+  };
+
+  ledgerEntries.sort((a: any, b: any) => {
+    const dDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+    if (dDiff !== 0) return dDiff;
+    const wDiff = typeWeight(a.type) - typeWeight(b.type);
+    if (wDiff !== 0) return wDiff;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
   // Determine starting balance before first ledger entry
   const firstEntry = ledgerEntries[0];
   const isFirstOpening = firstEntry.type === 'ADJUSTMENT' && (firstEntry.description?.toLowerCase().includes('opening balance') ?? false);
@@ -293,7 +308,7 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
 
   for (const entry of ledgerEntries) {
     const rawRun = running + entry.debit - entry.credit;
-    running = rawRun < 1.0 ? 0 : Math.max(0, rawRun);
+    running = Math.abs(rawRun) < 1.0 ? 0 : rawRun;
     if (entry.balance !== running) {
       await db.customerLedger.update({
         where: { id: entry.id },
@@ -302,7 +317,7 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
     }
   }
 
-  const finalRunning = running < 1.0 ? 0 : Math.max(0, running);
+  const finalRunning = Math.abs(running) < 1.0 ? 0 : Math.max(0, running);
 
   await db.client.update({
     where: { id: clientId },
