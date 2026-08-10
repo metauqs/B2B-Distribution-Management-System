@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { fmtMoney, fmtDateTime, todayInputDate, todayInputDateTime } from '@/utils/formatters';
+import { fmtMoney, fmtDateTime, todayInputDate, todayInputDateTime, dateOffset } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
@@ -11,8 +11,11 @@ import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/com
 import Icon from '@mdi/react';
 import { mdiCashRegister } from '@mdi/js';
 
+import { loadBrandConfigWithLogo, generateDailyPaymentHistoryHTML, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
+
 const DueStatementModal = dynamic(() => import('@/components/modals/DueStatementModal').then(m => m.DueStatementModal), { ssr: false });
 const CollectionReceiptModal = dynamic(() => import('@/components/modals/CollectionReceiptModal').then(m => m.CollectionReceiptModal), { ssr: false });
+const DailyPaymentHistoryPreviewModal = dynamic(() => import('@/components/modals/DailyPaymentHistoryPreviewModal').then(m => m.DailyPaymentHistoryPreviewModal), { ssr: false });
 
 interface Sale {
   id: string;
@@ -66,11 +69,46 @@ export default function CollectionsPage() {
   const [form,        setForm]        = useState({ ...BLANK_FORM });
   const [expandedClients, setExpandedClients] = useState<{ [key: string]: boolean }>({});
 
+  const [activeTab,    setActiveTab]   = useState<'registry' | 'daily_history'>('registry');
+  const [dailyDate,    setDailyDate]    = useState<string>(() => todayInputDate());
+  const [dailyEmployee, setDailyEmployee] = useState<string>('all');
+  const [dailyMethod,  setDailyMethod]  = useState<string>('all');
+  const [dailySearch,  setDailySearch]  = useState<string>('');
+  const [dailyData,    setDailyData]    = useState<any | null>(null);
+  const [loadingDaily, setLoadingDaily] = useState<boolean>(false);
+  const [dailyPreviewModal, setDailyPreviewModal] = useState<any | null>(null);
+
   // ── Receipt Modal & Due Statement Modal state ──
   const [receiptModal, setReceiptModal] = useState<any | null>(null);
   const [statementClient, setStatementClient] = useState<any | null>(null);
   const [statementInvoices, setStatementInvoices] = useState<any[]>([]);
   const [statementMode, setStatementMode] = useState<'view' | 'share'>('view');
+
+  const loadDailyHistory = useCallback(async (dateVal?: string, empVal?: string, methodVal?: string, searchVal?: string) => {
+    setLoadingDaily(true);
+    try {
+      const targetDate = dateVal !== undefined ? dateVal : dailyDate;
+      const targetEmp = empVal !== undefined ? empVal : dailyEmployee;
+      const targetMethod = methodVal !== undefined ? methodVal : dailyMethod;
+      const targetSearch = searchVal !== undefined ? searchVal : dailySearch;
+
+      const params = new URLSearchParams();
+      if (targetDate) params.append('date', targetDate);
+      if (targetEmp && targetEmp !== 'all') params.append('employeeId', targetEmp);
+      if (targetMethod && targetMethod !== 'all') params.append('method', targetMethod);
+      if (targetSearch) params.append('search', targetSearch);
+
+      const res = await apiFetch(`/api/collections/daily-history?${params.toString()}`);
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setDailyData(json);
+      }
+    } catch (err) {
+      console.error('loadDailyHistory error:', err);
+    } finally {
+      setLoadingDaily(false);
+    }
+  }, [dailyDate, dailyEmployee, dailyMethod, dailySearch]);
 
   const handleViewDues = (clientId: string) => {
     const client = clients.find(c => c.id === clientId);
@@ -136,12 +174,19 @@ export default function CollectionsPage() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
+    if (activeTab === 'daily_history') {
+      loadDailyHistory();
+    }
+  }, [activeTab, dailyDate, dailyEmployee, dailyMethod, dailySearch, loadDailyHistory]);
+
+  useEffect(() => {
     const handleRevalidate = () => {
       load(true);
+      if (activeTab === 'daily_history') loadDailyHistory();
     };
     window.addEventListener('app-revalidate', handleRevalidate);
     return () => window.removeEventListener('app-revalidate', handleRevalidate);
-  }, [load]);
+  }, [load, activeTab, loadDailyHistory]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,6 +236,7 @@ export default function CollectionsPage() {
 
         setForm({ ...BLANK_FORM });
         await load(true);
+        loadDailyHistory(dailyDate);
         setView('list');
       } else {
         showToast(`❌ ${data.error || 'Failed to record payment'}`);
@@ -272,6 +318,26 @@ export default function CollectionsPage() {
             <button className="va-btn secondary small" onClick={() => setView('list')}>← Back</button>
           )}
         </div>
+
+        {/* Navigation Sub-Tabs */}
+        {view === 'list' && (
+          <div style={{ display: 'flex', gap: 10, marginTop: 14, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+            <button
+              className={`va-btn ${activeTab === 'registry' ? '' : 'secondary'} small`}
+              style={{ fontWeight: 700 }}
+              onClick={() => setActiveTab('registry')}
+            >
+              📊 Invoice Registry &amp; Dues
+            </button>
+            <button
+              className={`va-btn ${activeTab === 'daily_history' ? '' : 'secondary'} small`}
+              style={{ fontWeight: 700 }}
+              onClick={() => { setActiveTab('daily_history'); loadDailyHistory(); }}
+            >
+              📅 Daily Payment History
+            </button>
+          </div>
+        )}
       </div>
 
       {view === 'add' && (
@@ -450,7 +516,7 @@ export default function CollectionsPage() {
         </div>
       )}
 
-      {view === 'list' && (
+      {view === 'list' && activeTab === 'registry' && (
         <div className="va-panel">
           <div className="va-panel-head">
             <h3>Invoice Collections Registry</h3>
@@ -803,6 +869,261 @@ export default function CollectionsPage() {
             </>
           )}
         </div>
+      )}
+
+      {view === 'list' && activeTab === 'daily_history' && (
+        <div className="va-panel">
+          <div className="va-panel-head" style={{ flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h3 style={{ margin: 0 }}>📅 Daily Payment History</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--muted)' }}>
+                Payments received during Business Day <strong>{dailyData?.businessDate || dailyDate}</strong> (5:00 AM Cutoff)
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button
+                className="va-btn secondary small"
+                onClick={() => {
+                  if (dailyData) {
+                    setDailyPreviewModal(dailyData);
+                  } else {
+                    showToast('❌ No payment history loaded yet');
+                  }
+                }}
+                disabled={!dailyData || dailyData.transactions?.length === 0}
+                style={{ fontWeight: 700 }}
+              >
+                👁️ Preview Report
+              </button>
+              <button
+                className="va-btn small"
+                onClick={async () => {
+                  if (dailyData && dailyData.transactions?.length > 0) {
+                    const brand = await loadBrandConfigWithLogo();
+                    const html = generateDailyPaymentHistoryHTML(dailyData, brand, typeof window !== 'undefined' ? window.location.origin : '');
+                    showToast('⏳ Generating report image...');
+                    const url = await generateTemplateJpgBase64(html);
+                    if (url) {
+                      const dateSlug = (dailyData.businessDate || dailyDate).replace(/\s+/g, '_');
+                      downloadImage(url, `daily_payment_history_${dateSlug}.jpg`);
+                      showToast('✅ Report downloaded');
+                    } else {
+                      showToast('❌ Failed to download report');
+                    }
+                  } else {
+                    showToast('❌ No payments recorded on this business day');
+                  }
+                }}
+                disabled={!dailyData || dailyData.transactions?.length === 0}
+                style={{ fontWeight: 800, background: '#166534', color: '#FFF' }}
+              >
+                ⬇️ Download Report
+              </button>
+            </div>
+          </div>
+
+          {/* Business Date Controls & Filter Bar */}
+          <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 10, padding: 14, margin: '0 0 16px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <label style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>Business Date:</label>
+                <input
+                  type="date"
+                  value={dailyDate}
+                  onChange={e => { setDailyDate(e.target.value); loadDailyHistory(e.target.value); }}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 13, fontWeight: 600 }}
+                />
+                <button
+                  className="va-btn secondary small"
+                  style={{ padding: '4px 10px', fontSize: 12, fontWeight: 700 }}
+                  onClick={() => { const t = todayInputDate(); setDailyDate(t); loadDailyHistory(t); }}
+                >
+                  Today
+                </button>
+                <button
+                  className="va-btn secondary small"
+                  style={{ padding: '4px 10px', fontSize: 12, fontWeight: 700 }}
+                  onClick={() => { const y = dateOffset(-1); setDailyDate(y); loadDailyHistory(y); }}
+                >
+                  Yesterday
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <select
+                  value={dailyMethod}
+                  onChange={e => { setDailyMethod(e.target.value); loadDailyHistory(dailyDate, dailyEmployee, e.target.value); }}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 12, fontWeight: 600 }}
+                >
+                  <option value="all">All Payment Methods</option>
+                  <option value="CASH">Cash</option>
+                  <option value="BANK">Bank Transfer</option>
+                  <option value="ONLINE">Online</option>
+                  <option value="CHEQUE">Cheque</option>
+                </select>
+
+                <input
+                  placeholder="Search Client or Ref…"
+                  value={dailySearch}
+                  onChange={e => { setDailySearch(e.target.value); loadDailyHistory(dailyDate, dailyEmployee, dailyMethod, e.target.value); }}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 12, width: 160 }}
+                />
+
+                <button
+                  className="va-btn secondary small"
+                  onClick={() => loadDailyHistory()}
+                  style={{ padding: '6px 10px' }}
+                >
+                  ↻ Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Daily Collection Summary Cards */}
+          {dailyData && dailyData.summary && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+              <div style={{ background: '#F8FAFC', padding: '12px 14px', borderRadius: 10, border: '1px solid #E2E8F0' }}>
+                <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Selected Date</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', marginTop: 4 }}>{dailyData.businessDate}</div>
+                <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>5:00 AM Cutoff</div>
+              </div>
+
+              <div style={{ background: '#F8FAFC', padding: '12px 14px', borderRadius: 10, border: '1px solid #E2E8F0' }}>
+                <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Total Transactions</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#2563EB', marginTop: 2 }}>{dailyData.summary.totalTransactions}</div>
+                <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Recorded Payments</div>
+              </div>
+
+              <div style={{ background: '#F0FDF4', padding: '12px 14px', borderRadius: 10, border: '1px solid #BBF7D0' }}>
+                <div style={{ fontSize: 11, color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>Total Collected</div>
+                <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: '#15803D', marginTop: 2 }}>{fmtMoney(dailyData.summary.totalCollected)}</div>
+                <div style={{ fontSize: 10, color: '#16A34A', marginTop: 2 }}>Gross Dues Received</div>
+              </div>
+
+              <div style={{ background: '#FFFBEB', padding: '12px 14px', borderRadius: 10, border: '1px solid #FDE68A' }}>
+                <div style={{ fontSize: 11, color: '#92400E', fontWeight: 700, textTransform: 'uppercase' }}>Cash Collected</div>
+                <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: '#B45309', marginTop: 4 }}>{fmtMoney(dailyData.summary.cashCollected)}</div>
+                <div style={{ fontSize: 10, color: '#D97706', marginTop: 2 }}>Physical Cash</div>
+              </div>
+
+              <div style={{ background: '#EFF6FF', padding: '12px 14px', borderRadius: 10, border: '1px solid #BFDBFE' }}>
+                <div style={{ fontSize: 11, color: '#1E40AF', fontWeight: 700, textTransform: 'uppercase' }}>Bank / Online</div>
+                <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: '#1D4ED8', marginTop: 4 }}>
+                  {fmtMoney((dailyData.summary.bankCollected || 0) + (dailyData.summary.onlineCollected || 0))}
+                </div>
+                <div style={{ fontSize: 10, color: '#2563EB', marginTop: 2 }}>Direct Transfers</div>
+              </div>
+            </div>
+          )}
+
+          {/* Transactions Table / List */}
+          {loadingDaily ? (
+            <div style={{ padding: 20 }}><SkeletonTable rows={5} cols={7} /></div>
+          ) : !dailyData || dailyData.transactions?.length === 0 ? (
+            <div className="va-empty" style={{ padding: 40, textAlign: 'center' }}>
+              <div className="big">No payment collections found for {dailyDate}</div>
+              <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
+                No collections were recorded during this 5:00 AM business day.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table View */}
+              <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                <table className="va-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 40, textAlign: 'center' }}>#</th>
+                      <th>Time</th>
+                      <th>Client Name</th>
+                      <th>Client ID</th>
+                      <th>Invoice / Reference</th>
+                      <th style={{ textAlign: 'center' }}>Method</th>
+                      <th>Received By</th>
+                      <th style={{ textAlign: 'right' }}>Amount Received</th>
+                      <th style={{ textAlign: 'right' }}>Balance After Payment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dailyData.transactions.map((tx: any) => {
+                      const mUpper = (tx.method || 'CASH').toUpperCase();
+                      const isCash = mUpper === 'CASH';
+
+                      return (
+                        <tr key={tx.id}>
+                          <td style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tx.seqNo}</td>
+                          <td style={{ fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{tx.time}</td>
+                          <td style={{ fontWeight: 700, color: '#0F172A' }}>{tx.clientName}</td>
+                          <td style={{ color: 'var(--muted)', fontSize: 12 }}>{tx.clientCode}</td>
+                          <td style={{ fontWeight: 600, color: '#334155' }}>{tx.invoiceNo}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span style={{
+                              background: isCash ? '#E6F4EA' : '#E8F0FE',
+                              color: isCash ? '#137333' : '#1A73E8',
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              textTransform: 'uppercase'
+                            }}>
+                              {tx.method}
+                            </span>
+                          </td>
+                          <td style={{ fontWeight: 700, color: '#1E293B' }}>👤 {tx.receivedBy}</td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: '#166534', fontSize: 14 }}>
+                            {fmtMoney(tx.amount)}
+                          </td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: (tx.remainingBalance ?? 0) > 0 ? '#991B1B' : '#166534' }}>
+                            {tx.remainingBalance !== null && tx.remainingBalance !== undefined ? fmtMoney(tx.remainingBalance) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card List View */}
+              <div className="show-mobile" style={{ flexDirection: 'column', gap: 10, width: '100%' }}>
+                {dailyData.transactions.map((tx: any) => {
+                  const mUpper = (tx.method || 'CASH').toUpperCase();
+                  return (
+                    <MobileCardBox key={tx.id} bg="#FFF" borderColor="#CBD5E1">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontWeight: 800, fontSize: 13, color: '#0F172A' }}>{tx.clientName}</span>
+                        <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>{tx.time}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+                        <MobileCardRow label="Client ID" value={tx.clientCode} />
+                        <MobileCardRow label="Invoice / Ref" value={tx.invoiceNo} />
+                        <MobileCardRow label="Payment Method" value={mUpper} />
+                        <MobileCardRow label="Received By" value={`👤 ${tx.receivedBy}`} />
+                        <MobileCardRow label="Amount Received" value={fmtMoney(tx.amount)} valueColor="#166534" isMono />
+                        {tx.remainingBalance !== null && tx.remainingBalance !== undefined && (
+                          <MobileCardRow
+                            label="Balance After Payment"
+                            value={fmtMoney(tx.remainingBalance)}
+                            valueColor={tx.remainingBalance > 0 ? '#991B1B' : '#166534'}
+                            isMono
+                          />
+                        )}
+                      </div>
+                    </MobileCardBox>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {dailyPreviewModal && (
+        <DailyPaymentHistoryPreviewModal
+          data={dailyPreviewModal}
+          onClose={() => setDailyPreviewModal(null)}
+          onToast={showToast}
+        />
       )}
 
       {statementClient && (

@@ -2,10 +2,144 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { recordCustomerLedgerEntry, writeAuditLog } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
-import { getBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
+import { getBusinessDateRange, getBusinessDateString, formatPKTDateTime, parseInputDateToUtc } from '../lib/businessDate';
 import { postCollectionLedger } from '../lib/financialLedgerService';
 
 const router = Router();
+
+// GET /api/collections/daily-history — Server-Side 5 AM Business Day Aggregation & Payment List
+router.get('/daily-history', async (req: Request, res: Response) => {
+  try {
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const { date, employeeId, method, clientId, search } = req.query;
+
+    const targetDateStr = date ? String(date) : undefined;
+    const range = getBusinessDateRange(targetDateStr);
+
+    const where: any = {
+      deletedAt: null,
+      ...(branchId ? { branchId } : {}),
+      date: {
+        gte: range.start,
+        lte: range.end,
+      },
+      ...(clientId ? { clientId: String(clientId) } : {}),
+      ...(employeeId && employeeId !== 'all' ? { receivedByUserId: String(employeeId) } : {}),
+      ...(method && method !== 'all' ? { method: String(method).toUpperCase() } : {}),
+      ...(search ? {
+        OR: [
+          { reference: { contains: String(search), mode: 'insensitive' } },
+          { notes: { contains: String(search), mode: 'insensitive' } },
+          { client: { name: { contains: String(search), mode: 'insensitive' } } },
+        ]
+      } : {}),
+    };
+
+    const collections = await prisma.collection.findMany({
+      where,
+      include: {
+        client: { select: { id: true, name: true, clientId: true } },
+        receivedByUser: { select: { id: true, name: true, role: true } },
+        allocations: {
+          include: {
+            sale: { select: { id: true, invoiceNo: true } }
+          }
+        }
+      },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const collectionIds = collections.map(c => c.id);
+    const ledgers = collectionIds.length > 0 ? await prisma.customerLedger.findMany({
+      where: { referenceId: { in: collectionIds }, type: 'PAYMENT' }
+    }) : [];
+
+    const ledgerMap = Object.fromEntries(ledgers.map(l => [l.referenceId, l.balance]));
+
+    let totalAmount = 0;
+    let cashAmount = 0;
+    let bankAmount = 0;
+    let onlineAmount = 0;
+    let chequeAmount = 0;
+    let otherAmount = 0;
+
+    const byMethod: Record<string, number> = {};
+    const byEmployee: Record<string, number> = {};
+
+    const formattedTransactions = collections.map((col: any, index: number) => {
+      const amt = col.amount || 0;
+      totalAmount += amt;
+
+      const mUpper = (col.method || 'CASH').toUpperCase();
+      byMethod[mUpper] = (byMethod[mUpper] || 0) + amt;
+
+      if (mUpper === 'CASH') cashAmount += amt;
+      else if (mUpper === 'BANK' || mUpper === 'BANK_TRANSFER') bankAmount += amt;
+      else if (mUpper === 'ONLINE') onlineAmount += amt;
+      else if (mUpper === 'CHEQUE') chequeAmount += amt;
+      else otherAmount += amt;
+
+      const empName = col.receivedByUser?.name || 'Not Recorded';
+      byEmployee[empName] = (byEmployee[empName] || 0) + amt;
+
+      const invoiceNumbers = (col.allocations || [])
+        .map((a: any) => a.sale?.invoiceNo)
+        .filter(Boolean) as string[];
+      const invoiceRefStr = invoiceNumbers.length > 0
+        ? invoiceNumbers.join(', ')
+        : (col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`);
+
+      const pktTime = new Date(col.date).toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Karachi',
+      });
+
+      const remBal = col.remainingBalance ?? ledgerMap[col.id] ?? null;
+
+      return {
+        seqNo: index + 1,
+        id: col.id,
+        referenceNo: col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`,
+        date: col.date,
+        time: pktTime,
+        clientId: col.clientId,
+        clientCode: col.client?.clientId || 'WH-0000',
+        clientName: col.client?.name || 'Customer',
+        invoiceNo: invoiceRefStr,
+        invoices: invoiceNumbers,
+        amount: amt,
+        method: mUpper,
+        receivedBy: empName,
+        receivedByUserId: col.receivedByUserId || null,
+        remainingBalance: remBal,
+        notes: col.notes || null,
+        status: 'COMPLETED',
+      };
+    });
+
+    return res.json({
+      success: true,
+      businessDate: range.businessDateStr,
+      summary: {
+        totalTransactions: collections.length,
+        totalCollected: totalAmount,
+        cashCollected: cashAmount,
+        bankCollected: bankAmount,
+        onlineCollected: onlineAmount,
+        chequeCollected: chequeAmount,
+        otherCollected: otherAmount,
+        byMethod,
+        byEmployee,
+      },
+      transactions: formattedTransactions,
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/collections/daily-history:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load daily payment history' });
+  }
+});
 
 // GET /api/collections
 router.get('/', async (req: Request, res: Response) => {

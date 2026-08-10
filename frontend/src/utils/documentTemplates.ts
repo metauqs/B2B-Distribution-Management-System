@@ -998,6 +998,8 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
   return buildDocShell(brand, `Due Statement — ${stmt.clientName}`, body);
 }
 
+
+
 // ─── Price List Types ─────────────────────────────────────────────────────────
 
 export interface PriceListItem {
@@ -1690,7 +1692,6 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
     ${infoGrid}
     ${kpiGrid}
     ${summary}
-    ${allocationTable}
     ${notesBlock}
     ${footer}
   `;
@@ -1698,6 +1699,116 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
   return buildDocShell(brand, `Payment Receipt — ${data.clientName}`, body);
 }
 
+export interface DailyPaymentHistoryDocData {
+  businessDate: string;
+  generatedAt?: string;
+  summary: {
+    totalTransactions: number;
+    totalCollected: number;
+    cashCollected: number;
+    bankCollected: number;
+    onlineCollected?: number;
+    chequeCollected?: number;
+    otherCollected?: number;
+  };
+  transactions: Array<{
+    seqNo: number;
+    referenceNo: string;
+    time: string;
+    clientCode: string;
+    clientName: string;
+    invoiceNo: string;
+    method: string;
+    receivedBy: string;
+    amount: number;
+    remainingBalance?: number | null;
+  }>;
+}
+
+export function generateDailyPaymentHistoryHTML(data: DailyPaymentHistoryDocData, brand: BrandConfig, origin = ''): string {
+  const printedOn = data.generatedAt || new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' });
+  const logoSrc   = brand.logoUrl || DEFAULT_BRAND.logoUrl;
+
+  const header = buildHeader(brand, 'DAILY PAYMENT HISTORY', `Business Date: ${data.businessDate}`, `Generated: ${printedOn}`, origin, 'روزانہ ادائیگیوں کی ہسٹری');
+
+  const kpiGrid = `
+    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin: 16px 0;">
+      <div style="background:${brand.lightBg}; border:1px solid ${brand.lineColor}; padding:10px 12px; border-radius:8px; text-align:center;">
+        <div style="font-size:10px; color:${brand.accentColor}; font-weight:700; text-transform:uppercase;">Business Date</div>
+        <div style="font-size:13px; font-weight:800; color:${brand.primaryColor}; margin-top:2px;">${data.businessDate}</div>
+      </div>
+      <div style="background:${brand.lightBg}; border:1px solid ${brand.lineColor}; padding:10px 12px; border-radius:8px; text-align:center;">
+        <div style="font-size:10px; color:${brand.accentColor}; font-weight:700; text-transform:uppercase;">Total Transactions</div>
+        <div style="font-size:13px; font-weight:800; color:${brand.primaryColor}; margin-top:2px;">${data.summary.totalTransactions}</div>
+      </div>
+      <div style="background:#E6F4EA; border:1px solid #CEEAD6; padding:10px 12px; border-radius:8px; text-align:center;">
+        <div style="font-size:10px; color:#137333; font-weight:700; text-transform:uppercase;">Cash Collected</div>
+        <div style="font-size:13px; font-weight:800; color:#137333; margin-top:2px;">${fmtMoney(data.summary.cashCollected)}</div>
+      </div>
+      <div style="background:#E8F0FE; border:1px solid #D2E3FC; padding:10px 12px; border-radius:8px; text-align:center;">
+        <div style="font-size:10px; color:#1A73E8; font-weight:700; text-transform:uppercase;">Bank / Online</div>
+        <div style="font-size:13px; font-weight:800; color:#1A73E8; margin-top:2px;">${fmtMoney((data.summary.bankCollected || 0) + (data.summary.onlineCollected || 0))}</div>
+      </div>
+    </div>
+  `;
+
+  const rows = data.transactions.map(t => `
+    <tr style="border-bottom:1px solid #E2E8F0;">
+      <td style="padding:8px 8px; font-size:11px; text-align:center; color:#64748B;">${t.seqNo}</td>
+      <td style="padding:8px 8px; font-size:11px; font-weight:600; color:#0F172A; white-space:nowrap;">${t.time}</td>
+      <td style="padding:8px 8px; font-size:11px;">
+        <strong style="color:#0F172A;">${t.clientName}</strong>
+        <div style="font-size:10px; color:#64748B;">${t.clientCode}</div>
+      </td>
+      <td style="padding:8px 8px; font-size:11px; color:#334155; font-weight:600;">${t.invoiceNo || '—'}</td>
+      <td style="padding:8px 8px; font-size:11px; text-align:center;">
+        <span style="background:${t.method === 'CASH' ? '#E6F4EA' : '#E8F0FE'}; color:${t.method === 'CASH' ? '#137333' : '#1A73E8'}; padding:2px 6px; border-radius:4px; font-weight:700; font-size:10px; text-transform:uppercase;">${t.method}</span>
+      </td>
+      <td style="padding:8px 8px; font-size:11px; color:#1E293B; font-weight:600;">👤 ${t.receivedBy}</td>
+      <td style="padding:8px 8px; font-size:12px; font-weight:800; font-family:monospace; text-align:right; color:#137333;">${fmtMoney(t.amount)}</td>
+    </tr>
+  `).join('');
+
+  const table = `
+    <table style="width:100%; border-collapse:collapse; margin-top:10px; font-family:system-ui, sans-serif;">
+      <thead>
+        <tr style="background:${brand.primaryColor}; color:#FFFFFF; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">
+          <th style="padding:8px; text-align:center; border-top-left-radius:6px;">#</th>
+          <th style="padding:8px; text-align:left;">Time</th>
+          <th style="padding:8px; text-align:left;">Client</th>
+          <th style="padding:8px; text-align:left;">Invoice Ref</th>
+          <th style="padding:8px; text-align:center;">Method</th>
+          <th style="padding:8px; text-align:left;">Received By</th>
+          <th style="padding:8px; text-align:right; border-top-right-radius:6px;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.length > 0 ? rows : '<tr><td colspan="7" style="padding:20px; text-align:center; color:#64748B; font-style:italic;">No collection transactions recorded for this business day.</td></tr>'}
+      </tbody>
+      <tfoot>
+        <tr style="background:${brand.lightBg}; border-top:2px solid ${brand.primaryColor};">
+          <td colspan="6" style="padding:10px 8px; font-size:13px; font-weight:800; color:${brand.primaryColor}; text-align:right;">
+            TOTAL COLLECTION AMOUNT:
+          </td>
+          <td style="padding:10px 8px; font-size:15px; font-weight:800; font-family:monospace; text-align:right; color:${brand.primaryColor};">
+            ${fmtMoney(data.summary.totalCollected)}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+
+  const footer = buildFooter(brand, `Generated on ${printedOn} • Business Day 5:00 AM PKT`);
+
+  const body = `
+    ${header}
+    ${kpiGrid}
+    ${table}
+    ${footer}
+  `;
+
+  return buildDocShell(brand, `Daily Payment History — ${data.businessDate}`, body);
+}
 
 // ─── Print Helpers ────────────────────────────────────────────────────────────
 
