@@ -491,10 +491,12 @@ export default function SalesPage() {
   };
 
   // ── Computed totals ───────────────────────────────────────────────────────────
-  const subtotal   = items.reduce((s, i) => s + i.amount, 0);
-  const total      = Math.max(0, subtotal - discount + deliveryFee);
-  const balance    = Math.max(0, total - paid);
-  const grandTotal = (selClient?.currentBalance ?? 0) + balance; // incl previous balance
+  const rawSubtotal = items.reduce((s, i) => s + i.amount, 0);
+  const subtotal    = Math.round(rawSubtotal);
+  const rawTotal    = subtotal - discount + deliveryFee;
+  const total       = Math.max(0, Math.round(rawTotal));
+  const balance     = Math.max(0, Math.round(total - paid));
+  const grandTotal  = Math.round((selClient?.currentBalance ?? 0) + balance); // incl previous balance
 
   // Credit check
   useEffect(() => {

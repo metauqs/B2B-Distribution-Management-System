@@ -158,9 +158,11 @@ router.post('/', async (req: Request, res: Response) => {
     }
   }
 
-  const subtotal = items.reduce((s: number, i: any) => s + (Number(i.qty) * Number(i.rate)), 0);
-  const total = Math.max(0, subtotal - Number(discount) + Number(deliveryCharge));
-  const paidAmt = Number(paid);
+  const rawSubtotal = items.reduce((s: number, i: any) => s + (Number(i.qty) * Number(i.rate)), 0);
+  const subtotal = Math.round(rawSubtotal);
+  const rawTotal = subtotal - Number(discount) + Number(deliveryCharge);
+  const total = Math.max(0, Math.round(rawTotal));
+  const paidAmt = Math.round(Number(paid));
 
   if (paidAmt > total) {
     return res.status(400).json({
@@ -170,7 +172,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 
   const rawBal = total - paidAmt;
-  const balance = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
+  const balance = Math.abs(rawBal) < 1.0 ? 0 : Math.max(0, Math.round(rawBal));
   const status = balance <= 0 ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING';
 
   const startTime = Date.now();
@@ -480,9 +482,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Cannot edit invoice: Invoice is locked.' });
   }
 
-  const subtotal = items.reduce((s: number, i: any) => s + (Number(i.qty) * Number(i.rate)), 0);
-  const total = Math.max(0, subtotal - Number(discount) + Number(deliveryCharge));
-  const paidAmt = Number(existingSale.paid);
+  const rawSubtotal = items.reduce((s: number, i: any) => s + (Number(i.qty) * Number(i.rate)), 0);
+  const subtotal = Math.round(rawSubtotal);
+  const rawTotal = subtotal - Number(discount) + Number(deliveryCharge);
+  const total = Math.max(0, Math.round(rawTotal));
+  const paidAmt = Math.round(Number(existingSale.paid));
 
   if (paidAmt > total) {
     return res.status(400).json({
@@ -492,7 +496,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 
   const rawBal = total - paidAmt;
-  const balance = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
+  const balance = Math.abs(rawBal) < 1.0 ? 0 : Math.max(0, Math.round(rawBal));
   const status = balance <= 0 ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING';
 
   try {
