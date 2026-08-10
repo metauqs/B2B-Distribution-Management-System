@@ -213,6 +213,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       prisma.collection.findMany({
         where: { clientId: id, deletedAt: null },
         include: {
+          receivedByUser: { select: { id: true, name: true, role: true } },
           allocations: {
             include: {
               sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }

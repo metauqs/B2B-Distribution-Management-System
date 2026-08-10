@@ -100,7 +100,7 @@ interface Sale {
   paid: number; balance: number; status: string;
   items: SaleItem[];
 }
-interface Collection { id: string; date: string; amount: number; method: string; notes?: string; reference?: string; client?: { name: string } | null; }
+interface Collection { id: string; date: string; amount: number; method: string; notes?: string; reference?: string; remainingBalance?: number | null; receivedByUser?: { id: string; name: string } | null; allocations?: any[]; client?: { name: string } | null; }
 interface Delivery   { id: string; date?: string; createdAt: string; status: string; notes?: string; sale?: { invoiceNo: string; client?: { name: string } | null } | null; driver?: { name: string } | null; vehicle?: { numberPlate: string } | null; }
 interface LedgerEntry {
   type: 'opening' | 'invoice' | 'payment';
@@ -1459,21 +1459,42 @@ export default function ClientsPage() {
                       {/* Desktop Table View */}
                       <div className="hide-mobile" style={{ overflowX: 'auto' }}>
                         <table className="va-table">
-                          <thead><tr><th>Date</th><th>Method</th><th>Notes</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
+                          <thead>
+                            <tr>
+                              <th>Receipt / Payment ID</th>
+                              <th>Date &amp; Time</th>
+                              <th>Invoice / Ref</th>
+                              <th>Method</th>
+                              <th>Received By</th>
+                              <th style={{ textAlign: 'right' }}>Amount Collected</th>
+                              <th style={{ textAlign: 'right' }}>Remaining Balance</th>
+                            </tr>
+                          </thead>
                           <tbody>
-                            {profile.collections.map(c => (
-                              <tr key={c.id}>
-                                <td>{fmtDate(c.date)}</td>
-                                <td><span className="va-badge paid">{c.method}</span></td>
-                                <td style={{ color: 'var(--muted)', fontSize: 12 }}>{c.notes ?? '—'}</td>
-                                <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>{fmtMoney(c.amount)}</td>
-                              </tr>
-                            ))}
+                            {profile.collections.map(c => {
+                              const empName = (c as any).receivedByUser?.name || 'Unrecorded';
+                              const invNo = (c as any).allocations?.[0]?.sale?.invoiceNo || c.reference || '—';
+                              const refNo = c.reference || `PAY-${c.id.slice(-6).toUpperCase()}`;
+                              const remBal = c.remainingBalance ?? 0;
+
+                              return (
+                                <tr key={c.id}>
+                                  <td className="mono" style={{ fontWeight: 700, color: 'var(--ink)' }}>{refNo}</td>
+                                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{fmtDateTime(c.date)}</td>
+                                  <td style={{ fontWeight: 600 }}>{invNo}</td>
+                                  <td><span className="va-badge paid">{c.method}</span></td>
+                                  <td style={{ fontWeight: 600 }}>👤 {empName}</td>
+                                  <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--ok)' }}>{fmtMoney(c.amount)}</td>
+                                  <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: remBal > 0 ? 'var(--clay)' : 'var(--ok)' }}>{fmtMoney(remBal)}</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                           <tfoot>
                             <tr>
-                              <td colSpan={3} style={{ fontWeight: 700 }}>Total Collected</td>
-                              <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>{fmtMoney(profile.totalCollected)}</td>
+                              <td colSpan={5} style={{ fontWeight: 700 }}>Total Collected</td>
+                              <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--ok)' }}>{fmtMoney(profile.totalCollected)}</td>
+                              <td></td>
                             </tr>
                           </tfoot>
                         </table>
@@ -1481,16 +1502,26 @@ export default function ClientsPage() {
 
                       {/* Mobile Card List View */}
                       <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
-                        {profile.collections.map(c => (
-                          <MobileCard
-                            key={c.id}
-                            title={`Payment via ${c.method}`}
-                            headerBadge={fmtDate(c.date)}
-                          >
-                            <MobileCardRow label="Amount Collected" value={fmtMoney(c.amount)} valueColor="#166534" isMono />
-                            <MobileCardRow label="Notes / Memo" value={c.notes ?? '—'} />
-                          </MobileCard>
-                        ))}
+                        {profile.collections.map(c => {
+                          const empName = (c as any).receivedByUser?.name || 'Unrecorded';
+                          const invNo = (c as any).allocations?.[0]?.sale?.invoiceNo || c.reference || '—';
+                          const refNo = c.reference || `PAY-${c.id.slice(-6).toUpperCase()}`;
+                          const remBal = c.remainingBalance ?? 0;
+
+                          return (
+                            <MobileCard
+                              key={c.id}
+                              title={refNo}
+                              headerBadge={fmtDate(c.date)}
+                            >
+                              <MobileCardRow label="Invoice / Ref" value={invNo} />
+                              <MobileCardRow label="Amount Collected" value={fmtMoney(c.amount)} valueColor="#166534" isMono />
+                              <MobileCardRow label="Payment Method" value={c.method} />
+                              <MobileCardRow label="Received By" value={`👤 ${empName}`} />
+                              <MobileCardRow label="Remaining Balance" value={fmtMoney(remBal)} valueColor={remBal > 0 ? '#991B1B' : '#166534'} isMono />
+                            </MobileCard>
+                          );
+                        })}
                       </div>
                     </>
                   )}
