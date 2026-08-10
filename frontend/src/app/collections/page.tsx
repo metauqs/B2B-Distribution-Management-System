@@ -599,8 +599,8 @@ export default function CollectionsPage() {
                                 </thead>
                                 <tbody>
                                   {g.items.map(item => {
-                                    const isPaid    = item.dueBalance <= 0;
-                                    const isPartial = item.dueBalance > 0 && item.collectedAmount > 0;
+                                    const isPaid    = item.status === 'PAID' || item.dueBalance <= 0;
+                                    const isPartial = !isPaid && (item.dueBalance > 0 || item.collectedAmount > 0);
                                     const statusBadge = isPaid
                                       ? <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Paid</span>
                                       : isPartial

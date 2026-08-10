@@ -205,7 +205,8 @@ export async function recordCustomerLedgerEntry(
 
   const debitAmt  = Number(params.debit || 0);
   const creditAmt = Number(params.credit || 0);
-  const newBalance = previousBalance + debitAmt - creditAmt;
+  const rawBal = previousBalance + debitAmt - creditAmt;
+  const newBalance = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
 
   // 2. Insert CustomerLedger row
   const ledger = await db.customerLedger.create({
@@ -244,17 +245,20 @@ export async function recordCustomerLedgerEntry(
 
   let currentRunning = newBalance;
   for (const sub of subsequentEntries) {
-    currentRunning = currentRunning + sub.debit - sub.credit;
+    const rawSubBal = currentRunning + sub.debit - sub.credit;
+    currentRunning = rawSubBal < 1.0 ? 0 : Math.max(0, rawSubBal);
     await db.customerLedger.update({
       where: { id: sub.id },
       data: { balance: currentRunning }
     });
   }
 
+  const finalClientBal = currentRunning < 1.0 ? 0 : Math.max(0, currentRunning);
+
   // 4. Keep Client.currentBalance 100% in sync with the final running balance of the chronologically latest entry
   await db.client.update({
     where: { id: params.clientId },
-    data:  { currentBalance: currentRunning }
+    data:  { currentBalance: finalClientBal }
   });
 
   return { ledger, balance: newBalance };
@@ -288,7 +292,8 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
   let running = isFirstOpening ? 0 : client.openingBalance;
 
   for (const entry of ledgerEntries) {
-    running = running + entry.debit - entry.credit;
+    const rawRun = running + entry.debit - entry.credit;
+    running = rawRun < 1.0 ? 0 : Math.max(0, rawRun);
     if (entry.balance !== running) {
       await db.customerLedger.update({
         where: { id: entry.id },
@@ -297,12 +302,14 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
     }
   }
 
+  const finalRunning = running < 1.0 ? 0 : Math.max(0, running);
+
   await db.client.update({
     where: { id: clientId },
-    data: { currentBalance: running }
+    data: { currentBalance: finalRunning }
   });
 
-  return running;
+  return finalRunning;
 }
 
 export async function getClientBalance(clientId: string, tx?: any): Promise<number> {
