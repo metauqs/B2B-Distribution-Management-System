@@ -329,6 +329,7 @@ router.post('/', async (req: Request, res: Response) => {
             date: s.date,
             reference: `Auto payment for ${s.invoiceNo}`,
             notes: 'Created automatically via sales checkout',
+            receivedByUserId: validatedUserId ?? undefined,
           }
         });
 
@@ -701,6 +702,9 @@ router.patch('/:id', async (req: Request, res: Response) => {
         }
       });
 
+      // Resolve receivedByUserId from authenticated user token (same pattern as POST /api/sales)
+      const receivedByUserId = await getValidUserId(userId, tx);
+
       // Record collection
       const coll = await tx.collection.create({
         data: {
@@ -711,6 +715,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
           date: new Date(),
           reference: `Payment for ${sale.invoiceNo}`,
           notes: `Additional payment recorded against invoice`,
+          receivedByUserId,
         }
       });
 
