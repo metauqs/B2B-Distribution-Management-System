@@ -42,12 +42,25 @@ export async function recalcAvgCostFromHistory(
     return;
   }
 
-  // Fetch all PURCHASE movements for this product in chronological order
+  // Find the timestamp of the latest zero-stock reset (if any)
+  const latestZeroStockMove = await db.stockMovement.findFirst({
+    where: {
+      productId,
+      branchId,
+      newStock: 0,
+    },
+    orderBy: [{ createdAt: 'desc' }, { date: 'desc' }],
+    select: { createdAt: true, date: true },
+  });
+
+  const resetDate = latestZeroStockMove ? (latestZeroStockMove.createdAt ?? latestZeroStockMove.date) : null;
+
+  // Fetch all PURCHASE price history for this product since the latest zero-stock reset
   const purchaseMoves = await db.purchasePriceHistory.findMany({
     where: {
       productId,
       branchId,
-      // Only include histories linked to non-deleted purchases
+      ...(resetDate ? { createdAt: { gte: resetDate } } : {}),
       OR: [
         { purchaseId: null },
         {
@@ -60,16 +73,20 @@ export async function recalcAvgCostFromHistory(
   });
 
   if (purchaseMoves.length === 0) {
-    // No purchase history — reset avgCost to 0
+    // If no purchase history after reset, fallback to currentBuyPrice
+    const invRecord = await db.inventory.findUnique({
+      where: { productId_branchId: { productId, branchId } },
+      select: { currentBuyPrice: true }
+    });
+    const fallbackCost = invRecord?.currentBuyPrice && invRecord.currentBuyPrice > 0 ? invRecord.currentBuyPrice : 0;
     await db.inventory.updateMany({
       where: { productId, branchId },
-      data: { avgCost: 0 },
+      data: { avgCost: fallbackCost },
     });
     return;
   }
 
   // Replay moving weighted average cost chronologically
-  // When runningQty <= 0 or runningAvg <= 0, start a fresh cost basis on the next purchase
   let runningQty = 0;
   let runningAvg = 0;
 
@@ -89,7 +106,6 @@ export async function recalcAvgCostFromHistory(
     runningQty = runningQty + q;
   }
 
-  // Update avgCost if we have a valid value
   if (runningAvg > 0) {
     await db.inventory.updateMany({
       where: { productId, branchId },

@@ -344,7 +344,7 @@ router.post('/buy-price', async (req: Request, res: Response) => {
       update: {
         previousBuyPrice: oldBuyPrice > 0 ? oldBuyPrice : (existing?.previousBuyPrice ?? 0),
         currentBuyPrice: price,
-        ...(existing?.avgCost && existing.avgCost > 0 ? {} : { avgCost: price }),
+        avgCost: price,
       },
       create: {
         productId,

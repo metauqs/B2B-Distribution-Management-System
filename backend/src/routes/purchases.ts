@@ -288,7 +288,10 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
             });
           }
 
-          // Remove PurchasePriceHistory entries for this purchase so avgCost can be recalculated cleanly
+          // Remove StockMovement & PurchasePriceHistory entries for this purchase so stockIn executes cleanly
+          await tx.stockMovement.deleteMany({
+            where: { refType: 'purchase', refId: id, productId: oldItem.productId }
+          });
           await tx.purchasePriceHistory.deleteMany({
             where: { purchaseId: id, productId: oldItem.productId }
           });
