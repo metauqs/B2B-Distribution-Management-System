@@ -1372,30 +1372,27 @@ export default function ClientsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {(() => {
+                             {(() => {
                               let runningDue = profile.client.openingBalance ?? 0;
                               const sortedSales = [...profile.sales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                               return sortedSales.map(sale => {
-                                const prevOutstanding = runningDue;
+                                const isPaid = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.99);
+                                const isPartial = !isPaid && (sale.status === 'PARTIAL' || sale.paid > 0);
+                                const prevOutstanding = (Math.abs(runningDue) < 0.99) ? 0 : runningDue;
                                 const currentOrder = sale.total;
                                 const totalPayable = prevOutstanding + currentOrder;
                                 const payNow = sale.paid;           // amount paid at checkout
-                                const collectedAmount = sale.paid;  // total ever collected (same as Sale.paid)
-                                const dueBalance = Math.max(0, totalPayable - collectedAmount);
-                                runningDue = dueBalance;
+                                const collectedAmount = sale.paid;  // total collected on this invoice
+                                const dueBalance = isPaid ? 0 : Math.max(0, sale.balance ?? (totalPayable - collectedAmount));
+                                runningDue = isPaid ? prevOutstanding : dueBalance;
 
-                                let statusBadge = (
+                                const statusBadge = isPaid ? (
+                                  <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Paid</span>
+                                ) : isPartial ? (
+                                  <span className="va-badge" style={{ background: '#FFF3E0', color: '#E65100', border: '1px solid #FFE0B2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Partial</span>
+                                ) : (
                                   <span className="va-badge" style={{ background: '#FFEBEE', color: '#C62828', border: '1px solid #FFCDD2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Unpaid</span>
                                 );
-                                if (sale.status === 'PAID' || dueBalance <= 0) {
-                                  statusBadge = (
-                                    <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Paid</span>
-                                  );
-                                } else if (sale.status === 'PARTIAL' || collectedAmount > 0) {
-                                  statusBadge = (
-                                    <span className="va-badge" style={{ background: '#FFF3E0', color: '#E65100', border: '1px solid #FFE0B2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Partial</span>
-                                  );
-                                }
 
                                 return (
                                   <tr key={sale.id}>
@@ -1403,14 +1400,14 @@ export default function ClientsPage() {
                                     <td style={{ color: 'var(--muted)', fontSize: 12 }}>{profile.client.clientId || 'WH-0000'}</td>
                                     <td style={{ fontWeight: 600 }}>{profile.client.name}</td>
                                     <td style={{ color: 'var(--muted)' }}>{fmtDateTime(sale.date)}</td>
-                                    <td className="mono" style={{ textAlign: 'right', color: prevOutstanding > 0 ? 'var(--clay)' : 'var(--muted)' }}>{fmtMoney(prevOutstanding)}</td>
+                                    <td className="mono" style={{ textAlign: 'right', color: prevOutstanding > 0.99 ? 'var(--clay)' : 'var(--muted)' }}>{prevOutstanding > 0.99 ? fmtMoney(prevOutstanding) : 'Rs 0'}</td>
                                     <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{fmtMoney(currentOrder)}</td>
                                     <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(totalPayable)}</td>
                                     <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: payNow > 0 ? 'var(--ok)' : 'var(--muted)' }}>
                                       {payNow > 0 ? fmtMoney(payNow) : '—'}
                                     </td>
                                     <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: collectedAmount > 0 ? 'var(--ok)' : 'var(--muted)' }}>{fmtMoney(collectedAmount)}</td>
-                                    <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: dueBalance > 0 ? 'var(--clay)' : 'var(--ok)' }}>{dueBalance > 0 ? fmtMoney(dueBalance) : '✓ 0'}</td>
+                                    <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: dueBalance > 0.99 ? 'var(--clay)' : 'var(--ok)' }}>{dueBalance > 0.99 ? fmtMoney(dueBalance) : '✓ 0'}</td>
                                     <td>{statusBadge}</td>
                                   </tr>
                                 );
