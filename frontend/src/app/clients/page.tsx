@@ -1374,27 +1374,22 @@ export default function ClientsPage() {
                           <tbody>
                             {(() => {
                               const sortedSales = [...profile.sales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-                              const collections = profile.collections || [];
+                              const ledgers = profile.ledger || [];
 
                               return sortedSales.map(sale => {
                                 const saleTime = new Date(sale.date).getTime();
 
-                                // Calculate total previous sales before this sale
-                                const prevSalesTotal = sortedSales
-                                  .filter(s => new Date(s.date).getTime() < saleTime)
-                                  .reduce((sum, s) => sum + s.total, 0);
+                                // Find the customer ledger entry immediately preceding this invoice
+                                const priorLedgerEntries = ledgers.filter((l: any) => {
+                                  const lTime = new Date(l.date).getTime();
+                                  return lTime <= saleTime && l.referenceId !== sale.id;
+                                });
 
-                                // Calculate total payments made before this sale (checkout paid + collections)
-                                const prevCheckoutPaid = sortedSales
-                                  .filter(s => new Date(s.date).getTime() < saleTime)
-                                  .reduce((sum, s) => sum + s.paid, 0);
+                                const priorLedger = priorLedgerEntries.length > 0 ? priorLedgerEntries[priorLedgerEntries.length - 1] : null;
+                                const prevOutstanding = priorLedger
+                                  ? Math.max(0, Math.round((priorLedger as any).runningBalance ?? (priorLedger as any).balance ?? 0))
+                                  : Math.max(0, Math.round(profile.client.openingBalance ?? 0));
 
-                                const prevCollectionsPaid = collections
-                                  .filter(c => new Date(c.date).getTime() < saleTime)
-                                  .reduce((sum, c) => sum + c.amount, 0);
-
-                                const rawPrev = (profile.client.openingBalance ?? 0) + prevSalesTotal - prevCheckoutPaid - prevCollectionsPaid;
-                                const prevOutstanding = Math.max(0, Math.round(rawPrev));
                                 const currentOrder = Math.round(sale.total);
                                 const totalPayable = prevOutstanding + currentOrder;
                                 const payNow = Math.round(sale.paid);
