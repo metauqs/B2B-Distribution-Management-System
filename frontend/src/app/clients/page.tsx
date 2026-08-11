@@ -1372,19 +1372,36 @@ export default function ClientsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                             {(() => {
-                              let runningDue = profile.client.openingBalance ?? 0;
+                            {(() => {
                               const sortedSales = [...profile.sales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                              const collections = profile.collections || [];
+
                               return sortedSales.map(sale => {
+                                const saleTime = new Date(sale.date).getTime();
+
+                                // Calculate total previous sales before this sale
+                                const prevSalesTotal = sortedSales
+                                  .filter(s => new Date(s.date).getTime() < saleTime)
+                                  .reduce((sum, s) => sum + s.total, 0);
+
+                                // Calculate total payments made before this sale (checkout paid + collections)
+                                const prevCheckoutPaid = sortedSales
+                                  .filter(s => new Date(s.date).getTime() < saleTime)
+                                  .reduce((sum, s) => sum + s.paid, 0);
+
+                                const prevCollectionsPaid = collections
+                                  .filter(c => new Date(c.date).getTime() < saleTime)
+                                  .reduce((sum, c) => sum + c.amount, 0);
+
+                                const rawPrev = (profile.client.openingBalance ?? 0) + prevSalesTotal - prevCheckoutPaid - prevCollectionsPaid;
+                                const prevOutstanding = Math.max(0, Math.round(rawPrev));
+                                const currentOrder = Math.round(sale.total);
+                                const totalPayable = prevOutstanding + currentOrder;
+                                const payNow = Math.round(sale.paid);
+                                const collectedAmount = Math.round(sale.paid);
                                 const isPaid = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.99);
                                 const isPartial = !isPaid && (sale.status === 'PARTIAL' || sale.paid > 0);
-                                const prevOutstanding = (Math.abs(runningDue) < 0.99) ? 0 : runningDue;
-                                const currentOrder = sale.total;
-                                const totalPayable = prevOutstanding + currentOrder;
-                                const payNow = sale.paid;           // amount paid at checkout
-                                const collectedAmount = sale.paid;  // total collected on this invoice
-                                const dueBalance = isPaid ? 0 : Math.max(0, sale.balance ?? (totalPayable - collectedAmount));
-                                runningDue = isPaid ? prevOutstanding : dueBalance;
+                                const dueBalance = isPaid ? 0 : Math.max(0, Math.round(sale.balance ?? (totalPayable - collectedAmount)));
 
                                 const statusBadge = isPaid ? (
                                   <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Paid</span>
