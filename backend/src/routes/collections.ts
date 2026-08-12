@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBalance, deriveInvoiceStatus } from '../lib/business';
+import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBalance, deriveInvoiceStatus, reconcileClientBalancesAndAllocations } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { getBusinessDateRange, getBusinessDateString, formatPKTDateTime, parseInputDateToUtc } from '../lib/businessDate';
 import { postCollectionLedger } from '../lib/financialLedgerService';
@@ -571,8 +571,8 @@ router.post('/', async (req: Request, res: Response) => {
         reference: coll.reference || undefined,
       });
 
-      // Final verification: recalculate ledger & balance inside the transaction
-      await recalculateClientLedgerAndBalance(clientId, tx);
+      // Final verification: reconcile allocations & customer ledger balance inside the transaction
+      await reconcileClientBalancesAndAllocations(clientId, tx);
 
       return {
         collection: coll,
@@ -608,6 +608,39 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[POST /api/collections]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Internal server error' });
+  }
+});
+
+// POST /api/collections/reconcile-all — Global Multi-Client Reconciliation Engine
+router.post('/reconcile-all', async (req: Request, res: Response) => {
+  try {
+    const clients = await prisma.client.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true, clientId: true }
+    });
+
+    const results: any[] = [];
+    for (const c of clients) {
+      const outcome = await prisma.$transaction(async tx => {
+        return reconcileClientBalancesAndAllocations(c.id, tx);
+      });
+      results.push({
+        clientId: c.id,
+        clientCode: c.clientId,
+        name: c.name,
+        currentBalance: outcome.clientBalance,
+        reconciledAllocations: outcome.reconciledAllocations
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Reconciled ${clients.length} clients successfully`,
+      data: results
+    });
+  } catch (err: any) {
+    console.error('[POST /api/collections/reconcile-all]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Reconciliation failed' });
   }
 });
 

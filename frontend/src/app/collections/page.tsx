@@ -286,11 +286,14 @@ export default function CollectionsPage() {
         };
       });
 
+      const sumUnpaidSales = clientSales.filter(s => s.balance > 0 && s.status !== 'CANCELLED').reduce((sum, s) => sum + s.balance, 0);
+      const dueBalance = sumUnpaidSales > 0 ? sumUnpaidSales : (client.currentBalance ?? 0);
+
       acc[client.id] = {
         clientId:   client.id,
         clientNo:   client.clientId || 'WH-0000',
         clientName: client.name,
-        dueBalance: client.currentBalance,
+        dueBalance: Math.max(0, dueBalance),
         items
       };
 
@@ -355,7 +358,16 @@ export default function CollectionsPage() {
                 <label>Client *</label>
                 <select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value, saleId: '' }))} required>
                   <option value="">— Select Customer —</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.name} (Outstanding Due: {fmtMoney(c.currentBalance)})</option>)}
+                  {clients.map(c => {
+                    const clientUnpaidSales = sales.filter(s => s.clientId === c.id && s.balance > 0 && s.status !== 'CANCELLED');
+                    const sumUnpaid = clientUnpaidSales.reduce((sum, s) => sum + s.balance, 0);
+                    const displayDue = sumUnpaid > 0 ? sumUnpaid : (c.currentBalance ?? 0);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.name} (Outstanding Due: {fmtMoney(Math.max(0, displayDue))})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="va-field">

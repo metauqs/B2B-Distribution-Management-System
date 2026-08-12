@@ -327,6 +327,68 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
   return finalRunning;
 }
 
+export async function reconcileClientBalancesAndAllocations(clientId: string, tx?: any): Promise<{ clientBalance: number; reconciledAllocations: number }> {
+  const db = tx || prisma;
+  const client = await db.client.findUnique({
+    where: { id: clientId, deletedAt: null }
+  });
+  if (!client) return { clientBalance: 0, reconciledAllocations: 0 };
+
+  const sales = await db.sale.findMany({
+    where: { clientId, deletedAt: null, status: { not: 'CANCELLED' } },
+    include: { collectionAllocations: true },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
+  });
+
+  const collections = await db.collection.findMany({
+    where: { clientId, deletedAt: null },
+    include: { allocations: true },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
+  });
+
+  let reconciledAllocationsCount = 0;
+
+  for (const col of collections) {
+    const allocated = col.allocations.reduce((sum: number, a: any) => sum + a.allocatedAmount, 0);
+    let unallocated = col.amount - allocated;
+
+    if (unallocated > 0.01) {
+      for (const sale of sales) {
+        if (unallocated <= 0.01) break;
+        const currentAllocated = sale.collectionAllocations.reduce((sum: number, a: any) => sum + a.allocatedAmount, 0);
+        const currentBal = Math.max(0, sale.total - currentAllocated);
+
+        if (currentBal > 0.01) {
+          const toApply = Math.min(unallocated, currentBal);
+          const newAlloc = await db.collectionAllocation.create({
+            data: {
+              collectionId: col.id,
+              saleId: sale.id,
+              allocatedAmount: toApply
+            }
+          });
+          sale.collectionAllocations.push(newAlloc);
+
+          const newPaid = sale.paid + toApply;
+          const newBal = Math.max(0, sale.total - (currentAllocated + toApply));
+          const newStatus = deriveInvoiceStatus(sale.total, newPaid);
+
+          await db.sale.update({
+            where: { id: sale.id },
+            data: { paid: newPaid, balance: newBal, status: newStatus as any }
+          });
+
+          unallocated -= toApply;
+          reconciledAllocationsCount++;
+        }
+      }
+    }
+  }
+
+  const finalBalance = await recalculateClientLedgerAndBalance(clientId, db);
+  return { clientBalance: finalBalance, reconciledAllocations: reconciledAllocationsCount };
+}
+
 export async function getClientBalance(clientId: string, tx?: any): Promise<number> {
   const db = tx || prisma;
   const client = await db.client.findUnique({
