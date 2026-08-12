@@ -336,53 +336,83 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
 
   const sales = await db.sale.findMany({
     where: { clientId, deletedAt: null, status: { not: 'CANCELLED' } },
-    include: { collectionAllocations: true },
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
   });
 
   const collections = await db.collection.findMany({
     where: { clientId, deletedAt: null },
-    include: { allocations: true },
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
   });
 
+  const totalCollections = collections.reduce((sum: number, c: any) => sum + c.amount, 0);
+  const openingBal = client.openingBalance || 0;
+
+  // Clear existing collection allocations for active collections to rebuild clean opening-balance-aware mappings
+  const collectionIds = collections.map((c: any) => c.id);
+  if (collectionIds.length > 0) {
+    await db.collectionAllocation.deleteMany({
+      where: { collectionId: { in: collectionIds } }
+    });
+  }
+
+  let colIdx = 0;
+  let colRem = collections.length > 0 ? collections[0].amount : 0;
+  let openingRem = openingBal;
+
+  // 1. Consume collection funds against Opening Balance first (oldest pre-existing debt)
+  while (openingRem > 0.01 && colIdx < collections.length) {
+    const avail = colRem;
+    const used = Math.min(avail, openingRem);
+    openingRem -= used;
+    colRem -= used;
+    if (colRem <= 0.01) {
+      colIdx++;
+      if (colIdx < collections.length) colRem = collections[colIdx].amount;
+    }
+  }
+
+  // 2. Allocate remaining collection funds to sales in chronological order
   let reconciledAllocationsCount = 0;
+  for (const sale of sales) {
+    let saleNeeded = sale.total;
+    let totalSaleAllocated = 0;
 
-  for (const col of collections) {
-    const allocated = col.allocations.reduce((sum: number, a: any) => sum + a.allocatedAmount, 0);
-    let unallocated = col.amount - allocated;
+    while (saleNeeded > 0.01 && colIdx < collections.length) {
+      const col = collections[colIdx];
+      const toAlloc = Math.min(colRem, saleNeeded);
 
-    if (unallocated > 0.01) {
-      for (const sale of sales) {
-        if (unallocated <= 0.01) break;
-        const currentAllocated = sale.collectionAllocations.reduce((sum: number, a: any) => sum + a.allocatedAmount, 0);
-        const currentBal = Math.max(0, sale.total - currentAllocated);
+      if (toAlloc > 0.01) {
+        await db.collectionAllocation.create({
+          data: {
+            collectionId: col.id,
+            saleId: sale.id,
+            allocatedAmount: toAlloc
+          }
+        });
+        reconciledAllocationsCount++;
+      }
 
-        if (currentBal > 0.01) {
-          const toApply = Math.min(unallocated, currentBal);
-          const newAlloc = await db.collectionAllocation.create({
-            data: {
-              collectionId: col.id,
-              saleId: sale.id,
-              allocatedAmount: toApply
-            }
-          });
-          sale.collectionAllocations.push(newAlloc);
+      saleNeeded -= toAlloc;
+      totalSaleAllocated += toAlloc;
+      colRem -= toAlloc;
 
-          const newPaid = sale.paid + toApply;
-          const newBal = Math.max(0, sale.total - (currentAllocated + toApply));
-          const newStatus = deriveInvoiceStatus(sale.total, newPaid);
-
-          await db.sale.update({
-            where: { id: sale.id },
-            data: { paid: newPaid, balance: newBal, status: newStatus as any }
-          });
-
-          unallocated -= toApply;
-          reconciledAllocationsCount++;
-        }
+      if (colRem <= 0.01) {
+        colIdx++;
+        if (colIdx < collections.length) colRem = collections[colIdx].amount;
       }
     }
+
+    const newBal = Math.max(0, sale.total - totalSaleAllocated);
+    const newStatus = deriveInvoiceStatus(sale.total, totalSaleAllocated);
+
+    await db.sale.update({
+      where: { id: sale.id },
+      data: {
+        paid: totalSaleAllocated,
+        balance: newBal,
+        status: newStatus as any
+      }
+    });
   }
 
   const finalBalance = await recalculateClientLedgerAndBalance(clientId, db);
