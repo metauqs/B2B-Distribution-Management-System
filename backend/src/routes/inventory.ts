@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { recordWastage, manualAdjust } from '../lib/inventoryService';
+import { recordWastage, manualAdjust, recalculateProductStock } from '../lib/inventoryService';
 import { getCurrentBusinessDateRange } from '../lib/businessDate';
 
 const router = Router();
@@ -309,28 +309,18 @@ router.post('/reset', async (req: Request, res: Response) => {
 // POST /api/inventory/reconcile — Run single-source-of-truth inventory reconciliation
 router.post('/reconcile', async (req: Request, res: Response) => {
   try {
-    const products = await prisma.product.findMany({
-      include: {
-        inventory: true,
-        stockMovements: { select: { qty: true } }
-      }
-    });
+    let branchId = (req.headers['x-branch-id'] as string) || undefined;
+    if (!branchId) {
+      const firstBranch = await prisma.branch.findFirst();
+      branchId = firstBranch?.id ?? '';
+    }
+
+    const products = await prisma.product.findMany({ select: { id: true } });
 
     let reconciledCount = 0;
     for (const p of products) {
-      const smSum = p.stockMovements.reduce((sum, m) => sum + Number(m.qty || 0), 0);
-      const expectedQty = Math.max(0, Math.round(smSum * 1000) / 1000);
-      const currentQty = p.inventory[0]?.qty ?? 0;
-
-      if (Math.abs(currentQty - expectedQty) > 0.001) {
-        if (p.inventory[0]) {
-          await prisma.inventory.update({
-            where: { id: p.inventory[0].id },
-            data: { qty: expectedQty }
-          });
-        }
-        reconciledCount++;
-      }
+      await recalculateProductStock(prisma, p.id, branchId);
+      reconciledCount++;
     }
 
     return res.json({

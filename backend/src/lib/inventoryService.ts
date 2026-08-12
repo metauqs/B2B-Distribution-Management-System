@@ -27,13 +27,39 @@ export async function recalculateProductStock(
 ): Promise<number> {
   const db = tx || prisma;
 
-  const movements = await db.stockMovement.findMany({
+  const smList = await db.stockMovement.findMany({
     where: { productId, branchId },
-    select: { qty: true },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    select: { qty: true, type: true, refType: true, newStock: true },
   });
 
-  const sumQty = movements.reduce((acc: number, m: any) => acc + Number(m.qty || 0), 0);
-  const exactStock = Math.max(0, Math.round(sumQty * 1000) / 1000);
+  if (smList.length === 0) return 0;
+
+  // Find the latest physical count adjustment or admin reset movement
+  let lastBaselineIdx = -1;
+  for (let i = smList.length - 1; i >= 0; i--) {
+    const m = smList[i];
+    const isBaseline =
+      m.refType === 'adjustment' ||
+      m.refType === 'admin_reset' ||
+      m.type === 'OPENING' ||
+      (m.type === 'ADJUSTMENT' && m.refType !== 'sale_edit_restore');
+    if (isBaseline) {
+      lastBaselineIdx = i;
+      break;
+    }
+  }
+
+  let exactStock = 0;
+  if (lastBaselineIdx !== -1) {
+    const baselineMove = smList[lastBaselineIdx];
+    const baselineQty = Math.max(0, Number(baselineMove.newStock || 0));
+    const subsequentSum = smList.slice(lastBaselineIdx + 1).reduce((sum: number, m: any) => sum + Number(m.qty || 0), 0);
+    exactStock = Math.max(0, Math.round((baselineQty + subsequentSum) * 1000) / 1000);
+  } else {
+    const sumAll = smList.reduce((sum: number, m: any) => sum + Number(m.qty || 0), 0);
+    exactStock = Math.max(0, Math.round(sumAll * 1000) / 1000);
+  }
 
   const existing = await db.inventory.findUnique({
     where: { productId_branchId: { productId, branchId } },
