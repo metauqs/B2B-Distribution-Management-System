@@ -261,6 +261,22 @@ export default function InventoryPage() {
     } finally { setSaving(false); }
   };
 
+  const handleReconcile = async () => {
+    setSaving(true);
+    try {
+      const res = await apiFetch('/api/inventory/reconcile', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        invalidateCache('/api/inventory');
+        window.dispatchEvent(new Event('app-revalidate'));
+        showToast(`✅ ${data.message}`);
+        await load(true);
+      } else showToast('❌ ' + (data.error ?? 'Reconciliation failed'));
+    } catch (err: any) {
+      showToast('❌ ' + (err.message || 'Reconciliation failed'));
+    } finally { setSaving(false); }
+  };
+
   // ── Load inventory & all products ───────────────────────────────────────────
   const load = useCallback(async (isBackground = false) => {
     if (!isBackground && inventory.length === 0) setLoading(true);
@@ -769,6 +785,7 @@ export default function InventoryPage() {
                   style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, width: 220 }}
                 />
                 <button className="va-btn secondary small" onClick={() => load()}>↻ Refresh</button>
+                <button className="va-btn secondary small" onClick={handleReconcile} disabled={saving} style={{ fontWeight: 700 }}>⚡ Reconcile Stock</button>
               </div>
             </div>
 

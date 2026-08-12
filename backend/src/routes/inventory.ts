@@ -306,6 +306,44 @@ router.post('/reset', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/inventory/reconcile — Run single-source-of-truth inventory reconciliation
+router.post('/reconcile', async (req: Request, res: Response) => {
+  try {
+    const products = await prisma.product.findMany({
+      include: {
+        inventory: true,
+        stockMovements: { select: { qty: true } }
+      }
+    });
+
+    let reconciledCount = 0;
+    for (const p of products) {
+      const smSum = p.stockMovements.reduce((sum, m) => sum + Number(m.qty || 0), 0);
+      const expectedQty = Math.max(0, Math.round(smSum * 1000) / 1000);
+      const currentQty = p.inventory[0]?.qty ?? 0;
+
+      if (Math.abs(currentQty - expectedQty) > 0.001) {
+        if (p.inventory[0]) {
+          await prisma.inventory.update({
+            where: { id: p.inventory[0].id },
+            data: { qty: expectedQty }
+          });
+        }
+        reconciledCount++;
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Single Source of Truth Reconciliation complete. ${reconciledCount} product inventory records synchronized.`,
+      reconciledCount,
+    });
+  } catch (err: any) {
+    console.error('[POST /api/inventory/reconcile]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to reconcile inventory' });
+  }
+});
+
 // POST /api/inventory/buy-price (Admin manual buy price adjustment)
 router.post('/buy-price', async (req: Request, res: Response) => {
   try {

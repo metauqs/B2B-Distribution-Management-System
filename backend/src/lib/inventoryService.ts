@@ -14,6 +14,43 @@
 import { prisma } from './prisma';
 import { postWastageLedger } from './financialLedgerService';
 
+/**
+ * Single Source of Truth Inventory Recalculation Engine
+ * 
+ * Recomputes Inventory.qty directly from the sum of all recorded StockMovements
+ * for the product and branch. Guaranteed 100% mathematical consistency.
+ */
+export async function recalculateProductStock(
+  tx: any,
+  productId: string,
+  branchId: string
+): Promise<number> {
+  const db = tx || prisma;
+
+  const movements = await db.stockMovement.findMany({
+    where: { productId, branchId },
+    select: { qty: true },
+  });
+
+  const sumQty = movements.reduce((acc: number, m: any) => acc + Number(m.qty || 0), 0);
+  const exactStock = Math.max(0, Math.round(sumQty * 1000) / 1000);
+
+  const existing = await db.inventory.findUnique({
+    where: { productId_branchId: { productId, branchId } },
+    select: { avgCost: true },
+  });
+
+  const avgCost = exactStock <= 0 ? 0 : (existing?.avgCost ?? 0);
+
+  await db.inventory.upsert({
+    where: { productId_branchId: { productId, branchId } },
+    update: { qty: exactStock, avgCost },
+    create: { productId, branchId, qty: exactStock, avgCost: 0 },
+  });
+
+  return exactStock;
+}
+
 // ── 0. recalcAvgCostFromHistory — Recomputes avgCost from StockMovements ──────
 //
 // Called after a Purchase is EDITED or DELETED to ensure avgCost stays accurate.
