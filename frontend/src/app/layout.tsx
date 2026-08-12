@@ -5,6 +5,7 @@ import { StoreProvider } from '@/store/providers/StoreProvider';
 export const metadata: Metadata = {
   title: 'HALAL VEGG SUPPLIES',
   description: 'Vegetable supply ledger for sales, purchases, clients, inventory, and collections',
+  manifest: '/manifest.json',
   icons: {
     icon: [
       { url: '/icon.svg', type: 'image/svg+xml' },

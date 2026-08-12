@@ -202,6 +202,8 @@ model Sale {
   @@index([invoiceNo])
   @@index([employeeId])
   @@index([clientId, status, deletedAt])
+  @@index([clientId, date])
+  @@index([status, date])
   @@map("sales")
 }
 
@@ -327,6 +329,7 @@ model Collection {
   @@index([bankAccountId])
   @@index([receivedByUserId])
   @@index([clientId, deletedAt])
+  @@index([clientId, date])
   @@map("collections")
 }
 
@@ -457,6 +460,7 @@ model StockMovement {
   @@index([branchId])
   @@index([date])
   @@index([userId])
+  @@index([productId, branchId, date])
   @@map("stock_movements")
 }
 
@@ -764,6 +768,7 @@ model CustomerLedger {
   @@index([branchId])
   @@index([date])
   @@index([clientId, date])
+  @@index([clientId, date, createdAt])
   @@map("customer_ledger")
 }
 
@@ -876,6 +881,8 @@ model FinancialLedger {
   @@index([accountCategory])
   @@index([referenceType, referenceId])
   @@index([txType])
+  @@index([branchId, date])
+  @@index([transactionType, date])
   @@map("financial_ledger")
 }
 

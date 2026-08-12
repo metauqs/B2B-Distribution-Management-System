@@ -15,8 +15,10 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
 
     const logMsg = `[API] ${method} ${originalUrl} ${statusCode} - ${duration}ms`;
 
-    if (duration > 1500 || statusCode >= 500) {
-      console.warn(`⚠️ [SLOW/FAIL API] ${logMsg}`);
+    if (duration > 1000 || statusCode >= 500) {
+      console.warn(`🔴 [API CRITICAL SLOW/FAIL] ${logMsg}`);
+    } else if (duration > 500) {
+      console.warn(`⚠️ [API SLOW] ${logMsg}`);
     } else {
       console.log(logMsg);
     }
