@@ -265,7 +265,7 @@ export default function CollectionsPage() {
         const isSalePaid          = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.99);
         const previousOutstanding = sale.previousBalance ?? 0;
         const currentOrder        = sale.total;
-        const totalPayable        = sale.total;
+        const totalPayable        = previousOutstanding + currentOrder;
         const collectedAmount     = sale.paid;
         const rawDue              = isSalePaid ? 0 : Math.max(0, sale.balance);
         const dueBalance          = (Math.abs(rawDue) < 0.99) ? 0 : rawDue;
@@ -605,7 +605,7 @@ export default function CollectionsPage() {
                                 <tbody>
                                   {g.items.map(item => {
                                     const isPaid    = item.status === 'PAID' || item.dueBalance <= 0;
-                                    const isPartial = !isPaid && (item.dueBalance > 0 || item.collectedAmount > 0);
+                                    const isPartial = !isPaid && item.collectedAmount > 0;
                                     const statusBadge = isPaid
                                       ? <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Paid</span>
                                       : isPartial
