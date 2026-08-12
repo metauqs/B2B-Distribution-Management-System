@@ -348,6 +348,7 @@ model Expense {
   id            String          @id @default(cuid())
   reference     String?
   category      ExpenseCategory
+  categoryRefId String?
   description   String?
   amount        Float
   date          DateTime        @db.Timestamptz(3) @default(now())
@@ -369,10 +370,12 @@ model Expense {
   employee      Employee?       @relation(fields: [employeeId], references: [id])
   supplier      Supplier?       @relation(fields: [supplierId], references: [id])
   createdBy     User?           @relation("ExpenseCreator", fields: [createdById], references: [id])
+  categoryRef   ExpenseCategoryRef? @relation(fields: [categoryRefId], references: [id])
 
   @@index([branchId])
   @@index([date])
   @@index([category])
+  @@index([categoryRefId])
   @@index([vehicleId])
   @@index([employeeId])
   @@index([supplierId])
@@ -380,6 +383,16 @@ model Expense {
   @@index([cashAccountId])
   @@index([bankAccountId])
   @@map("expenses")
+}
+
+model ExpenseCategoryRef {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  expenses  Expense[]
+
+  @@map("expense_categories")
 }
 
 model Wastage {
@@ -835,28 +848,34 @@ model BroadcastSettings {
 }
 
 model FinancialLedger {
-  id              String   @id @default(cuid())
+  id              String                   @id @default(cuid())
   branchId        String
-  date            DateTime @default(now()) @db.Timestamptz(3)
+  date            DateTime                 @default(now()) @db.Timestamptz(3)
   transactionType String
-  entryType       String   // DEBIT or CREDIT
-  accountCategory String   // REVENUE, COGS, ASSET_RECEIVABLE, ASSET_CASH, ASSET_INVENTORY, LIABILITY_PAYABLE, EXPENSE_OPERATING, EXPENSE_WASTAGE, DIRECT_COST
+  entryType       String                   // DEBIT or CREDIT
+  accountCategory String                   // REVENUE, COGS, ASSET_RECEIVABLE, ASSET_CASH, ASSET_INVENTORY, LIABILITY_PAYABLE, EXPENSE_OPERATING, EXPENSE_WASTAGE, DIRECT_COST
   accountName     String
-  debit           Float    @default(0)
-  credit          Float    @default(0)
-  referenceType   String?  // sale, purchase, collection, expense, wastage, adjustment
+  debit           Float                    @default(0)
+  credit          Float                    @default(0)
+  referenceType   String?                  // sale, purchase, collection, expense, wastage, adjustment
   referenceId     String?
   referenceNo     String?
-  entityId        String?  // clientId, supplierId, productId
-  entityType      String?  // client, supplier, product
+  entityId        String?                  // clientId, supplierId, productId
+  entityType      String?                  // client, supplier, product
+  // Typed enum columns (normalized — to replace string columns after backfill verification)
+  txType          FinancialTransactionType?
+  entType         FinancialEntryType?
+  acctCategory    AccountCategory?
+  entEntityType   FinancialEntityType?
   notes           String?
-  createdAt       DateTime @default(now()) @db.Timestamptz(3)
-  branch          Branch   @relation(fields: [branchId], references: [id])
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(3)
+  branch          Branch                   @relation(fields: [branchId], references: [id])
 
   @@index([branchId])
   @@index([date])
   @@index([accountCategory])
   @@index([referenceType, referenceId])
+  @@index([txType])
   @@map("financial_ledger")
 }
 
@@ -980,6 +999,7 @@ enum StockMovementType {
   TRANSFER_IN
   TRANSFER_OUT
   OPENING
+  RETURN
 }
 
 enum ChequeStatus {
@@ -1036,4 +1056,40 @@ enum BroadcastStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+enum FinancialTransactionType {
+  SALE
+  PURCHASE
+  COLLECTION
+  EXPENSE
+  WASTAGE
+  ADJUSTMENT
+  SALARY
+  RETURN
+}
+
+enum FinancialEntryType {
+  DEBIT
+  CREDIT
+}
+
+enum AccountCategory {
+  REVENUE
+  COGS
+  ASSET_RECEIVABLE
+  ASSET_CASH
+  ASSET_BANK
+  ASSET_INVENTORY
+  LIABILITY_PAYABLE
+  EXPENSE_OPERATING
+  EXPENSE_WASTAGE
+  DIRECT_COST
+}
+
+enum FinancialEntityType {
+  CLIENT
+  SUPPLIER
+  PRODUCT
+  EMPLOYEE
 }

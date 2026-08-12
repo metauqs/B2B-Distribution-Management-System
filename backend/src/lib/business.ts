@@ -344,56 +344,13 @@ export async function getClientBalance(clientId: string, tx?: any): Promise<numb
   return lastLedger ? lastLedger.balance : client.currentBalance;
 }
 
-// ─── Update inventory (used in sales & purchases) ─────────────────────────────
+// ─── Derive Invoice Status from Financial State ──────────────────────────────
 
-export async function adjustInventory(
-  productId: string,
-  branchId:  string,
-  deltaQty:  number,       // positive = add, negative = deduct
-  newRate?:  number,       // for purchases: update avg cost
-): Promise<void> {
-  const existing = await prisma.inventory.findUnique({
-    where: { productId_branchId: { productId, branchId } },
-  });
-
-  if (!existing) {
-    await prisma.inventory.create({
-      data: {
-        productId,
-        branchId,
-        qty:     Math.max(0, deltaQty),
-        avgCost: newRate ?? 0,
-      },
-    });
-    return;
-  }
-
-  const oldQty = Math.max(0, existing.qty);
-  let newAvgCost = existing.avgCost;
-
-  if (newRate && deltaQty > 0) {
-    if (oldQty <= 0 || existing.avgCost <= 0) {
-      newAvgCost = newRate;
-    } else {
-      const totalQty = oldQty + deltaQty;
-      newAvgCost = totalQty > 0
-        ? (oldQty * existing.avgCost + deltaQty * newRate) / totalQty
-        : newRate;
-    }
-  }
-
-  const finalQty = oldQty + deltaQty;
-  if (finalQty <= 0) {
-    newAvgCost = 0;
-  }
-
-  await prisma.inventory.update({
-    where: { productId_branchId: { productId, branchId } },
-    data: {
-      qty:     Math.max(0, finalQty),
-      avgCost: newAvgCost,
-    },
-  });
+export function deriveInvoiceStatus(total: number, paid: number): 'PAID' | 'PARTIAL' | 'PENDING' {
+  const balance = total - paid;
+  if (balance < 1.0 || balance <= 0) return 'PAID';
+  if (paid > 0) return 'PARTIAL';
+  return 'PENDING';
 }
 // ─── Sync today's Price List buy rates from a Purchase (transaction-aware) ─────
 //

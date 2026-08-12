@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBalance } from '../lib/business';
+import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBalance, deriveInvoiceStatus } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { getBusinessDateRange, getBusinessDateString, formatPKTDateTime, parseInputDateToUtc } from '../lib/businessDate';
 import { postCollectionLedger } from '../lib/financialLedgerService';
@@ -491,7 +491,7 @@ router.post('/', async (req: Request, res: Response) => {
           const newPaid = sale.paid + toApply;
           const rawBal = sale.total - newPaid;
           const newBal = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
-          const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
+          const newStatus = deriveInvoiceStatus(sale.total, newPaid);
 
           await tx.sale.update({
             where: { id: sale.id },
@@ -528,7 +528,7 @@ router.post('/', async (req: Request, res: Response) => {
           const newPaid = sale.paid + toApply;
           const rawBal = sale.total - newPaid;
           const newBal = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
-          const newStatus = newBal <= 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : sale.status);
+          const newStatus = deriveInvoiceStatus(sale.total, newPaid);
 
           await tx.sale.update({
             where: { id: sale.id },
@@ -571,6 +571,9 @@ router.post('/', async (req: Request, res: Response) => {
         reference: coll.reference || undefined,
       });
 
+      // Final verification: recalculate ledger & balance inside the transaction
+      await recalculateClientLedgerAndBalance(clientId, tx);
+
       return {
         collection: coll,
         summary: {
@@ -584,13 +587,6 @@ router.post('/', async (req: Request, res: Response) => {
         allocations,
       };
     }, { maxWait: 10000, timeout: 30000 });
-
-    // Self-healing trigger: Ensure client balance & running ledger are perfectly recalculated and synced
-    try {
-      await recalculateClientLedgerAndBalance(clientId);
-    } catch (e) {
-      console.error('[POST /api/collections] Self-heal error:', e);
-    }
 
     await writeAuditLog({
       userId: userId ?? undefined,

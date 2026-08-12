@@ -270,27 +270,20 @@ router.post('/reset', async (req: Request, res: Response) => {
     let resetCount = 0;
     for (const inv of inventories) {
       if (inv.qty !== 0 || inv.reservedQty !== 0) {
-        await prisma.stockMovement.create({
-          data: {
-            productId: inv.productId,
-            branchId: inv.branchId,
-            type: 'ADJUSTMENT',
-            qty: 0,
-            previousStock: inv.qty,
-            newStock: 0,
-            refType: 'admin_reset',
-            note: 'Admin reset inventory stock to 0 to start fresh',
-            userId: userId ?? undefined,
-            date: new Date(),
-          }
+        await manualAdjust(prisma, {
+          productId: inv.productId,
+          branchId: inv.branchId,
+          systemQty: inv.qty,
+          adjustedQty: 0,
+          adjustmentType: 'SET',
+          reason: 'Admin reset inventory stock to 0 to start fresh',
+          userId: userId ?? undefined,
         });
 
         await prisma.inventory.update({
           where: { id: inv.id },
           data: {
-            qty: 0,
             reservedQty: 0,
-            avgCost: 0,
             currentBuyPrice: 0,
             previousBuyPrice: 0,
             lastPurchaseDate: null,
@@ -339,6 +332,8 @@ router.post('/buy-price', async (req: Request, res: Response) => {
 
     const oldBuyPrice = existing?.currentBuyPrice ?? 0;
 
+    // This is an intentional direct update for price-only adjustments,
+    // as inventoryService currently does not have a dedicated 'update price only' method.
     const updated = await prisma.inventory.upsert({
       where: { productId_branchId: { productId, branchId } },
       update: {

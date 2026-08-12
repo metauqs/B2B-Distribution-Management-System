@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, syncPriceListFromSale } from '../lib/business';
+import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, deriveInvoiceStatus, syncPriceListFromSale } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { stockOut, syncInvoiceEditStock } from '../lib/inventoryService';
 import { getBusinessDateRange, getBusinessDateString, getCurrentBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
-import { postSaleLedger } from '../lib/financialLedgerService';
+import { postSaleLedger, postCollectionLedger } from '../lib/financialLedgerService';
 
 const router = Router();
 
@@ -173,7 +173,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   const rawBal = total - paidAmt;
   const balance = Math.abs(rawBal) < 1.0 ? 0 : Math.max(0, Math.round(rawBal));
-  const status = balance <= 0 ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING';
+  const status = deriveInvoiceStatus(total, paidAmt);
 
   const startTime = Date.now();
   try {
@@ -230,9 +230,12 @@ router.post('/', async (req: Request, res: Response) => {
             });
             itemCost = inv?.avgCost && inv.avgCost > 0 ? inv.avgCost : (inv?.currentBuyPrice ?? 0);
           }
+          if (itemCost <= 0) {
+            console.warn(`[POST /api/sales] Item '${i.itemName ?? i.name ?? 'Unknown'}' has no cost data. COGS will be recorded as 0.`);
+          }
           return {
             ...i,
-            costPrice: itemCost > 0 ? itemCost : (Number(i.rate) * 0.75),
+            costPrice: itemCost > 0 ? itemCost : 0,
           };
         })
       );
@@ -337,6 +340,15 @@ router.post('/', async (req: Request, res: Response) => {
           }
         });
 
+        // Create CollectionAllocation to link this payment to the invoice
+        await tx.collectionAllocation.create({
+          data: {
+            collectionId: coll.id,
+            saleId: s.id,
+            allocatedAmount: paidAmt,
+          }
+        });
+
         await recordCustomerLedgerEntry(tx, {
           clientId,
           branchId,
@@ -350,10 +362,8 @@ router.post('/', async (req: Request, res: Response) => {
         });
       }
 
-      await tx.client.update({
-        where: { id: clientId },
-        data: { currentBalance: newClientBalance }
-      });
+      // NOTE: Client.currentBalance is updated by recordCustomerLedgerEntry above.
+      // Do NOT manually set client.currentBalance here — the ledger engine is the single source of truth.
 
       // Post to Financial Ledger automatically
       const totalCogs = s.items.reduce((sum, item) => sum + (item.qty * item.costPrice), 0);
@@ -369,15 +379,11 @@ router.post('/', async (req: Request, res: Response) => {
         deliveryCharge: s.deliveryCharge,
       });
 
+      // Final verification: recalculate ledger & balance inside the transaction
+      await recalculateClientLedgerAndBalance(clientId, tx);
+
       return s;
     }, { maxWait: 10000, timeout: 30000 });
-
-    // Self-healing trigger: Ensure client balance & running ledger are perfectly recalculated and synced
-    try {
-      await recalculateClientLedgerAndBalance(clientId);
-    } catch (e) {
-      console.error('[POST /api/sales] Self-heal error:', e);
-    }
 
     // Non-blocking credit rating update outside transaction
     updateClientCreditRating(clientId).catch(err =>
@@ -497,7 +503,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
   const rawBal = total - paidAmt;
   const balance = Math.abs(rawBal) < 1.0 ? 0 : Math.max(0, Math.round(rawBal));
-  const status = balance <= 0 ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING';
+  const status = deriveInvoiceStatus(total, paidAmt);
 
   try {
     const updatedSale = await prisma.$transaction(async tx => {
@@ -701,7 +707,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       const newPaid = sale.paid + amt;
       const rawBal = sale.balance - amt;
       const newBalance = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
-      const newStatus = newBalance <= 0 ? 'PAID' : 'PARTIAL';
+      const newStatus = deriveInvoiceStatus(sale.total, newPaid);
 
       const updatedSale = await tx.sale.update({
         where: { id },
@@ -734,7 +740,16 @@ router.patch('/:id', async (req: Request, res: Response) => {
         }
       });
 
-      // Record customer ledger entry
+      // Create CollectionAllocation to properly link payment to invoice
+      await tx.collectionAllocation.create({
+        data: {
+          collectionId: coll.id,
+          saleId: sale.id,
+          allocatedAmount: amt,
+        }
+      });
+
+      // Record customer ledger entry — this updates Client.currentBalance as the single source of truth
       await recordCustomerLedgerEntry(tx, {
         clientId: sale.clientId,
         branchId,
@@ -747,27 +762,27 @@ router.patch('/:id', async (req: Request, res: Response) => {
         credit: amt,
       });
 
-      // Update client's balance
-      await tx.client.update({
-        where: { id: sale.clientId },
-        data: {
-          currentBalance: {
-            decrement: amt
-          }
-        }
+      // NOTE: Client.currentBalance is updated by recordCustomerLedgerEntry above.
+      // Do NOT manually decrement client.currentBalance here — the ledger engine is the single source of truth.
+
+      // Post to Financial Ledger
+      await postCollectionLedger(tx, {
+        branchId,
+        collectionId: coll.id,
+        clientId: sale.clientId,
+        date: coll.date,
+        amount: amt,
+        method: coll.method,
+        reference: coll.reference || undefined,
       });
 
       await updateClientCreditRating(sale.clientId, tx);
 
+      // Final verification: recalculate ledger & balance inside the transaction
+      await recalculateClientLedgerAndBalance(sale.clientId, tx);
+
       return { sale: updatedSale, collection: coll };
     }, { maxWait: 10000, timeout: 30000 });
-
-    // Self-healing trigger: Ensure client balance & running ledger are perfectly recalculated and synced
-    try {
-      await recalculateClientLedgerAndBalance(result.sale.clientId);
-    } catch (e) {
-      console.error('[PATCH /api/sales/:id] Self-heal error:', e);
-    }
 
     await writeAuditLog({
       userId: userId ?? undefined,

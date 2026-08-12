@@ -58,7 +58,19 @@ function lsSet(key: string, value: unknown): void {
 }
 
 // ─── Central hook ─────────────────────────────────────────────────────────────
+/**
+ * @deprecated This hook calculates balances from localStorage independently of the backend.
+ * Use API-backed data from Redux store/services instead.
+ * Scheduled for removal in the next major release.
+ */
 export function useLedger() {
+  if (typeof window !== 'undefined') {
+    console.warn(
+      '[DEPRECATED] useLedger hook is deprecated. All balance, stock, and profit calculations ' +
+      'should use the backend API as the single source of truth. This hook will be removed in a future release.'
+    );
+  }
+
   const [state, setState] = useState<LedgerState>({
     clients: [], suppliers: [], purchases: [], sales: [],
     collections: [], expenses: [], wastage: [], priceList: [],
