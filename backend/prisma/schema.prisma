@@ -1028,6 +1028,7 @@ enum LedgerTransactionType {
   DEBIT_NOTE
   ADJUSTMENT
   OPENING_BALANCE
+  CANCELLATION
 }
 
 enum AttendanceStatus {

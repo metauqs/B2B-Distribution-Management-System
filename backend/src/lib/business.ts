@@ -149,7 +149,7 @@ export async function generateClientId(whatsappOrPhone: string | null, tx?: any)
 export interface LedgerEntryParams {
   clientId:     string;
   branchId:     string;
-  type:         'INVOICE' | 'PAYMENT' | 'ADJUSTMENT' | 'DEBIT_NOTE' | 'CREDIT_NOTE';
+  type:         'INVOICE' | 'PAYMENT' | 'ADJUSTMENT' | 'DEBIT_NOTE' | 'CREDIT_NOTE' | 'CANCELLATION' | 'OPENING_BALANCE';
   date?:        Date;
   referenceId?: string;
   referenceNo?: string;

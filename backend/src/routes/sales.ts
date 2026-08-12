@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, deriveInvoiceStatus, syncPriceListFromSale } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
-import { stockOut, syncInvoiceEditStock } from '../lib/inventoryService';
+import { stockOut, syncInvoiceEditStock, stockReturn } from '../lib/inventoryService';
 import { getBusinessDateRange, getBusinessDateString, getCurrentBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
 import { postSaleLedger, postCollectionLedger } from '../lib/financialLedgerService';
 
@@ -820,6 +820,91 @@ router.patch('/:id', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[PATCH /api/sales/:id]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to update invoice payment' });
+  }
+});
+
+// POST /api/sales/:id/cancel - Cancel an invoice
+router.post('/:id/cancel', async (req: Request, res: Response) => {
+  const branchId = req.headers['x-branch-id'] as string;
+  const userId = (req.headers['x-user-id'] as string) || null;
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  if (!branchId) {
+    return res.status(400).json({ success: false, error: 'Missing branch' });
+  }
+
+  try {
+    const updatedSale = await prisma.$transaction(async tx => {
+      const sale = await tx.sale.findUnique({
+        where: { id, deletedAt: null },
+        include: { items: { include: { product: true } }, client: true }
+      });
+
+      if (!sale) throw new Error('Invoice not found');
+      if (sale.status === 'CANCELLED') throw new Error('Invoice is already cancelled');
+
+      for (const item of sale.items) {
+        if (item.productId) {
+          await stockReturn(tx, {
+            productId: item.productId,
+            branchId,
+            qty: Number(item.qty) - Number((item as any).returnedQty || 0),
+            unit: item.unit || 'KG',
+            refType: 'sale_cancelled',
+            refId: sale.id,
+            refNo: sale.invoiceNo,
+            reason: 'Invoice Cancelled' + (reason ? ` - ${reason}` : '')
+          });
+        }
+      }
+
+      const cancelledSale = await tx.sale.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          balance: 0,
+        },
+        include: {
+          items: { include: { product: true } },
+          client: true,
+        }
+      });
+
+      if (sale.balance > 0) {
+        await recordCustomerLedgerEntry(tx, {
+          clientId: sale.clientId,
+          branchId,
+          type: 'CANCELLATION',
+          date: new Date(),
+          referenceId: sale.id,
+          referenceNo: sale.invoiceNo,
+          description: 'Invoice Cancelled',
+          debit: 0,
+          credit: sale.balance
+        });
+        await recalculateClientLedgerAndBalance(sale.clientId, tx);
+      }
+
+      return cancelledSale;
+    }, { maxWait: 10000, timeout: 30000 });
+
+    await writeAuditLog({
+      userId: userId ?? undefined,
+      branchId,
+      action: 'CANCEL',
+      entity: 'Sale',
+      entityId: id,
+      newData: { reason, newStatus: 'CANCELLED' }
+    });
+
+    return res.json({ success: true, data: updatedSale });
+  } catch (err: any) {
+    console.error('[POST /api/sales/:id/cancel]', err);
+    return res.status(err.message === 'Invoice is already cancelled' ? 400 : 500).json({
+      success: false,
+      error: err.message ?? 'Failed to cancel invoice'
+    });
   }
 });
 

@@ -288,10 +288,20 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
             });
           }
 
-          // Remove StockMovement & PurchasePriceHistory entries for this purchase so stockIn executes cleanly
-          await tx.stockMovement.deleteMany({
-            where: { refType: 'purchase', refId: id, productId: oldItem.productId }
+          // Create an offsetting movement to reverse the original purchase stock-in
+          await tx.stockMovement.create({
+            data: {
+              productId: oldItem.productId,
+              branchId,
+              type: 'ADJUSTMENT',
+              qty: -oldItem.qty,
+              note: `Reversal for edited purchase ${id}`,
+              refType: 'purchase_edit',
+              refId: id
+            }
           });
+
+          // Remove PurchasePriceHistory entries for this purchase so stockIn executes cleanly
           await tx.purchasePriceHistory.deleteMany({
             where: { purchaseId: id, productId: oldItem.productId }
           });
@@ -419,9 +429,27 @@ router.delete('/:id', async (req: Request, res: Response) => {
             });
           }
 
+          // Create an offsetting movement to reverse the original purchase stock-in
+          await tx.stockMovement.create({
+            data: {
+              productId: item.productId,
+              branchId,
+              type: 'ADJUSTMENT',
+              qty: -item.qty,
+              note: `Reversal for deleted purchase ${id}`,
+              refType: 'purchase_delete',
+              refId: id
+            }
+          });
+
           // Remove price history entries for this purchase so avgCost recalculates correctly
           await tx.purchasePriceHistory.deleteMany({
             where: { purchaseId: id, productId: item.productId }
+          });
+
+          // Also delete the original PURCHASE StockMovements
+          await tx.stockMovement.deleteMany({
+            where: { refType: 'purchase', refId: id, productId: item.productId }
           });
         }
       }
