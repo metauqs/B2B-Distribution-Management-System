@@ -1,4 +1,5 @@
 import prisma from './prisma';
+import { getAuthoritativeGrossSales } from '../services/grossSalesService';
 
 export interface ReportFilterParams {
   branchId?: string;
@@ -27,6 +28,7 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
 
   const [
     salesAgg,
+    grossSalesSummary,
     cashSalesAgg,
     creditSalesAgg,
     purchasesAgg,
@@ -41,6 +43,7 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
     saleItemsAgg,
   ] = await Promise.all([
     prisma.sale.aggregate({ where: saleWhere, _sum: { total: true, subtotal: true, discount: true, deliveryCharge: true, paid: true }, _count: true }),
+    getAuthoritativeGrossSales(saleWhere),
     prisma.sale.aggregate({ where: { ...saleWhere, paymentMode: 'CASH' }, _sum: { total: true } }),
     prisma.sale.aggregate({ where: { ...saleWhere, paymentMode: 'CREDIT' }, _sum: { total: true } }),
     prisma.purchase.aggregate({ where: purchaseWhere, _sum: { total: true, subtotal: true, transportCost: true }, _count: true }),
@@ -68,12 +71,12 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
     }),
   ]);
 
-  // Financial Calculations
-  const grossSales = salesAgg._sum.subtotal ?? 0;
-  const discounts = salesAgg._sum.discount ?? 0;
-  const deliveryCharge = salesAgg._sum.deliveryCharge ?? 0;
-  const netSales = Math.max(0, grossSales - discounts);
-  const totalRevenue = salesAgg._sum.total ?? 0;
+  // Financial Calculations (using single authoritative gross sales service)
+  const grossSales = grossSalesSummary.grossSales;
+  const discounts = grossSalesSummary.discounts;
+  const deliveryCharge = grossSalesSummary.deliveryCharges;
+  const netSales = grossSalesSummary.netSales;
+  const totalRevenue = grossSalesSummary.totalRevenue;
   const cashSales = cashSalesAgg._sum.total ?? 0;
   const creditSales = creditSalesAgg._sum.total ?? 0;
 

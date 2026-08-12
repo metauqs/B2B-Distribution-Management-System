@@ -610,6 +610,29 @@ router.put('/:id', async (req: Request, res: Response) => {
       // Recalculate client running balance chronologically
       await recalculateClientLedgerAndBalance(existingSale.clientId, tx);
 
+      // Synchronize Financial Ledger double-entry records for this edited invoice
+      let updatedCogs = 0;
+      for (const item of updated.items) {
+        const costBasis = (item as any).costPrice > 0 ? (item as any).costPrice : 0;
+        updatedCogs += item.qty * costBasis;
+      }
+
+      await tx.financialLedger.deleteMany({
+        where: { referenceId: existingSale.id, referenceType: 'sale' },
+      });
+
+      await postSaleLedger(tx, {
+        branchId,
+        saleId: existingSale.id,
+        invoiceNo: existingSale.invoiceNo,
+        clientId: existingSale.clientId,
+        date: existingSale.date,
+        total,
+        paid: paidAmt,
+        cogs: updatedCogs,
+        deliveryCharge: Number(deliveryCharge),
+      });
+
       // Build structured changes summary for audit log
       const oldItemsMap = new Map(existingSale.items.map(i => [i.itemName.toLowerCase(), i]));
       const newItemsMap = new Map(items.map((i: any) => [(i.itemName ?? i.name ?? '').toLowerCase(), i]));

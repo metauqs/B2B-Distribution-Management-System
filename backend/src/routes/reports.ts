@@ -4,6 +4,7 @@ import prisma from '../lib/prisma';
 import { Prisma } from '@prisma/client';
 import { getCurrentBusinessDateRange, getBusinessDateRange } from '../lib/businessDate';
 import { getExecutiveDashboardMetrics, getFinancialAlerts } from '../lib/financialEngine';
+import { getAuthoritativeGrossSales, calculateGrossSalesFromSales } from '../services/grossSalesService';
 
 const router = Router();
 
@@ -233,11 +234,8 @@ router.get('/pnl', async (req: Request, res: Response) => {
 
     const dateRange = { gte: fromDate, lte: toDate };
 
-    const [salesAgg, purchasesAgg, expensesAgg, collectionsAgg, wastageAgg] = await Promise.all([
-      prisma.sale.aggregate({
-        where: { ...bWhere, date: dateRange, deletedAt: null },
-        _sum: { total: true, discount: true }, _count: true,
-      }),
+    const [salesSummary, purchasesAgg, expensesAgg, collectionsAgg, wastageAgg] = await Promise.all([
+      getAuthoritativeGrossSales({ ...bWhere, date: dateRange }),
       prisma.purchase.aggregate({
         where: { ...bWhere, date: dateRange, deletedAt: null },
         _sum: { total: true, transportCost: true }, _count: true,
@@ -256,7 +254,7 @@ router.get('/pnl', async (req: Request, res: Response) => {
       }),
     ]);
 
-    const revenue = salesAgg._sum.total ?? 0;
+    const revenue = salesSummary.totalRevenue;
     // NOTE: cogs in PnL is purchase total (cost of goods purchased), not COGS per SRS.
     // True COGS is computed from saleItems.costPrice in the executive-dashboard.
     // PnL uses purchase cost as a proxy for period cost of goods.
@@ -264,7 +262,7 @@ router.get('/pnl', async (req: Request, res: Response) => {
     const expenses = expensesAgg._sum.amount ?? 0;
     const collected = collectionsAgg._sum.amount ?? 0;
     const transport = purchasesAgg._sum.transportCost ?? 0;
-    const discounts = salesAgg._sum.discount ?? 0;
+    const discounts = salesSummary.discounts;
 
     const grossProfit = revenue - cogs;
     const netProfit = grossProfit - expenses;
@@ -287,7 +285,7 @@ router.get('/pnl', async (req: Request, res: Response) => {
 
     const [dailySales, dailyPurchases, dailyExpenses] = await Promise.all([
       prisma.sale.groupBy({
-        by: ['date'], where: { ...bWhere, date: dateRange, deletedAt: null },
+        by: ['date'], where: { ...bWhere, date: dateRange, status: { not: 'CANCELLED' }, deletedAt: null },
         _sum: { total: true }, orderBy: { date: 'asc' },
       }),
       prisma.purchase.groupBy({
@@ -706,7 +704,7 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
       deletedAt: null,
       ...(branchId ? { branchId } : {}),
       ...(clientId ? { clientId: String(clientId) } : {}),
-      ...(status && status !== 'all' ? { status: status as any } : {}),
+      ...(status && status !== 'all' ? { status: status as any } : { status: { not: 'CANCELLED' as const } }),
       date: { gte: fromDate, lte: toDate },
       ...(search ? {
         OR: [
