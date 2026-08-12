@@ -606,10 +606,9 @@ export default function CollectionsPage() {
                                     <th>Client ID</th>
                                     <th>Client Name</th>
                                     <th>Invoice Date &amp; Time</th>
-                                    <th style={{ textAlign: 'right' }}>Previous Dues</th>
+                                    <th style={{ textAlign: 'right' }}>Previous Due</th>
                                     <th style={{ textAlign: 'right' }}>Current Order</th>
                                     <th style={{ textAlign: 'right' }}>Total Payable</th>
-                                    <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Pay Now</th>
                                     <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Collected</th>
                                     <th style={{ textAlign: 'right', color: 'var(--clay)' }}>Due Balance</th>
                                     <th>Status</th>
@@ -617,13 +616,13 @@ export default function CollectionsPage() {
                                 </thead>
                                 <tbody>
                                   {g.items.map(item => {
-                                    const isPaid    = item.status === 'PAID' || item.dueBalance <= 0;
+                                    const isPaid    = item.status === 'PAID' || item.dueBalance <= 0.99;
                                     const isPartial = !isPaid && item.collectedAmount > 0;
                                     const statusBadge = isPaid
-                                      ? <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Paid</span>
+                                      ? <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>PAID</span>
                                       : isPartial
-                                        ? <span className="va-badge" style={{ background: '#FFF3E0', color: '#E65100', border: '1px solid #FFE0B2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Partial</span>
-                                        : <span className="va-badge" style={{ background: '#FFEBEE', color: '#C62828', border: '1px solid #FFCDD2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Unpaid</span>;
+                                        ? <span className="va-badge" style={{ background: '#FFF3E0', color: '#E65100', border: '1px solid #FFE0B2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>PARTIALLY PAID</span>
+                                        : <span className="va-badge" style={{ background: '#FFEBEE', color: '#C62828', border: '1px solid #FFCDD2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>UNPAID</span>;
                                     return (
                                       <tr key={item.id}>
                                         <td style={{ fontWeight: 600, color: 'var(--ink)' }}>{item.invoiceNo}</td>
@@ -633,7 +632,6 @@ export default function CollectionsPage() {
                                         <td className="mono" style={{ textAlign: 'right', color: item.previousOutstanding > 0.99 ? 'var(--clay)' : 'var(--muted)' }}>{item.previousOutstanding > 0.99 ? fmtMoney(item.previousOutstanding) : 'Rs 0'}</td>
                                         <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{fmtMoney(item.currentOrder)}</td>
                                         <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(item.totalPayable)}</td>
-                                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: item.payNow > 0 ? 'var(--ok)' : 'var(--muted)' }}>{item.payNow > 0 ? fmtMoney(item.payNow) : '—'}</td>
                                         <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: item.collectedAmount > 0 ? 'var(--ok)' : 'var(--muted)' }}>{fmtMoney(item.collectedAmount)}</td>
                                         <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: (item.dueBalance > 0.99 && !isPaid) ? 'var(--clay)' : 'var(--ok)' }}>{(item.dueBalance > 0.99 && !isPaid) ? fmtMoney(item.dueBalance) : '✓ 0'}</td>
                                         <td>{statusBadge}</td>
@@ -804,10 +802,10 @@ export default function CollectionsPage() {
                       {isExpanded && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
                           {g.items.map(item => {
-                            const isPaid     = item.dueBalance <= 0;
-                            const isPartial  = item.dueBalance > 0 && item.collectedAmount > 0;
+                            const isPaid     = item.dueBalance <= 0.99;
+                            const isPartial  = !isPaid && item.collectedAmount > 0;
                             const statusVariant = isPaid ? 'green' : isPartial ? 'yellow' : 'red';
-                            const statusLabel = isPaid ? 'PAID' : isPartial ? 'PARTIAL' : 'UNPAID';
+                            const statusLabel = isPaid ? 'PAID' : isPartial ? 'PARTIALLY PAID' : 'UNPAID';
 
                             return (
                               <MobileCardBox
@@ -826,12 +824,16 @@ export default function CollectionsPage() {
                                 borderColor="#CBD5E1"
                               >
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '4px' }}>
+                                  <MobileCardRow label="Client ID" value={g.clientNo} />
+                                  <MobileCardRow label="Client Name" value={g.clientName} />
+                                  <MobileCardRow label="Previous Due" value={item.previousOutstanding > 0.99 ? fmtMoney(item.previousOutstanding) : 'Rs 0'} isMono />
+                                  <MobileCardRow label="Current Order" value={fmtMoney(item.currentOrder)} isMono />
                                   <MobileCardRow label="Total Payable" value={fmtMoney(item.totalPayable)} isMono />
-                                  <MobileCardRow label="Collected Amount" value={fmtMoney(item.collectedAmount)} valueColor="#166534" isMono />
+                                  <MobileCardRow label="Collected" value={fmtMoney(item.collectedAmount)} valueColor="#166534" isMono />
                                   <MobileCardRow 
-                                    label="Remaining Balance" 
-                                    value={fmtMoney(item.dueBalance)} 
-                                    valueColor={item.dueBalance > 0 ? '#991B1B' : '#166534'} 
+                                    label="Due Balance" 
+                                    value={item.dueBalance > 0.99 ? fmtMoney(item.dueBalance) : '✓ 0'} 
+                                    valueColor={item.dueBalance > 0.99 ? '#991B1B' : '#166534'} 
                                     isMono 
                                   />
                                   <MobileCardRow label="Status">
