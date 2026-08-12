@@ -260,17 +260,15 @@ export default function CollectionsPage() {
       if (clientSales.length === 0 && client.currentBalance === 0) return acc;
 
       const sortedSales = [...clientSales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      let runningDue = client.openingBalance ?? 0;
 
       const items = sortedSales.map(sale => {
         const isSalePaid          = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.99);
-        const previousOutstanding = (Math.abs(runningDue) < 0.99) ? 0 : runningDue;
+        const previousOutstanding = sale.previousBalance ?? 0;
         const currentOrder        = sale.total;
-        const totalPayable        = previousOutstanding + currentOrder;
-        const collectedAmount     = isSalePaid ? Math.max(sale.paid, currentOrder) : sale.paid;
-        const rawDue              = isSalePaid ? 0 : Math.max(0, totalPayable - collectedAmount);
+        const totalPayable        = sale.total;
+        const collectedAmount     = sale.paid;
+        const rawDue              = isSalePaid ? 0 : Math.max(0, sale.balance);
         const dueBalance          = (Math.abs(rawDue) < 0.99) ? 0 : rawDue;
-        runningDue                = dueBalance;
 
         return {
           id:                  sale.id,
