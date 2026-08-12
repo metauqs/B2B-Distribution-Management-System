@@ -212,6 +212,7 @@ export default function CollectionsPage() {
         invalidateCache('/api/sales');
         invalidateCache('/api/clients');
         invalidateCache('/api/reports');
+        window.dispatchEvent(new Event('app-revalidate'));
         showToast('✅ Payment recorded successfully');
 
         const clientObj = clients.find(c => c.id === form.clientId);

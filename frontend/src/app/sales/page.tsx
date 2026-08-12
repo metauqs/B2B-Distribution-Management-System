@@ -550,6 +550,7 @@ export default function SalesPage() {
           invalidateCache('/api/inventory');
           invalidateCache('/api/collections');
           invalidateCache('/api/reports');
+          window.dispatchEvent(new Event('app-revalidate'));
           showToast(`✅ Invoice #${data.data.invoiceNo} updated successfully`);
           setEditingSale(null);
           await loadSales(true);
@@ -579,6 +580,7 @@ export default function SalesPage() {
           invalidateCache('/api/inventory');
           invalidateCache('/api/collections');
           invalidateCache('/api/reports');
+          window.dispatchEvent(new Event('app-revalidate'));
           showToast(`✅ Invoice ${data.data.invoiceNo} created`);
           await loadSales(true);
           openDetail(data.data);
@@ -620,6 +622,7 @@ export default function SalesPage() {
       invalidateCache('/api/clients');
       invalidateCache('/api/collections');
       invalidateCache('/api/reports');
+      window.dispatchEvent(new Event('app-revalidate'));
       showToast('✅ Payment recorded');
       setAddPayAmt(0);
       await openDetail(detailSale);
