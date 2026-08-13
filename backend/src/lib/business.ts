@@ -425,6 +425,8 @@ export async function getAuthoritativeClientBalance(clientId: string, tx?: any):
   return outcome.clientBalance;
 }
 
+export const getAuthoritativeClientOutstanding = getAuthoritativeClientBalance;
+
 export async function getClientBalance(clientId: string, tx?: any): Promise<number> {
   return getAuthoritativeClientBalance(clientId, tx);
 }

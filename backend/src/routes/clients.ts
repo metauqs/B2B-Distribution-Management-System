@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { writeAuditLog, generateClientId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, reconcileClientBalancesAndAllocations } from '../lib/business';
+import { writeAuditLog, generateClientId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, reconcileClientBalancesAndAllocations, getAuthoritativeClientOutstanding } from '../lib/business';
 import { Prisma } from '@prisma/client';
 import { calculateClientCreditRisk, updateClientCreditRating } from '../lib/creditRisk';
 import { calculateCollectionBehaviour } from '../lib/collectionBehaviour';
@@ -202,12 +202,12 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Client not found' });
     }
 
-    // Auto-heal client balance & ledger in real time
+    // Authoritative Single Source of Truth Client Outstanding
     try {
-      const healedBal = await recalculateClientLedgerAndBalance(id);
-      client.currentBalance = healedBal;
+      const authBal = await getAuthoritativeClientOutstanding(id);
+      client.currentBalance = authBal;
     } catch (e) {
-      console.error('[GET /api/clients/:id] Self-heal error:', e);
+      console.error('[GET /api/clients/:id] Balance calculation error:', e);
     }
 
     const [sales, collections, deliveries, ledger] = await Promise.all([

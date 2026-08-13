@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBalance, deriveInvoiceStatus, reconcileClientBalancesAndAllocations } from '../lib/business';
+import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBalance, deriveInvoiceStatus, reconcileClientBalancesAndAllocations, getAuthoritativeClientOutstanding } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { getBusinessDateRange, getBusinessDateString, formatPKTDateTime, parseInputDateToUtc } from '../lib/businessDate';
 import { postCollectionLedger } from '../lib/financialLedgerService';
@@ -272,7 +272,7 @@ router.get('/preview', async (req: Request, res: Response) => {
       });
     }
 
-    const previousBalance = client.currentBalance;
+    const previousBalance = await getAuthoritativeClientOutstanding(client.id);
     const currentBillAmount = targetSale ? targetSale.balance : 0;
     // Total Payable is the total client dues (which already incorporates previous balances and invoices)
     const totalPayable = Math.max(0, previousBalance);
