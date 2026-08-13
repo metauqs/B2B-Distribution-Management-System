@@ -269,41 +269,77 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
     const pDate = parseInputDateToUtc(date);
 
     const updatedPurchase = await prisma.$transaction(async tx => {
-      // 1. Reverse previous stock movements for old purchase items
-      //    Revert qty AND remove the price history records so avgCost recalc is clean
-      const productIdsToRecalc = new Set<string>();
+      // 1. Calculate item deltas between old purchase items and new purchase items
+      const oldItemsMap = new Map<string, { qty: number; rate: number; itemName: string }>();
+      for (const item of existingPurchase.items) {
+        if (item.productId) {
+          const prev = oldItemsMap.get(item.productId) || { qty: 0, rate: item.rate, itemName: item.itemName };
+          oldItemsMap.set(item.productId, { qty: prev.qty + item.qty, rate: item.rate, itemName: item.itemName });
+        }
+      }
 
-      for (const oldItem of existingPurchase.items) {
-        if (oldItem.productId) {
-          productIdsToRecalc.add(oldItem.productId);
+      const newItemsMap = new Map<string, { qty: number; rate: number; unit: string; itemName: string }>();
+      for (const item of finalItems) {
+        if (item.productId) {
+          const prev = newItemsMap.get(item.productId) || { qty: 0, rate: item.rate, unit: item.unit ?? 'KG', itemName: item.itemName ?? item.name };
+          newItemsMap.set(item.productId, { qty: prev.qty + item.qty, rate: item.rate, unit: item.unit ?? 'KG', itemName: item.itemName ?? item.name });
+        }
+      }
 
+      const allAffectedProductIds = new Set<string>([...oldItemsMap.keys(), ...newItemsMap.keys()]);
+
+      for (const pid of allAffectedProductIds) {
+        const oldInfo = oldItemsMap.get(pid);
+        const newInfo = newItemsMap.get(pid);
+        const oldQty = oldInfo?.qty ?? 0;
+        const newQty = newInfo?.qty ?? 0;
+        const deltaQty = newQty - oldQty;
+
+        // If quantity changed, adjust inventory and create a clean PURCHASE_EDIT delta movement
+        if (Math.abs(deltaQty) > 0.0001) {
           const inv = await tx.inventory.findUnique({
-            where: { productId_branchId: { productId: oldItem.productId, branchId } }
+            where: { productId_branchId: { productId: pid, branchId } }
           });
-          if (inv) {
-            const revertedQty = Math.max(0, inv.qty - oldItem.qty);
-            await tx.inventory.update({
-              where: { id: inv.id },
-              data: { qty: revertedQty }
-            });
-          }
+          const prevStock = inv?.qty ?? 0;
+          const newStock = Math.max(0, prevStock + deltaQty);
 
-          // Create an offsetting movement to reverse the original purchase stock-in
+          await tx.inventory.upsert({
+            where: { productId_branchId: { productId: pid, branchId } },
+            update: { qty: newStock },
+            create: { productId: pid, branchId, qty: newStock, avgCost: 0 }
+          });
+
           await tx.stockMovement.create({
             data: {
-              productId: oldItem.productId,
+              productId: pid,
               branchId,
-              type: 'ADJUSTMENT',
-              qty: -oldItem.qty,
-              note: `Reversal for edited purchase ${id}`,
+              type: deltaQty > 0 ? 'PURCHASE' : 'ADJUSTMENT',
+              qty: deltaQty,
+              previousStock: prevStock,
+              newStock,
               refType: 'purchase_edit',
-              refId: id
+              refId: id,
+              note: `Purchase edit (${id.slice(-6)}): ${deltaQty > 0 ? '+' : ''}${deltaQty} ${newInfo?.unit || 'KG'} (${oldQty} -> ${newQty})`
             }
           });
+        }
 
-          // Remove PurchasePriceHistory entries for this purchase so stockIn executes cleanly
-          await tx.purchasePriceHistory.deleteMany({
-            where: { purchaseId: id, productId: oldItem.productId }
+        // Remove old price history for this purchase and re-record if item exists in new purchase
+        await tx.purchasePriceHistory.deleteMany({
+          where: { purchaseId: id, productId: pid }
+        });
+
+        if (newInfo && newQty > 0) {
+          await tx.purchasePriceHistory.create({
+            data: {
+              productId: pid,
+              branchId,
+              purchaseId: id,
+              supplierId: finalSupplierId,
+              date: pDate,
+              buyPrice: newInfo.rate,
+              qty: newInfo.qty
+            }
           });
         }
       }
@@ -340,35 +376,10 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
         include: { items: true, supplier: { select: { id: true, name: true } } },
       });
 
-      // 4. Apply new stockIn & update currentBuyPrice + moving average cost
-      await Promise.all(
-        finalItems
-          .filter((item: any) => item.productId)
-          .map((item: any) =>
-            stockIn(tx, {
-              productId: item.productId,
-              branchId,
-              qty: item.qty,
-              rate: item.rate,
-              unit: item.unit ?? 'KG',
-              refType: 'purchase',
-              refId: p.id,
-              purchaseId: p.id,
-              supplierId: finalSupplierId,
-              userId: userId ?? undefined,
-              date: pDate,
-            })
-          )
-      );
-
-      // 5. Recalculate avgCost from full history for all affected products
-      //    This ensures weighted average is correct even after mid-history edits
-      const allProductIds = new Set<string>(
-        [...productIdsToRecalc, ...finalItems.filter((i: any) => i.productId).map((i: any) => i.productId)]
-      );
-      await Promise.all(
-        Array.from(allProductIds).map(pid => recalcAvgCostFromHistory(tx, pid, branchId))
-      );
+      // 4. Recalculate avgCost from full history for all affected products
+      for (const pid of allAffectedProductIds) {
+        await recalcAvgCostFromHistory(tx, pid, branchId);
+      }
 
       return p;
     }, { maxWait: 15000, timeout: 600000 });

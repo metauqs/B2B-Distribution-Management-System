@@ -40,10 +40,9 @@ export async function recalculateProductStock(
   for (let i = smList.length - 1; i >= 0; i--) {
     const m = smList[i];
     const isBaseline =
-      m.refType === 'adjustment' ||
       m.refType === 'admin_reset' ||
-      m.type === 'OPENING' ||
-      (m.type === 'ADJUSTMENT' && m.refType !== 'sale_edit_restore');
+      m.refType === 'manual_adjust' ||
+      m.type === 'OPENING';
     if (isBaseline) {
       lastBaselineIdx = i;
       break;
