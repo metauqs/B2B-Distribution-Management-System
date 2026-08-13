@@ -23,7 +23,6 @@ interface Sale {
   invoiceNo: string;
   clientId: string;
   date: string;
-  previousBalance: number;
   total: number;
   paid: number;
   balance: number;
@@ -47,7 +46,13 @@ interface Collection {
   allocations?: Array<{ saleId: string; allocatedAmount: number; sale?: { invoiceNo: string } }>;
 }
 
-interface Client { id: string; clientId?: string | null; name: string; currentBalance: number; openingBalance: number; }
+interface Client {
+  id: string;
+  clientId?: string | null;
+  name: string;
+  currentBalance: number;
+  openingBalance: number;
+}
 
 const BLANK_FORM = { clientId: '', saleId: '', amount: 0, date: '', method: 'CASH', reference: '', notes: '' };
 
@@ -147,6 +152,11 @@ export default function CollectionsPage() {
     setStatementMode('share');
   };
 
+  const openRecordPaymentForClient = (clientId: string) => {
+    setForm({ ...BLANK_FORM, clientId, date: todayInputDateTime() });
+    setView('add');
+  };
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const toggleExpand = (cid: string) => {
@@ -158,7 +168,7 @@ export default function CollectionsPage() {
     try {
       const [cd, cld, sd] = await Promise.all([
         fetchWithCache<Collection[]>('/api/collections', { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<Client[]>('/api/clients?minimal=true', { ttl: TTL_MEDIUM, forceRefresh: isBackground }),
+        fetchWithCache<Client[]>('/api/clients?minimal=true', { ttl: TTL_SHORT, forceRefresh: isBackground }),
         fetchWithCache<Sale[]>('/api/sales', { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
       if (cd) setCollections(cd);
@@ -254,53 +264,58 @@ export default function CollectionsPage() {
 
   const clientInvoices = sales.filter(s => s.clientId === form.clientId && s.balance > 0);
 
-  // Group sales invoices per client using official invoice fields (Memoized for high-speed rendering)
+  // Group sales invoices per client using single authoritative source of truth
   const groupedList = useMemo(() => {
-    const groupedSales = clients.reduce((acc: { [key: string]: { clientId: string; clientNo: string; clientName: string; dueBalance: number; items: any[] } }, client) => {
+    const groupedSales = clients.reduce((acc: { [key: string]: {
+      clientId: string;
+      clientNo: string;
+      clientName: string;
+      authoritativeOutstanding: number;
+      openingDue: number;
+      invoiceDue: number;
+      items: any[];
+    } }, client) => {
       const clientSales = sales.filter(s => s.clientId === client.id);
-      if (clientSales.length === 0 && client.currentBalance === 0) return acc;
+      const authTotal = client.currentBalance ?? 0;
+      if (clientSales.length === 0 && authTotal === 0) return acc;
 
       const sortedSales = [...clientSales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       const items = sortedSales.map(sale => {
-        const isSalePaid          = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.99);
-        const previousOutstanding = sale.previousBalance ?? 0;
-        const currentOrder        = sale.total;
-        const totalPayable        = previousOutstanding + currentOrder;
-        const collectedAmount     = sale.paid;
-        const rawDue              = isSalePaid ? 0 : Math.max(0, sale.balance);
-        const dueBalance          = (Math.abs(rawDue) < 0.99) ? 0 : rawDue;
+        const isPaid = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.01);
+        const isPartial = !isPaid && sale.paid > 0;
+        const status = isPaid ? 'PAID' : isPartial ? 'PARTIALLY PAID' : 'UNPAID';
+        const remaining = isPaid ? 0 : Math.max(0, sale.balance);
 
         return {
-          id:                  sale.id,
-          invoiceNo:           sale.invoiceNo,
-          date:                sale.date,
-          paymentMode:         sale.paymentMode,
-          previousOutstanding,
-          currentOrder,
-          totalPayable,
-          payNow:              sale.paid,   // amount paid at checkout time
-          collectedAmount,
-          dueBalance,
-          status:              isSalePaid ? 'PAID' : sale.status,
+          id: sale.id,
+          invoiceNo: sale.invoiceNo,
+          date: sale.date,
+          paymentMode: sale.paymentMode,
+          total: sale.total,
+          paid: sale.paid,
+          remaining,
+          status,
         };
       });
 
-      const sumUnpaidSales = clientSales.filter(s => s.balance > 0 && s.status !== 'CANCELLED').reduce((sum, s) => sum + s.balance, 0);
-      const dueBalance = sumUnpaidSales > 0 ? sumUnpaidSales : (client.currentBalance ?? 0);
+      const invoiceDue = items.filter(i => i.status !== 'PAID').reduce((sum, i) => sum + i.remaining, 0);
+      const openingDue = Math.max(0, Math.round((authTotal - invoiceDue) * 100) / 100);
 
       acc[client.id] = {
-        clientId:   client.id,
-        clientNo:   client.clientId || 'WH-0000',
+        clientId: client.id,
+        clientNo: client.clientId || 'WH-0000',
         clientName: client.name,
-        dueBalance: Math.max(0, dueBalance),
+        authoritativeOutstanding: Math.max(0, authTotal),
+        openingDue,
+        invoiceDue,
         items
       };
 
       return acc;
     }, {});
 
-    return Object.values(groupedSales).filter(g => g.items.length > 0 || g.dueBalance > 0);
+    return Object.values(groupedSales).filter(g => g.items.length > 0 || g.authoritativeOutstanding > 0);
   }, [clients, sales]);
 
   return (
@@ -358,16 +373,11 @@ export default function CollectionsPage() {
                 <label>Client *</label>
                 <select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value, saleId: '' }))} required>
                   <option value="">— Select Customer —</option>
-                  {clients.map(c => {
-                    const clientUnpaidSales = sales.filter(s => s.clientId === c.id && s.balance > 0 && s.status !== 'CANCELLED');
-                    const sumUnpaid = clientUnpaidSales.reduce((sum, s) => sum + s.balance, 0);
-                    const displayDue = sumUnpaid > 0 ? sumUnpaid : (c.currentBalance ?? 0);
-                    return (
-                      <option key={c.id} value={c.id}>
-                        {c.name} (Outstanding Due: {fmtMoney(Math.max(0, displayDue))})
-                      </option>
-                    );
-                  })}
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.clientId || 'WH-0000'}) — Total Outstanding: {fmtMoney(Math.max(0, c.currentBalance ?? 0))}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="va-field">
@@ -380,115 +390,47 @@ export default function CollectionsPage() {
             {form.clientId && (() => {
               const selectedC = clients.find(c => c.id === form.clientId);
               if (!selectedC) return null;
-              const targetSale = form.saleId ? sales.find(s => s.id === form.saleId) : null;
               const prevBal = selectedC.currentBalance ?? 0;
-              const currBill = targetSale ? targetSale.balance : 0;
-              const totalPayable = Math.max(0, prevBal);
               const amtRec = Math.max(0, Number(form.amount || 0));
-              const remBal = Math.max(0, totalPayable - amtRec);
-              const excessAmt = Math.max(0, amtRec - totalPayable);
-
-              // Live client-side FIFO calculation
-              let unpaidSales = sales
-                .filter(s => s.clientId === form.clientId && s.balance > 0 && s.status !== 'CANCELLED')
-                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-              if (targetSale && targetSale.balance > 0) {
-                unpaidSales = [targetSale, ...unpaidSales.filter(s => s.id !== targetSale.id)];
-              }
-
-              let remPayment = amtRec;
-              const liveAllocations = unpaidSales.map(s => {
-                if (remPayment <= 0) return null;
-                const toApply = Math.min(remPayment, s.balance);
-                const newBal = Math.max(0, s.balance - toApply);
-                remPayment -= toApply;
-                return {
-                  saleId: s.id,
-                  invoiceNo: s.invoiceNo,
-                  previousBalance: s.balance,
-                  allocatedAmount: toApply,
-                  remainingBalance: newBal,
-                };
-              }).filter(Boolean) as Array<{ saleId: string; invoiceNo: string; previousBalance: number; allocatedAmount: number; remainingBalance: number }>;
+              const remBal = Math.max(0, prevBal - amtRec);
+              const excessAmt = Math.max(0, amtRec - prevBal);
 
               return (
                 <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 12, padding: 16, margin: '14px 0 16px' }}>
                   <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>📊 Real-Time Financial &amp; Running Balance Summary</span>
-                    <span style={{ fontSize: 11, background: '#E2E8F0', padding: '2px 8px', borderRadius: 12, color: '#475569', fontWeight: 700 }}>FIFO Engine</span>
+                    <span>📊 Authoritative Financial Summary</span>
+                    <span style={{ fontSize: 11, background: '#E2E8F0', padding: '2px 8px', borderRadius: 12, color: '#475569', fontWeight: 700 }}>Single Source of Truth</span>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
                     <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>1. Previous Balance</div>
-                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: prevBal > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>1. Total Outstanding Due</div>
+                      <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: prevBal > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
                         {fmtMoney(prevBal)}
                       </div>
-                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Outstanding before today</div>
-                    </div>
-
-                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>2. Current Bill</div>
-                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: currBill > 0 ? '#2563EB' : '#64748B', marginTop: 4 }}>
-                        {fmtMoney(currBill)}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Selected invoice due</div>
-                    </div>
-
-                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>3. Total Payable</div>
-                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', marginTop: 4 }}>
-                        {fmtMoney(totalPayable)}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Total customer dues</div>
+                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Current client balance</div>
                     </div>
 
                     <div style={{ background: '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
-                      <div style={{ fontSize: 10, color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>4. Amount Received</div>
+                      <div style={{ fontSize: 10, color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>2. Amount Being Paid</div>
                       <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: '#15803D', marginTop: 4 }}>
                         {fmtMoney(amtRec)}
                       </div>
-                      <div style={{ fontSize: 10, color: '#16A34A', marginTop: 2 }}>Payment being received</div>
+                      <div style={{ fontSize: 10, color: '#16A34A', marginTop: 2 }}>Payment amount</div>
                     </div>
 
                     <div style={{ background: remBal > 0 ? '#FFFBEB' : '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: `1px solid ${remBal > 0 ? '#FDE68A' : '#BBF7D0'}` }}>
                       <div style={{ fontSize: 10, color: remBal > 0 ? '#92400E' : '#166534', fontWeight: 700, textTransform: 'uppercase' }}>
-                        {excessAmt > 0 ? '5. Advance Credit' : '5. Remaining Balance'}
+                        {excessAmt > 0 ? '3. Advance Credit' : '3. Remaining Due'}
                       </div>
                       <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: excessAmt > 0 ? '#15803D' : (remBal > 0 ? '#B45309' : '#16A34A'), marginTop: 4 }}>
                         {excessAmt > 0 ? `+${fmtMoney(excessAmt)}` : fmtMoney(remBal)}
                       </div>
                       <div style={{ fontSize: 10, color: remBal > 0 ? '#D97706' : '#16A34A', marginTop: 2 }}>
-                        {excessAmt > 0 ? 'Excess stored as credit' : (remBal === 0 ? 'Fully settled (Rs 0 due)' : 'Customer dues after payment')}
+                        {excessAmt > 0 ? 'Excess stored as credit' : (remBal === 0 ? 'Fully settled (Rs 0 due)' : 'Balance after payment')}
                       </div>
                     </div>
                   </div>
-
-                  {/* Live FIFO Allocation Preview */}
-                  {amtRec > 0 && liveAllocations.length > 0 && (
-                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed #CBD5E1' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 6, textTransform: 'uppercase' }}>
-                        📍 FIFO Invoice Settlement Preview ({liveAllocations.length} Invoice{liveAllocations.length !== 1 ? 's' : ''})
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {liveAllocations.map(alloc => (
-                          <div key={alloc.saleId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FFF', padding: '6px 10px', borderRadius: 6, fontSize: 12, border: '1px solid #E2E8F0' }}>
-                            <div>
-                              <strong style={{ color: '#1E293B' }}>Invoice #{alloc.invoiceNo}</strong>
-                              <span style={{ color: '#64748B', marginLeft: 8, fontSize: 11 }}>Due before: {fmtMoney(alloc.previousBalance)}</span>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                              <span style={{ color: '#15803D', fontWeight: 700, marginRight: 8 }}>Paying: {fmtMoney(alloc.allocatedAmount)}</span>
-                              <span style={{ color: alloc.remainingBalance > 0 ? '#B45309' : '#16A34A', fontWeight: 700, fontSize: 11 }}>
-                                ({alloc.remainingBalance > 0 ? `Remaining: ${fmtMoney(alloc.remainingBalance)}` : 'PAID IN FULL'})
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               );
             })()}
@@ -544,14 +486,14 @@ export default function CollectionsPage() {
             <div className="va-empty"><div className="big">No sales invoices yet</div></div>
           ) : (
             <>
-              {/* ────── DESKTOP VIEW (original accordion + table) ────── */}
+              {/* ────── DESKTOP VIEW (Redesigned Accordion & Invoice Focus) ────── */}
               <div className="hide-mobile">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {groupedList.map(g => {
                     const isExpanded = !!expandedClients[g.clientId];
                     return (
                       <div key={g.clientId} style={{ border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                        {/* Accordion Header */}
+                        {/* ── NEW ACCORDION HEADER (Section 9 Specification) ── */}
                         <div
                           onClick={() => toggleExpand(g.clientId)}
                           style={{
@@ -559,8 +501,8 @@ export default function CollectionsPage() {
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             flexWrap: 'wrap',
-                            gap: '8px',
-                            padding: '12px 16px',
+                            gap: '12px',
+                            padding: '14px 18px',
                             background: '#f8f9fa',
                             cursor: 'pointer',
                             userSelect: 'none',
@@ -570,32 +512,51 @@ export default function CollectionsPage() {
                           onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#f1f3f5'; }}
                           onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = '#f8f9fa'; }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 auto', minWidth: 0 }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--forest)', display: 'inline-block', flexShrink: 0 }}></span>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.clientName}</span>
-                            <span style={{ background: '#e9ecef', color: '#495057', borderRadius: 12, padding: '2px 8px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                              {g.items.length}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
-                            <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                              Due: <strong style={{ color: g.dueBalance > 0 ? 'var(--clay)' : 'var(--ok)' }}>{fmtMoney(g.dueBalance)}</strong>
-                            </span>
-                            {g.dueBalance > 0 && (
-                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
-                                <button className="va-btn secondary small" onClick={() => handleViewDues(g.clientId)} style={{ padding: '4px 8px', fontSize: 11, fontWeight: 700 }}>
-                                  View Dues
-                                </button>
-                                <button className="va-btn small" onClick={() => handleSendDueStatement(g.clientId)} style={{ padding: '4px 8px', fontSize: 11, fontWeight: 700 }}>
-                                  Send Due Statement
-                                </button>
+                          {/* Client Identification */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', minWidth: 200 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: g.authoritativeOutstanding > 0 ? 'var(--clay)' : 'var(--ok)', display: 'inline-block', flexShrink: 0 }}></span>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>{g.clientName}</span>
+                                <span style={{ background: '#e9ecef', color: '#495057', borderRadius: 6, padding: '2px 6px', fontSize: 11, fontWeight: 700 }}>
+                                  {g.clientNo}
+                                </span>
                               </div>
-                            )}
+                              {/* Financial Breakdown Badges */}
+                              <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 11, color: '#64748B' }}>
+                                <span>Invoices ({g.items.length}): <strong style={{ color: g.invoiceDue > 0 ? '#B45309' : '#16A34A' }}>{fmtMoney(g.invoiceDue)}</strong></span>
+                                {g.openingDue > 0 && (
+                                  <span>• Opening Due: <strong style={{ color: '#B45309' }}>{fmtMoney(g.openingDue)}</strong></span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Total Outstanding & Actions */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flexShrink: 0 }}>
+                            <div style={{ textAlign: 'right', paddingRight: 8, borderRight: '1px solid var(--line)' }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Total Outstanding</div>
+                              <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: g.authoritativeOutstanding > 0 ? 'var(--clay)' : 'var(--ok)' }}>
+                                {fmtMoney(g.authoritativeOutstanding)}
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                              <button className="va-btn secondary small" onClick={() => handleViewDues(g.clientId)} style={{ padding: '5px 10px', fontSize: 11, fontWeight: 700 }}>
+                                💳 View Dues
+                              </button>
+                              <button className="va-btn secondary small" onClick={() => handleSendDueStatement(g.clientId)} style={{ padding: '5px 10px', fontSize: 11, fontWeight: 700 }}>
+                                📋 Statement
+                              </button>
+                              <button className="va-btn small" onClick={() => openRecordPaymentForClient(g.clientId)} style={{ padding: '5px 10px', fontSize: 11, fontWeight: 700 }}>
+                                ➕ Record Payment
+                              </button>
+                            </div>
                             <span style={{ fontSize: 12, transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease', display: 'inline-block', color: 'var(--muted)', flexShrink: 0 }}>▼</span>
                           </div>
                         </div>
 
-                        {/* Accordion Content — va-table */}
+                        {/* Accordion Content — Clean Invoice Table (Section 10 Specification) */}
                         {isExpanded && (
                           <div style={{ padding: '0 20px 16px 20px', background: '#fff' }}>
                             <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
@@ -603,21 +564,17 @@ export default function CollectionsPage() {
                                 <thead>
                                   <tr>
                                     <th>Invoice ID</th>
-                                    <th>Client ID</th>
-                                    <th>Client Name</th>
-                                    <th>Invoice Date &amp; Time</th>
-                                    <th style={{ textAlign: 'right' }}>Previous Due</th>
-                                    <th style={{ textAlign: 'right' }}>Current Order</th>
-                                    <th style={{ textAlign: 'right' }}>Total Payable</th>
-                                    <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Collected</th>
-                                    <th style={{ textAlign: 'right', color: 'var(--clay)' }}>Due Balance</th>
+                                    <th>Date &amp; Time</th>
+                                    <th style={{ textAlign: 'right' }}>Invoice Total</th>
+                                    <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Paid</th>
+                                    <th style={{ textAlign: 'right', color: 'var(--clay)' }}>Remaining</th>
                                     <th>Status</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {g.items.map(item => {
-                                    const isPaid    = item.status === 'PAID' || item.dueBalance <= 0.99;
-                                    const isPartial = !isPaid && item.collectedAmount > 0;
+                                    const isPaid = item.status === 'PAID' || item.remaining <= 0.01;
+                                    const isPartial = item.status === 'PARTIALLY PAID';
                                     const statusBadge = isPaid
                                       ? <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>PAID</span>
                                       : isPartial
@@ -625,118 +582,114 @@ export default function CollectionsPage() {
                                         : <span className="va-badge" style={{ background: '#FFEBEE', color: '#C62828', border: '1px solid #FFCDD2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>UNPAID</span>;
                                     return (
                                       <tr key={item.id}>
-                                        <td style={{ fontWeight: 600, color: 'var(--ink)' }}>{item.invoiceNo}</td>
-                                        <td style={{ color: 'var(--muted)', fontSize: 12 }}>{g.clientNo}</td>
-                                        <td style={{ fontWeight: 600 }}>{g.clientName}</td>
-                                        <td style={{ color: 'var(--muted)' }}>{fmtDateTime(item.date)}</td>
-                                        <td className="mono" style={{ textAlign: 'right', color: item.previousOutstanding > 0.99 ? 'var(--clay)' : 'var(--muted)' }}>{item.previousOutstanding > 0.99 ? fmtMoney(item.previousOutstanding) : 'Rs 0'}</td>
-                                        <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{fmtMoney(item.currentOrder)}</td>
-                                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(item.totalPayable)}</td>
-                                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: item.collectedAmount > 0 ? 'var(--ok)' : 'var(--muted)' }}>{fmtMoney(item.collectedAmount)}</td>
-                                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: (item.dueBalance > 0.99 && !isPaid) ? 'var(--clay)' : 'var(--ok)' }}>{(item.dueBalance > 0.99 && !isPaid) ? fmtMoney(item.dueBalance) : '✓ 0'}</td>
+                                        <td style={{ fontWeight: 700, color: 'var(--ink)' }}>{item.invoiceNo}</td>
+                                        <td style={{ color: 'var(--muted)', fontSize: 12 }}>{fmtDateTime(item.date)}</td>
+                                        <td className="mono" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(item.total)}</td>
+                                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: item.paid > 0 ? 'var(--ok)' : 'var(--muted)' }}>{fmtMoney(item.paid)}</td>
+                                        <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: item.remaining > 0 ? 'var(--clay)' : 'var(--ok)' }}>{fmtMoney(item.remaining)}</td>
                                         <td>{statusBadge}</td>
                                       </tr>
                                     );
                                   })}
                                 </tbody>
-                               </table>
-                             </div>
+                              </table>
+                            </div>
 
-                             {/* ────── PAYMENT HISTORY SECTION (Today Onward By Default) ────── */}
-                             {(() => {
-                               const todayBDate = getTodayBusinessDateString();
-                               const allClientCols = collections
-                                 .filter(c => c.clientId === g.clientId)
-                                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                            {/* ────── PAYMENT HISTORY SECTION (Section 11 Specification) ────── */}
+                            {(() => {
+                              const todayBDate = getTodayBusinessDateString();
+                              const allClientCols = collections
+                                .filter(c => c.clientId === g.clientId)
+                                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-                               const todayOnwardCols = allClientCols.filter(c => getTodayBusinessDateString(c.date) >= todayBDate);
-                               const showAll = !!showAllHistory[g.clientId];
-                               const clientCols = showAll ? allClientCols : todayOnwardCols;
+                              const todayOnwardCols = allClientCols.filter(c => getTodayBusinessDateString(c.date) >= todayBDate);
+                              const showAll = !!showAllHistory[g.clientId];
+                              const clientCols = showAll ? allClientCols : todayOnwardCols;
 
-                               return (
-                                 <div style={{ marginTop: 16, borderTop: '2px dashed #CBD5E1', paddingTop: 14 }}>
-                                   <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                                     <span>
-                                       💳 PAYMENT HISTORY ({clientCols.length} receipt{clientCols.length === 1 ? '' : 's'} {showAll ? '— All History' : '— Today Onward'})
-                                     </span>
-                                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                       {allClientCols.length > todayOnwardCols.length && (
-                                         <button
-                                           className="va-btn secondary small"
-                                           style={{ padding: '2px 8px', fontSize: 11, fontWeight: 700 }}
-                                           onClick={() => toggleShowAllHistory(g.clientId)}
-                                         >
-                                           {showAll ? 'Show Today Only' : `Show All History (${allClientCols.length})`}
-                                         </button>
-                                       )}
-                                       <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>Ordered newest-first</span>
-                                     </div>
-                                   </div>
+                              return (
+                                <div style={{ marginTop: 16, borderTop: '2px dashed #CBD5E1', paddingTop: 14 }}>
+                                  <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                                    <span>
+                                      💳 PAYMENT HISTORY ({clientCols.length} receipt{clientCols.length === 1 ? '' : 's'} {showAll ? '— All History' : '— Today Onward'})
+                                    </span>
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                      {allClientCols.length > todayOnwardCols.length && (
+                                        <button
+                                          className="va-btn secondary small"
+                                          style={{ padding: '2px 8px', fontSize: 11, fontWeight: 700 }}
+                                          onClick={() => toggleShowAllHistory(g.clientId)}
+                                        >
+                                          {showAll ? 'Show Today Only' : `Show All History (${allClientCols.length})`}
+                                        </button>
+                                      )}
+                                      <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>Ordered newest-first</span>
+                                    </div>
+                                  </div>
 
-                                   {clientCols.length === 0 ? (
-                                     <div style={{ fontSize: 12, color: '#64748B', fontStyle: 'italic', padding: '10px 14px', background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                       <span>No payment receipts recorded today for this client.</span>
-                                       {allClientCols.length > 0 && !showAll && (
-                                         <button
-                                           className="va-btn secondary small"
-                                           style={{ padding: '2px 8px', fontSize: 11, fontWeight: 700 }}
-                                           onClick={() => toggleShowAllHistory(g.clientId)}
-                                         >
-                                           View Older History ({allClientCols.length})
-                                         </button>
-                                       )}
-                                     </div>
-                                   ) : (
-                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-                                       {clientCols.map((col, idx) => {
-                                         const empName = col.receivedByUser?.name || 'Unrecorded (Historical)';
-                                         const rawRemBal = col.remainingBalance ?? col.runningBalance ?? 0;
-                                         const remBal = Math.abs(rawRemBal) < 0.99 ? 0 : rawRemBal;
-                                         const refNo = col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`;
+                                  {clientCols.length === 0 ? (
+                                    <div style={{ fontSize: 12, color: '#64748B', fontStyle: 'italic', padding: '10px 14px', background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <span>No payment receipts recorded today for this client.</span>
+                                      {allClientCols.length > 0 && !showAll && (
+                                        <button
+                                          className="va-btn secondary small"
+                                          style={{ padding: '2px 8px', fontSize: 11, fontWeight: 700 }}
+                                          onClick={() => toggleShowAllHistory(g.clientId)}
+                                        >
+                                          View Older History ({allClientCols.length})
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                                      {clientCols.map((col, idx) => {
+                                        const empName = col.receivedByUser?.name || 'Unrecorded (Historical)';
+                                        const rawRemBal = col.remainingBalance ?? col.runningBalance ?? 0;
+                                        const remBal = Math.abs(rawRemBal) < 0.99 ? 0 : rawRemBal;
+                                        const refNo = col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`;
 
-                                         return (
-                                           <div key={col.id} style={{ background: '#F8FAFC', border: '1.5px solid #CBD5E1', borderRadius: 10, padding: '12px 14px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: '1px solid #E2E8F0', paddingBottom: 6 }}>
-                                               <span style={{ fontWeight: 800, fontSize: 12, color: '#0F172A' }}>
-                                                 Payment #{clientCols.length - idx}
-                                               </span>
-                                               <span className="mono" style={{ fontSize: 11, background: '#E2E8F0', color: '#334155', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
-                                                 {refNo}
-                                               </span>
-                                             </div>
+                                        return (
+                                          <div key={col.id} style={{ background: '#F8FAFC', border: '1.5px solid #CBD5E1', borderRadius: 10, padding: '12px 14px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: '1px solid #E2E8F0', paddingBottom: 6 }}>
+                                              <span style={{ fontWeight: 800, fontSize: 12, color: '#0F172A' }}>
+                                                Payment #{clientCols.length - idx}
+                                              </span>
+                                              <span className="mono" style={{ fontSize: 11, background: '#E2E8F0', color: '#334155', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
+                                                {refNo}
+                                              </span>
+                                            </div>
 
-                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
-                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                 <span style={{ color: '#64748B', fontWeight: 600 }}>Amount Received:</span>
-                                                 <strong className="mono" style={{ color: '#166534', fontSize: 14 }}>{fmtMoney(col.amount)}</strong>
-                                               </div>
-                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                 <span style={{ color: '#64748B', fontWeight: 600 }}>Date &amp; Time:</span>
-                                                 <span style={{ fontWeight: 600, color: '#1E293B' }}>{fmtDateTime(col.date)}</span>
-                                               </div>
-                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                 <span style={{ color: '#64748B', fontWeight: 600 }}>Payment Method:</span>
-                                                 <span style={{ fontWeight: 800, textTransform: 'uppercase', color: '#1E40AF', background: '#DBEAFE', padding: '1px 6px', borderRadius: 4, fontSize: 10 }}>{col.method}</span>
-                                               </div>
-                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                 <span style={{ color: '#64748B', fontWeight: 600 }}>Received By:</span>
-                                                 <span style={{ fontWeight: 700, color: '#0F172A' }}>👤 {empName}</span>
-                                               </div>
-                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #CBD5E1', paddingTop: 6, marginTop: 2 }}>
-                                                 <span style={{ color: '#64748B', fontWeight: 700 }}>Remaining Balance:</span>
-                                                 <strong className="mono" style={{ color: remBal > 0 ? '#991B1B' : '#166534', fontSize: 13 }}>{fmtMoney(remBal)}</strong>
-                                               </div>
-                                             </div>
-                                           </div>
-                                         );
-                                       })}
-                                     </div>
-                                   )}
-                                 </div>
-                               );
-                             })()}
-                           </div>
-                         )}
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ color: '#64748B', fontWeight: 600 }}>Amount Received:</span>
+                                                <strong className="mono" style={{ color: '#166534', fontSize: 14 }}>{fmtMoney(col.amount)}</strong>
+                                              </div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ color: '#64748B', fontWeight: 600 }}>Date &amp; Time:</span>
+                                                <span style={{ fontWeight: 600, color: '#1E293B' }}>{fmtDateTime(col.date)}</span>
+                                              </div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ color: '#64748B', fontWeight: 600 }}>Payment Method:</span>
+                                                <span style={{ fontWeight: 800, textTransform: 'uppercase', color: '#1E40AF', background: '#DBEAFE', padding: '1px 6px', borderRadius: 4, fontSize: 10 }}>{col.method}</span>
+                                              </div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ color: '#64748B', fontWeight: 600 }}>Received By:</span>
+                                                <span style={{ fontWeight: 700, color: '#0F172A' }}>👤 {empName}</span>
+                                              </div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #CBD5E1', paddingTop: 6, marginTop: 2 }}>
+                                                <span style={{ color: '#64748B', fontWeight: 700 }}>Remaining Client Due:</span>
+                                                <strong className="mono" style={{ color: remBal > 0 ? '#991B1B' : '#166534', fontSize: 13 }}>{fmtMoney(remBal)}</strong>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -744,14 +697,14 @@ export default function CollectionsPage() {
 
                 {/* Desktop Total Summary Footer */}
                 <div style={{ marginTop: 20, padding: '16px 20px', background: 'rgba(0,0,0,0.02)', borderRadius: 12, border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>Total Outstanding Receivables</span>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>Total Authoritative Outstanding Receivables</span>
                   <span className="mono" style={{ fontWeight: 700, color: 'var(--clay)', fontSize: 18 }}>
                     {fmtMoney(clients.filter(c => c.currentBalance > 0).reduce((s, c) => s + c.currentBalance, 0))}
                   </span>
                 </div>
               </div>
 
-              {/* ────── MOBILE VIEW (standardized green card style) ────── */}
+              {/* ────── MOBILE VIEW (Redesigned Cards) ────── */}
               <div className="show-mobile" style={{ flexDirection: 'column', gap: 12, width: '100%' }}>
                 {groupedList.map(g => {
                   const isExpanded = !!expandedClients[g.clientId];
@@ -767,45 +720,46 @@ export default function CollectionsPage() {
                             style={{ flex: 1, fontWeight: 700 }}
                             onClick={() => toggleExpand(g.clientId)}
                           >
-                            {isExpanded ? 'Hide Invoices' : 'View Invoices'}
+                            {isExpanded ? 'Hide Invoices' : `Invoices (${g.items.length})`}
                           </button>
-                          {g.dueBalance > 0 && (
-                            <>
-                              <button
-                                className="va-btn secondary small"
-                                style={{ flex: 1, fontWeight: 700 }}
-                                onClick={() => handleSendDueStatement(g.clientId)}
-                              >
-                                📋 Statement
-                              </button>
-                              <button
-                                className="va-btn secondary small"
-                                style={{ flex: 1, fontWeight: 700 }}
-                                onClick={() => handleViewDues(g.clientId)}
-                              >
-                                💳 Dues
-                              </button>
-                            </>
+                          <button
+                            className="va-btn small"
+                            style={{ flex: 1, fontWeight: 700 }}
+                            onClick={() => openRecordPaymentForClient(g.clientId)}
+                          >
+                            ➕ Pay
+                          </button>
+                          {g.authoritativeOutstanding > 0 && (
+                            <button
+                              className="va-btn secondary small"
+                              style={{ flex: 1, fontWeight: 700 }}
+                              onClick={() => handleSendDueStatement(g.clientId)}
+                            >
+                              📋 Statement
+                            </button>
                           )}
                         </div>
                       }
                     >
                       <MobileCardRow label="Total Invoices" value={`${g.items.length} invoices`} />
                       <MobileCardRow 
-                        label="Total Due Balance" 
-                        value={fmtMoney(g.dueBalance)} 
-                        valueColor={g.dueBalance > 0 ? '#991B1B' : '#166534'} 
+                        label="Total Outstanding Due" 
+                        value={fmtMoney(g.authoritativeOutstanding)} 
+                        valueColor={g.authoritativeOutstanding > 0 ? '#991B1B' : '#166534'} 
                         isMono 
                       />
+                      {g.openingDue > 0 && (
+                        <MobileCardRow label="Opening Due" value={fmtMoney(g.openingDue)} isMono />
+                      )}
 
                       {/* Expandable Invoice Cards */}
                       {isExpanded && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
                           {g.items.map(item => {
-                            const isPaid     = item.dueBalance <= 0.99;
-                            const isPartial  = !isPaid && item.collectedAmount > 0;
+                            const isPaid = item.status === 'PAID' || item.remaining <= 0.01;
+                            const isPartial = item.status === 'PARTIALLY PAID';
                             const statusVariant = isPaid ? 'green' : isPartial ? 'yellow' : 'red';
-                            const statusLabel = isPaid ? 'PAID' : isPartial ? 'PARTIALLY PAID' : 'UNPAID';
+                            const statusLabel = item.status;
 
                             return (
                               <MobileCardBox
@@ -824,16 +778,12 @@ export default function CollectionsPage() {
                                 borderColor="#CBD5E1"
                               >
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '4px' }}>
-                                  <MobileCardRow label="Client ID" value={g.clientNo} />
-                                  <MobileCardRow label="Client Name" value={g.clientName} />
-                                  <MobileCardRow label="Previous Due" value={item.previousOutstanding > 0.99 ? fmtMoney(item.previousOutstanding) : 'Rs 0'} isMono />
-                                  <MobileCardRow label="Current Order" value={fmtMoney(item.currentOrder)} isMono />
-                                  <MobileCardRow label="Total Payable" value={fmtMoney(item.totalPayable)} isMono />
-                                  <MobileCardRow label="Collected" value={fmtMoney(item.collectedAmount)} valueColor="#166534" isMono />
+                                  <MobileCardRow label="Total" value={fmtMoney(item.total)} isMono />
+                                  <MobileCardRow label="Paid" value={fmtMoney(item.paid)} valueColor="#166534" isMono />
                                   <MobileCardRow 
-                                    label="Due Balance" 
-                                    value={item.dueBalance > 0.99 ? fmtMoney(item.dueBalance) : '✓ 0'} 
-                                    valueColor={item.dueBalance > 0.99 ? '#991B1B' : '#166534'} 
+                                    label="Remaining" 
+                                    value={fmtMoney(item.remaining)} 
+                                    valueColor={item.remaining > 0 ? '#991B1B' : '#166534'} 
                                     isMono 
                                   />
                                   <MobileCardRow label="Status">
@@ -906,7 +856,7 @@ export default function CollectionsPage() {
                                         <MobileCardRow label="Date & Time" value={fmtDateTime(col.date)} />
                                         <MobileCardRow label="Method" value={col.method} />
                                         <MobileCardRow label="Received By" value={`👤 ${empName}`} />
-                                        <MobileCardRow label="Remaining Balance" value={fmtMoney(remBal)} valueColor={remBal > 0 ? '#991B1B' : '#166534'} isMono />
+                                        <MobileCardRow label="Remaining Due" value={fmtMoney(remBal)} valueColor={remBal > 0 ? '#991B1B' : '#166534'} isMono />
                                       </div>
                                     </MobileCardBox>
                                   );
@@ -1098,122 +1048,76 @@ export default function CollectionsPage() {
               </p>
             </div>
           ) : (
-            <>
-              {/* Desktop Table View */}
-              <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                <table className="va-table" style={{ width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: 40, textAlign: 'center' }}>#</th>
-                      <th>Time</th>
-                      <th>Client Name</th>
-                      <th>Client ID</th>
-                      <th>Invoice / Reference</th>
-                      <th style={{ textAlign: 'center' }}>Method</th>
-                      <th>Received By</th>
-                      <th style={{ textAlign: 'right' }}>Amount Received</th>
-                      <th style={{ textAlign: 'right' }}>Balance After Payment</th>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table className="va-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>Ref / Receipt</th>
+                    <th>Time</th>
+                    <th>Customer</th>
+                    <th>Received By</th>
+                    <th>Method</th>
+                    <th style={{ textAlign: 'right' }}>Amount</th>
+                    <th>Status / Mode</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyData.transactions.map((tx: any) => (
+                    <tr key={tx.id}>
+                      <td><span className="mono" style={{ fontWeight: 700, color: 'var(--ink)' }}>{tx.reference}</span></td>
+                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>{tx.time}</td>
+                      <td>
+                        <strong>{tx.clientName}</strong>
+                        {tx.clientId && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>({tx.clientId})</span>}
+                      </td>
+                      <td style={{ fontWeight: 600 }}>👤 {tx.receivedBy}</td>
+                      <td>
+                        <span style={{
+                          fontSize: 11, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 4,
+                          background: tx.method === 'CASH' ? '#DCFCE7' : tx.method === 'BANK' ? '#DBEAFE' : '#FEF9C3',
+                          color: tx.method === 'CASH' ? '#166534' : tx.method === 'BANK' ? '#1E40AF' : '#854D0E',
+                        }}>
+                          {tx.method}
+                        </span>
+                      </td>
+                      <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: '#166534', fontSize: 14 }}>
+                        {fmtMoney(tx.amount)}
+                      </td>
+                      <td>
+                        <span className="va-badge paid" style={{ fontSize: 10, padding: '2px 6px' }}>VERIFIED</span>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {dailyData.transactions.map((tx: any) => {
-                      const mUpper = (tx.method || 'CASH').toUpperCase();
-                      const isCash = mUpper === 'CASH';
-                      const rawBal = tx.remainingBalance;
-                      const remBal = (rawBal !== null && rawBal !== undefined && Math.abs(rawBal) < 0.99) ? 0 : rawBal;
-
-                      return (
-                        <tr key={tx.id}>
-                          <td style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tx.seqNo}</td>
-                          <td style={{ fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{tx.time}</td>
-                          <td style={{ fontWeight: 700, color: '#0F172A' }}>{tx.clientName}</td>
-                          <td style={{ color: 'var(--muted)', fontSize: 12 }}>{tx.clientCode}</td>
-                          <td style={{ fontWeight: 600, color: '#334155' }}>{tx.invoiceNo}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span style={{
-                              background: isCash ? '#E6F4EA' : '#E8F0FE',
-                              color: isCash ? '#137333' : '#1A73E8',
-                              padding: '2px 8px',
-                              borderRadius: 4,
-                              fontSize: 11,
-                              fontWeight: 800,
-                              textTransform: 'uppercase'
-                            }}>
-                              {tx.method}
-                            </span>
-                          </td>
-                          <td style={{ fontWeight: 700, color: '#1E293B' }}>👤 {tx.receivedBy}</td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: '#166534', fontSize: 14 }}>
-                            {fmtMoney(tx.amount)}
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: (remBal ?? 0) > 0 ? '#991B1B' : '#166534' }}>
-                            {remBal !== null && remBal !== undefined ? fmtMoney(remBal) : '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile Card List View */}
-              <div className="show-mobile" style={{ flexDirection: 'column', gap: 10, width: '100%' }}>
-                {dailyData.transactions.map((tx: any) => {
-                  const mUpper = (tx.method || 'CASH').toUpperCase();
-                  const rawBal = tx.remainingBalance;
-                  const remBal = (rawBal !== null && rawBal !== undefined && Math.abs(rawBal) < 0.99) ? 0 : rawBal;
-
-                  return (
-                    <MobileCardBox key={tx.id} bg="#FFF" borderColor="#CBD5E1">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <span style={{ fontWeight: 800, fontSize: 13, color: '#0F172A' }}>{tx.clientName}</span>
-                        <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>{tx.time}</span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
-                        <MobileCardRow label="Client ID" value={tx.clientCode} />
-                        <MobileCardRow label="Invoice / Ref" value={tx.invoiceNo} />
-                        <MobileCardRow label="Payment Method" value={mUpper} />
-                        <MobileCardRow label="Received By" value={`👤 ${tx.receivedBy}`} />
-                        <MobileCardRow label="Amount Received" value={fmtMoney(tx.amount)} valueColor="#166534" isMono />
-                        {remBal !== null && remBal !== undefined && (
-                          <MobileCardRow
-                            label="Balance After Payment"
-                            value={fmtMoney(remBal)}
-                            valueColor={remBal > 0 ? '#991B1B' : '#166534'}
-                            isMono
-                          />
-                        )}
-                      </div>
-                    </MobileCardBox>
-                  );
-                })}
-              </div>
-            </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
 
-      {dailyPreviewModal && (
-        <DailyPaymentHistoryPreviewModal
-          data={dailyPreviewModal}
-          onClose={() => setDailyPreviewModal(null)}
-          onToast={showToast}
-        />
-      )}
-
+      {/* ── Statement Modal ── */}
       {statementClient && (
         <DueStatementModal
+          onClose={() => setStatementClient(null)}
           client={statementClient}
           invoices={statementInvoices}
           mode={statementMode}
-          onClose={() => setStatementClient(null)}
         />
       )}
+
+      {/* ── Receipt Modal ── */}
       {receiptModal && (
         <CollectionReceiptModal
-          data={receiptModal}
           onClose={() => setReceiptModal(null)}
-          onToast={showToast}
+          data={receiptModal}
+        />
+      )}
+
+      {/* ── Daily Payment History Preview Modal ── */}
+      {dailyPreviewModal && (
+        <DailyPaymentHistoryPreviewModal
+          onClose={() => setDailyPreviewModal(null)}
+          data={dailyPreviewModal}
         />
       )}
     </DashboardLayout>
