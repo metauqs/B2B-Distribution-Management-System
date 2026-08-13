@@ -308,8 +308,8 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
 
   for (const entry of ledgerEntries) {
     const rawRun = running + entry.debit - entry.credit;
-    running = Math.abs(rawRun) < 1.0 ? 0 : rawRun;
-    if (entry.balance !== running) {
+    running = Math.round(rawRun * 100) / 100;
+    if (Math.abs(entry.balance - running) > 0.001) {
       await db.customerLedger.update({
         where: { id: entry.id },
         data: { balance: running }
@@ -317,7 +317,7 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
     }
   }
 
-  const finalRunning = Math.abs(running) < 1.0 ? 0 : Math.max(0, running);
+  const finalRunning = Math.max(0, Math.round(running * 100) / 100);
 
   await db.client.update({
     where: { id: clientId },
@@ -343,6 +343,24 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
     where: { clientId, deletedAt: null },
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
   });
+
+  // Single Precision Policy: Synchronize historical CustomerLedger invoice debits with billed Sale.total
+  for (const sale of sales) {
+    await db.customerLedger.updateMany({
+      where: {
+        clientId,
+        type: 'INVOICE',
+        OR: [
+          { referenceId: sale.id },
+          { referenceNo: sale.invoiceNo }
+        ],
+        debit: { not: sale.total }
+      },
+      data: {
+        debit: sale.total
+      }
+    });
+  }
 
   const totalCollections = collections.reduce((sum: number, c: any) => sum + c.amount, 0);
   const openingBal = client.openingBalance || 0;
