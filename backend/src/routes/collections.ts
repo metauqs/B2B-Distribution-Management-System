@@ -644,5 +644,62 @@ router.post('/reconcile-all', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/collections/:id — Atomic Delete Collection & Reconcile Client Ledger
+router.delete('/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const userId = (req.headers['x-user-id'] as string) || null;
+  const branchId = (req.headers['x-branch-id'] as string) || undefined;
+
+  try {
+    const collection = await prisma.collection.findUnique({
+      where: { id },
+      include: { client: true }
+    });
+
+    if (!collection) {
+      return res.status(404).json({ success: false, error: 'Collection record not found' });
+    }
+
+    const clientId = collection.clientId;
+
+    await prisma.$transaction(async tx => {
+      // 1. Delete collection allocations
+      await tx.collectionAllocation.deleteMany({
+        where: { collectionId: id }
+      });
+
+      // 2. Delete CustomerLedger payment entry linked to this collection
+      await tx.customerLedger.deleteMany({
+        where: { referenceId: id }
+      });
+
+      // 3. Delete the Collection record itself
+      await tx.collection.delete({
+        where: { id }
+      });
+
+      // 4. Re-reconcile client balances, invoice statuses, and ledger
+      await reconcileClientBalancesAndAllocations(clientId, tx);
+    });
+
+    await writeAuditLog({
+      userId: userId ?? undefined,
+      branchId,
+      action: 'DELETE',
+      entity: 'Collection',
+      entityId: id,
+      oldData: { clientId, amount: collection.amount, reference: collection.reference }
+    });
+
+    return res.json({
+      success: true,
+      message: 'Collection record deleted successfully and client ledger reconciled'
+    });
+  } catch (err: any) {
+    console.error('[DELETE /api/collections/:id]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to delete collection' });
+  }
+});
+
 export default router;
 
