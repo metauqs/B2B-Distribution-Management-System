@@ -49,38 +49,19 @@ app.use(requestLogger);
 // Public routes
 app.use('/api/auth', authRouter);
 
-// Health check with DB ping option to keep Render + Neon connections warm
-app.get('/api/health', async (req, res) => {
-  const pingDb = req.query.pingDb === 'true';
-  const now = new Date().toISOString();
+const GROQ_MODELS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'mixtral-8x7b-32768',
+  'gemma2-9b-it'
+];
 
-  if (pingDb) {
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      console.log('[HEALTH] Database ping successful');
-      return res.status(200).json({
-        status: 'ok',
-        service: 'backend',
-        database: 'connected',
-        timestamp: now,
-      });
-    } catch (err: any) {
-      console.error('[HEALTH] Database ping failed');
-      return res.status(503).json({
-        status: 'error',
-        service: 'backend',
-        database: 'disconnected',
-        error: 'Database connection check failed',
-        timestamp: now,
-      });
-    }
-  }
-
-  console.log('[HEALTH] Backend health check successful');
+// Health check endpoint for UptimeRobot & Render monitoring
+app.get('/api/health', (req, res) => {
   return res.status(200).json({
-    status: 'ok',
-    service: 'backend',
-    timestamp: now,
+    status: 'online',
+    provider: 'Groq',
+    models: GROQ_MODELS
   });
 });
 
