@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { writeAuditLog, generateClientId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance } from '../lib/business';
+import { writeAuditLog, generateClientId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, reconcileClientBalancesAndAllocations } from '../lib/business';
 import { Prisma } from '@prisma/client';
 import { calculateClientCreditRisk, updateClientCreditRating } from '../lib/creditRisk';
 import { calculateCollectionBehaviour } from '../lib/collectionBehaviour';
@@ -513,7 +513,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
           });
         }
 
-        await recalculateClientLedgerAndBalance(id, tx);
+        await reconcileClientBalancesAndAllocations(id, tx);
       }
 
       await updateClientCreditRating(id, tx);

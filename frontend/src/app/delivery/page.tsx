@@ -127,6 +127,11 @@ export default function DeliveryPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         invalidateCache('/api/delivery');
+        invalidateCache('/api/clients');
+        invalidateCache('/api/collections');
+        invalidateCache('/api/sales');
+        invalidateCache('/api/reports');
+        window.dispatchEvent(new Event('app-revalidate'));
         showToast('❌ Delivery marked as Failed & Stock Restored');
         await load(true);
       } else {

@@ -419,21 +419,14 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
   return { clientBalance: finalBalance, reconciledAllocations: reconciledAllocationsCount };
 }
 
-export async function getClientBalance(clientId: string, tx?: any): Promise<number> {
+export async function getAuthoritativeClientBalance(clientId: string, tx?: any): Promise<number> {
   const db = tx || prisma;
-  const client = await db.client.findUnique({
-    where: { id: clientId },
-    select: { currentBalance: true, openingBalance: true }
-  });
-  if (!client) return 0;
-  
-  const lastLedger = await db.customerLedger.findFirst({
-    where: { clientId },
-    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-    select: { balance: true }
-  });
+  const outcome = await reconcileClientBalancesAndAllocations(clientId, db);
+  return outcome.clientBalance;
+}
 
-  return lastLedger ? lastLedger.balance : client.currentBalance;
+export async function getClientBalance(clientId: string, tx?: any): Promise<number> {
+  return getAuthoritativeClientBalance(clientId, tx);
 }
 
 // ─── Derive Invoice Status from Financial State ──────────────────────────────

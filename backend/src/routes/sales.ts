@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
-import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, deriveInvoiceStatus, syncPriceListFromSale } from '../lib/business';
+import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, deriveInvoiceStatus, syncPriceListFromSale, reconcileClientBalancesAndAllocations } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { stockOut, syncInvoiceEditStock, stockReturn } from '../lib/inventoryService';
 import { getBusinessDateRange, getBusinessDateString, getCurrentBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
@@ -379,6 +379,9 @@ router.post('/', async (req: Request, res: Response) => {
         deliveryCharge: s.deliveryCharge,
       });
 
+      // Single Source of Truth: Reconcile client allocations, invoice statuses, customer ledger & current balance
+      await reconcileClientBalancesAndAllocations(clientId, tx);
+
       // Final verification: recalculate ledger & balance inside the transaction
       await recalculateClientLedgerAndBalance(clientId, tx);
 
@@ -607,8 +610,8 @@ router.put('/:id', async (req: Request, res: Response) => {
         });
       }
 
-      // Recalculate client running balance chronologically
-      await recalculateClientLedgerAndBalance(existingSale.clientId, tx);
+      // Single Source of Truth: Reconcile client allocations, invoice statuses, customer ledger & current balance
+      await reconcileClientBalancesAndAllocations(existingSale.clientId, tx);
 
       // Synchronize Financial Ledger double-entry records for this edited invoice
       let updatedCogs = 0;
@@ -883,7 +886,7 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
           debit: 0,
           credit: sale.balance
         });
-        await recalculateClientLedgerAndBalance(sale.clientId, tx);
+        await reconcileClientBalancesAndAllocations(sale.clientId, tx);
       }
 
       return cancelledSale;
