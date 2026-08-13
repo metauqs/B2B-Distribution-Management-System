@@ -15,6 +15,15 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    const method = (config.method || '').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      if (!config.headers['Idempotency-Key'] && !config.headers['idempotency-key']) {
+        const key = typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        config.headers['Idempotency-Key'] = key;
+      }
+    }
     return config;
   },
   (error) => Promise.reject(error)

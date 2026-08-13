@@ -1101,3 +1101,19 @@ enum FinancialEntityType {
   PRODUCT
   EMPLOYEE
 }
+
+model IdempotencyRecord {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  endpoint    String
+  requestHash String?
+  response    Json
+  statusCode  Int      @default(200)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt   DateTime @db.Timestamptz(3)
+
+  @@index([key])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+

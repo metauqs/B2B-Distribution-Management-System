@@ -12,6 +12,16 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     headers.set('Authorization', `Bearer ${token}`);
   }
 
+  const method = (init?.method || 'GET').toUpperCase();
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    if (!headers.has('Idempotency-Key') && !headers.has('idempotency-key')) {
+      const key = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      headers.set('Idempotency-Key', key);
+    }
+  }
+
   // Setup abort controller for timeout handling (45 seconds default timeout for multi-item transactions)
   const timeoutMs = 45000;
   const controller = new AbortController();

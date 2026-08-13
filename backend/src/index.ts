@@ -30,6 +30,7 @@ import bankAccountsRouter from './routes/bankAccounts';
 // Import Middleware
 import { authMiddleware } from './middleware/auth';
 import { requestLogger } from './middleware/requestLogger';
+import { idempotencyMiddleware } from './lib/idempotency';
 import prisma from './lib/prisma';
 
 const app = express();
@@ -42,6 +43,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(idempotencyMiddleware);
 app.use(requestLogger);
 
 // Public routes
