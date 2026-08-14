@@ -396,42 +396,98 @@ export default function CollectionsPage() {
               const remBal = Math.max(0, prevBal - amtRec);
               const excessAmt = Math.max(0, amtRec - prevBal);
 
+              const cSales = sales.filter(s => s.clientId === selectedC.id && s.status !== 'CANCELLED');
+              const invoiceDue = cSales.reduce((sum, s) => sum + (s.balance ?? 0), 0);
+              const openingDue = Math.max(0, Math.round((prevBal - invoiceDue) * 100) / 100);
+
+              // Waterfall Allocation Preview
+              const allocToOpening = Math.min(amtRec, openingDue);
+              const remainingOpeningAfter = Math.max(0, openingDue - allocToOpening);
+              const allocToInvoices = Math.min(Math.max(0, amtRec - allocToOpening), invoiceDue);
+              const remainingInvoicesAfter = Math.max(0, invoiceDue - allocToInvoices);
+
               return (
                 <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 12, padding: 16, margin: '14px 0 16px' }}>
-                  <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>📊 Authoritative Financial Summary</span>
-                    <span style={{ fontSize: 11, background: '#E2E8F0', padding: '2px 8px', borderRadius: 12, color: '#475569', fontWeight: 700 }}>Single Source of Truth</span>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                    <span>📊 Financial Breakdown &amp; Allocation Preview</span>
+                    <span style={{ fontSize: 11, background: '#E2E8F0', padding: '2px 8px', borderRadius: 12, color: '#475569', fontWeight: 700 }}>Authoritative Engine</span>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                  {/* Financial Bucket Breakdown */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12 }}>
                     <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>1. Total Outstanding Due</div>
+                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Opening Balance Due</div>
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: openingDue > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                        {fmtMoney(openingDue)}
+                      </div>
+                      <div style={{ fontSize: 10, color: openingDue > 0 ? '#D97706' : '#16A34A', marginTop: 2, fontWeight: 700 }}>
+                        {openingDue > 0 ? '⚠️ UNPAID' : '✅ CLEARED'}
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Invoice Outstanding</div>
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: invoiceDue > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                        {fmtMoney(invoiceDue)}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>{cSales.length} Active Invoices</div>
+                    </div>
+
+                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #CBD5E1' }}>
+                      <div style={{ fontSize: 10, color: '#1E293B', fontWeight: 700, textTransform: 'uppercase' }}>Total Client Due</div>
                       <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: prevBal > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
                         {fmtMoney(prevBal)}
                       </div>
-                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Current client balance</div>
+                      <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>Opening + Invoices</div>
                     </div>
 
                     <div style={{ background: '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
-                      <div style={{ fontSize: 10, color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>2. Amount Being Paid</div>
+                      <div style={{ fontSize: 10, color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>Amount to Collect</div>
                       <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: '#15803D', marginTop: 4 }}>
                         {fmtMoney(amtRec)}
                       </div>
-                      <div style={{ fontSize: 10, color: '#16A34A', marginTop: 2 }}>Payment amount</div>
+                      <div style={{ fontSize: 10, color: '#16A34A', marginTop: 2 }}>Current payment</div>
                     </div>
 
                     <div style={{ background: remBal > 0 ? '#FFFBEB' : '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: `1px solid ${remBal > 0 ? '#FDE68A' : '#BBF7D0'}` }}>
                       <div style={{ fontSize: 10, color: remBal > 0 ? '#92400E' : '#166534', fontWeight: 700, textTransform: 'uppercase' }}>
-                        {excessAmt > 0 ? '3. Advance Credit' : '3. Remaining Due'}
+                        {excessAmt > 0 ? 'Advance Credit' : 'Remaining Due'}
                       </div>
                       <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: excessAmt > 0 ? '#15803D' : (remBal > 0 ? '#B45309' : '#16A34A'), marginTop: 4 }}>
                         {excessAmt > 0 ? `+${fmtMoney(excessAmt)}` : fmtMoney(remBal)}
                       </div>
                       <div style={{ fontSize: 10, color: remBal > 0 ? '#D97706' : '#16A34A', marginTop: 2 }}>
-                        {excessAmt > 0 ? 'Excess stored as credit' : (remBal === 0 ? 'Fully settled (Rs 0 due)' : 'Balance after payment')}
+                        {excessAmt > 0 ? 'Stored as credit' : (remBal === 0 ? 'Fully settled (Rs 0)' : 'Remaining balance')}
                       </div>
                     </div>
                   </div>
+
+                  {/* Allocation Waterfall Preview */}
+                  {amtRec > 0 && (
+                    <div style={{ background: '#FFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '10px 14px', fontSize: 12 }}>
+                      <div style={{ fontWeight: 700, color: '#334155', marginBottom: 6 }}>Priority Allocation Preview:</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                          <span>1. <strong>FIRST:</strong> Opening Balance Allocation:</span>
+                          <span className="mono" style={{ fontWeight: 700, color: allocToOpening > 0 ? '#166534' : '#64748B' }}>
+                            {fmtMoney(allocToOpening)} {allocToOpening > 0 && `(Remaining Opening: ${fmtMoney(remainingOpeningAfter)})`}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                          <span>2. <strong>THEN:</strong> Active Invoices FIFO Allocation:</span>
+                          <span className="mono" style={{ fontWeight: 700, color: allocToInvoices > 0 ? '#166534' : '#64748B' }}>
+                            {fmtMoney(allocToInvoices)} {allocToInvoices > 0 && `(Remaining Invoices: ${fmtMoney(remainingInvoicesAfter)})`}
+                          </span>
+                        </div>
+                        {excessAmt > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#15803D' }}>
+                            <span>3. <strong>ADVANCE:</strong> Unallocated Credit Pool:</span>
+                            <span className="mono" style={{ fontWeight: 700 }}>+{fmtMoney(excessAmt)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -524,10 +580,12 @@ export default function CollectionsPage() {
                                 </span>
                               </div>
                               {/* Financial Breakdown Badges */}
-                              <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 11, color: '#64748B' }}>
+                              <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 11, color: '#64748B', flexWrap: 'wrap' }}>
                                 <span>Invoices ({g.items.length}): <strong style={{ color: g.invoiceDue > 0 ? '#B45309' : '#16A34A' }}>{fmtMoney(g.invoiceDue)}</strong></span>
-                                {g.openingDue > 0 && (
-                                  <span>• Opening Due: <strong style={{ color: '#B45309' }}>{fmtMoney(g.openingDue)}</strong></span>
+                                {g.openingDue > 0 ? (
+                                  <span>• Opening Due: <strong style={{ color: '#B45309' }}>{fmtMoney(g.openingDue)}</strong> <span style={{ color: '#D97706', fontWeight: 700 }}>(UNPAID)</span></span>
+                                ) : (
+                                  <span>• Opening Balance: <strong style={{ color: '#16A34A' }}>CLEARED</strong></span>
                                 )}
                               </div>
                             </div>
@@ -749,8 +807,10 @@ export default function CollectionsPage() {
                         valueColor={g.authoritativeOutstanding > 0 ? '#991B1B' : '#166534'} 
                         isMono 
                       />
-                      {g.openingDue > 0 && (
-                        <MobileCardRow label="Opening Due" value={fmtMoney(g.openingDue)} isMono />
+                      {g.openingDue > 0 ? (
+                        <MobileCardRow label="Opening Due" value={`${fmtMoney(g.openingDue)} (UNPAID)`} valueColor="#B45309" isMono />
+                      ) : (
+                        <MobileCardRow label="Opening Due" value="CLEARED (Rs 0)" valueColor="#166534" />
                       )}
 
                       {/* Expandable Invoice Cards */}

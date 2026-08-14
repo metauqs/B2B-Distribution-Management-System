@@ -284,6 +284,9 @@ router.get('/:id', async (req: Request, res: Response) => {
       }];
     }
 
+    const invoiceOutstanding = sales.filter(s => s.status !== 'CANCELLED').reduce((sum, s) => sum + (s.balance ?? 0), 0);
+    const openingBalanceRemaining = Math.max(0, Math.round((client.currentBalance - invoiceOutstanding) * 100) / 100);
+
     return res.json({
       success: true,
       data: {
@@ -293,6 +296,8 @@ router.get('/:id', async (req: Request, res: Response) => {
         totalCollected,
         lastOrderDate,
         outstandingInvoices,
+        invoiceOutstanding,
+        openingBalanceRemaining,
         sales,
         collections,
         deliveries,

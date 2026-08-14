@@ -121,6 +121,8 @@ interface Profile {
   totalCollected:     number;
   lastOrderDate:      string | null;
   outstandingInvoices: Sale[];
+  invoiceOutstanding?: number;
+  openingBalanceRemaining?: number;
   sales:              Sale[];
   collections:        Collection[];
   deliveries:         Delivery[];
@@ -904,6 +906,9 @@ export default function ClientsPage() {
                     ['WhatsApp', profile.client.whatsapp],
                     ['Address', profile.client.address],
                     ['Delivery Location', profile.client.deliveryLocation],
+                    ['Opening Balance', profile.client.openingBalance > 0 
+                      ? `${fmtMoney(profile.client.openingBalance)} — ${profile.openingBalanceRemaining && profile.openingBalanceRemaining > 0 ? `Unpaid Due: ${fmtMoney(profile.openingBalanceRemaining)}` : 'CLEARED (Rs 0)'}` 
+                      : 'Rs 0 (CLEARED)'],
                     ['Credit Limit', profile.client.creditLimit > 0 ? fmtMoney(profile.client.creditLimit) : 'None'],
                     ['Payment Terms', profile.client.paymentTerms === 0 ? 'Cash on Delivery' : `${profile.client.paymentTerms} Days`],
                     ['Last Order', profile.lastOrderDate ? fmtDate(profile.lastOrderDate) : 'Never'],
