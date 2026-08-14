@@ -262,7 +262,7 @@ export default function CollectionsPage() {
     } finally { setSaving(false); }
   };
 
-  const clientInvoices = sales.filter(s => s.clientId === form.clientId && s.balance > 0);
+  const clientInvoices = sales.filter(s => s.clientId === form.clientId && s.balance > 0 && s.status !== 'CANCELLED');
 
   // Group sales invoices per client using single authoritative source of truth
   const groupedList = useMemo(() => {
@@ -275,17 +275,18 @@ export default function CollectionsPage() {
       invoiceDue: number;
       items: any[];
     } }, client) => {
-      const clientSales = sales.filter(s => s.clientId === client.id);
+      const clientSales = sales.filter(s => s.clientId === client.id && s.status !== 'CANCELLED');
       const authTotal = client.currentBalance ?? 0;
       if (clientSales.length === 0 && authTotal === 0) return acc;
 
       const sortedSales = [...clientSales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       const items = sortedSales.map(sale => {
-        const isPaid = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.01);
-        const isPartial = !isPaid && sale.paid > 0;
-        const status = isPaid ? 'PAID' : isPartial ? 'PARTIALLY PAID' : 'UNPAID';
-        const remaining = isPaid ? 0 : Math.max(0, sale.balance);
+        const isCancelled = sale.status === 'CANCELLED';
+        const isPaid = !isCancelled && (sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.01));
+        const isPartial = !isCancelled && !isPaid && sale.paid > 0;
+        const status = isCancelled ? 'CANCELLED' : isPaid ? 'PAID' : isPartial ? 'PARTIALLY PAID' : 'UNPAID';
+        const remaining = isPaid || isCancelled ? 0 : Math.max(0, sale.balance);
 
         return {
           id: sale.id,
