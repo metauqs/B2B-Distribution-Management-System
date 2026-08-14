@@ -5,6 +5,145 @@ import { getCurrentBusinessDateRange, getBusinessDateRange, parseInputDateToUtc 
 
 const router = Router();
 
+// Helper: Merges active Product Master catalog, Inventory quantities & costs, and PriceList items
+function buildSynchronizedPriceListItems(
+  existingList: any | null,
+  activeProducts: any[],
+  inventoryMap: Map<string, any>
+) {
+  // If no saved PriceList exists yet, all active products become draft items
+  if (!existingList || !existingList.items) {
+    return activeProducts.map((prod) => {
+      const inv = inventoryMap.get(prod.id);
+      const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : 0;
+      const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
+      const previousBuyPrice = inv?.previousBuyPrice ?? 0;
+      const currentStock = inv?.qty ?? 0;
+      const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
+
+      return {
+        id: `draft-${prod.id}`,
+        productId: prod.id,
+        itemName: prod.name,
+        unit: prod.defaultUnit,
+        buyRate: avgBuyCost,
+        avgBuyCost,
+        latestPurchasePrice,
+        previousBuyPrice,
+        currentBuyPrice: latestPurchasePrice,
+        currentStock,
+        availableStock,
+        sellRate: 0,
+        notes: '',
+        product: {
+          id: prod.id,
+          name: prod.name,
+          urduName: prod.urduName,
+          category: prod.category,
+          availability: prod.availability,
+        },
+      };
+    });
+  }
+
+  // When a saved PriceList exists, map items by productId and normalized itemName
+  const itemsByProdId = new Map<string, any>();
+  const itemsByName = new Map<string, any>();
+
+  existingList.items.forEach((item: any) => {
+    if (item.productId) itemsByProdId.set(item.productId, item);
+    if (item.itemName) itemsByName.set(item.itemName.toLowerCase().trim(), item);
+  });
+
+  const mergedItems: any[] = [];
+  const processedItemIds = new Set<string>();
+
+  // 1. Process all active products from Product Master
+  for (const prod of activeProducts) {
+    const savedItem = itemsByProdId.get(prod.id) || itemsByName.get(prod.name.toLowerCase().trim());
+    const inv = inventoryMap.get(prod.id);
+    const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (savedItem?.buyRate ?? 0);
+    const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
+    const previousBuyPrice = inv?.previousBuyPrice ?? 0;
+    const currentStock = inv?.qty ?? 0;
+    const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
+
+    if (savedItem) {
+      processedItemIds.add(savedItem.id);
+      mergedItems.push({
+        ...savedItem,
+        productId: prod.id, // Guarantee productId is populated
+        itemName: prod.name, // Keep synced with product master
+        unit: savedItem.unit || prod.defaultUnit,
+        buyRate: avgBuyCost,
+        avgBuyCost,
+        latestPurchasePrice,
+        currentBuyPrice: latestPurchasePrice,
+        previousBuyPrice,
+        currentStock,
+        availableStock,
+        product: {
+          id: prod.id,
+          name: prod.name,
+          urduName: prod.urduName,
+          category: prod.category,
+          availability: prod.availability,
+        },
+      });
+    } else {
+      // Newly added product in Product Master that wasn't in today's PriceList yet
+      mergedItems.push({
+        id: `draft-${prod.id}`,
+        priceListId: existingList.id,
+        productId: prod.id,
+        itemName: prod.name,
+        unit: prod.defaultUnit,
+        buyRate: avgBuyCost,
+        avgBuyCost,
+        latestPurchasePrice,
+        previousBuyPrice,
+        currentBuyPrice: latestPurchasePrice,
+        currentStock,
+        availableStock,
+        sellRate: 0,
+        notes: '',
+        product: {
+          id: prod.id,
+          name: prod.name,
+          urduName: prod.urduName,
+          category: prod.category,
+          availability: prod.availability,
+        },
+      });
+    }
+  }
+
+  // 2. Include any legacy / custom PriceItems in existingList not matching active products
+  for (const item of existingList.items) {
+    if (!processedItemIds.has(item.id)) {
+      const inv = item.productId ? inventoryMap.get(item.productId) : null;
+      const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (item.buyRate ?? 0);
+      const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
+      const previousBuyPrice = inv?.previousBuyPrice ?? 0;
+      const currentStock = inv?.qty ?? 0;
+      const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
+
+      mergedItems.push({
+        ...item,
+        buyRate: avgBuyCost,
+        avgBuyCost,
+        latestPurchasePrice,
+        currentBuyPrice: latestPurchasePrice,
+        previousBuyPrice,
+        currentStock,
+        availableStock,
+      });
+    }
+  }
+
+  return mergedItems;
+}
+
 // GET /api/pricelist/active — Get today's active Price List with Inventory buy rates & stock
 router.get('/active', async (req: Request, res: Response) => {
   try {
@@ -13,7 +152,7 @@ router.get('/active', async (req: Request, res: Response) => {
     const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
 
     // Fetch active price list header
-    let list = await prisma.priceList.findFirst({
+    const list = await prisma.priceList.findFirst({
       where: {
         ...(branchId ? { branchId } : {}),
         date: { gte: todayStart, lte: todayEnd },
@@ -40,54 +179,24 @@ router.get('/active', async (req: Request, res: Response) => {
     const inventoryMap = new Map<string, any>();
     inventories.forEach(inv => inventoryMap.set(inv.productId, inv));
 
-    // If no active price list exists yet for today, generate a draft sourced directly from Inventory
+    // Always fetch all active products from Product Master catalog
+    const activeProducts = await prisma.product.findMany({
+      where: {
+        availability: { in: ['AVAILABLE', 'SEASONAL'] },
+        isActive: true,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+
+    const synchronizedItems = buildSynchronizedPriceListItems(list, activeProducts, inventoryMap);
+
+    const rateMap: Record<string, number> = {};
+    synchronizedItems.forEach(item => {
+      rateMap[item.itemName.toLowerCase()] = item.sellRate;
+      if (item.productId) rateMap[item.productId] = item.sellRate;
+    });
+
     if (!list) {
-      const activeProducts = await prisma.product.findMany({
-        where: {
-          availability: { in: ['AVAILABLE', 'SEASONAL'] },
-          isActive: true,
-        },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      });
-
-      const draftItems = activeProducts.map((prod) => {
-        const inv = inventoryMap.get(prod.id);
-        const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : 0;
-        const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
-        const previousBuyPrice = inv?.previousBuyPrice ?? 0;
-        const currentStock = inv?.qty ?? 0;
-        const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
-
-        return {
-          id: `draft-${prod.id}`,
-          productId: prod.id,
-          itemName: prod.name,
-          unit: prod.defaultUnit,
-          buyRate: avgBuyCost,
-          avgBuyCost,
-          latestPurchasePrice,
-          previousBuyPrice,
-          currentBuyPrice: latestPurchasePrice,
-          currentStock,
-          availableStock,
-          sellRate: 0,
-          notes: '',
-          product: {
-            id: prod.id,
-            name: prod.name,
-            urduName: prod.urduName,
-            category: prod.category,
-            availability: prod.availability,
-          },
-        };
-      });
-
-      const rateMap: Record<string, number> = {};
-      draftItems.forEach(item => {
-        rateMap[item.itemName.toLowerCase()] = item.sellRate;
-        if (item.productId) rateMap[item.productId] = item.sellRate;
-      });
-
       return res.json({
         success: true,
         isToday: false,
@@ -97,38 +206,11 @@ router.get('/active', async (req: Request, res: Response) => {
           date: todayStart.toISOString(),
           isActive: true,
           notes: 'Draft price list loaded from Central Inventory',
-          items: draftItems,
+          items: synchronizedItems,
         },
         rateMap,
       });
     }
-
-    // Enrich existing price items with live Inventory buy rates and stock
-    const enrichedItems = list.items.map(item => {
-      const inv = item.productId ? inventoryMap.get(item.productId) : null;
-      const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (item.buyRate ?? 0);
-      const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
-      const previousBuyPrice = inv?.previousBuyPrice ?? 0;
-      const currentStock = inv?.qty ?? 0;
-      const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
-
-      return {
-        ...item,
-        buyRate: avgBuyCost,
-        avgBuyCost,
-        latestPurchasePrice,
-        currentBuyPrice: latestPurchasePrice,
-        previousBuyPrice,
-        currentStock,
-        availableStock,
-      };
-    });
-
-    const rateMap: Record<string, number> = {};
-    enrichedItems.forEach(item => {
-      rateMap[item.itemName.toLowerCase()] = item.sellRate;
-      if (item.productId) rateMap[item.productId] = item.sellRate;
-    });
 
     return res.json({
       success: true,
@@ -136,7 +218,7 @@ router.get('/active', async (req: Request, res: Response) => {
       isDraft: false,
       data: {
         ...list,
-        items: enrichedItems,
+        items: synchronizedItems,
       },
       rateMap,
     });
@@ -322,30 +404,6 @@ router.get('/', async (req: Request, res: Response) => {
       const inventoryMap = new Map<string, any>();
       inventories.forEach(inv => inventoryMap.set(inv.productId, inv));
 
-      if (list) {
-        const enrichedItems = list.items.map(item => {
-          const inv = item.productId ? inventoryMap.get(item.productId) : null;
-          const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (item.buyRate ?? 0);
-          const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
-          const previousBuyPrice = inv?.previousBuyPrice ?? 0;
-          const currentStock = inv?.qty ?? 0;
-          const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
-
-          return {
-            ...item,
-            buyRate: avgBuyCost,
-            avgBuyCost,
-            latestPurchasePrice,
-            currentBuyPrice: latestPurchasePrice,
-            previousBuyPrice,
-            currentStock,
-            availableStock,
-          };
-        });
-
-        return res.json({ success: true, isDraft: false, data: { ...list, items: enrichedItems } });
-      }
-
       const activeProducts = await prisma.product.findMany({
         where: {
           availability: { in: ['AVAILABLE', 'SEASONAL'] },
@@ -354,36 +412,11 @@ router.get('/', async (req: Request, res: Response) => {
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       });
 
-      const draftItems = activeProducts.map((prod) => {
-        const inv = inventoryMap.get(prod.id);
-        const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : 0;
-        const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
-        const previousBuyPrice = inv?.previousBuyPrice ?? 0;
-        const currentStock = inv?.qty ?? 0;
-        const availableStock = Math.max(0, currentStock - (inv?.reservedQty ?? 0));
+      const synchronizedItems = buildSynchronizedPriceListItems(list, activeProducts, inventoryMap);
 
-        return {
-          productId: prod.id,
-          itemName: prod.name,
-          unit: prod.defaultUnit,
-          buyRate: avgBuyCost,
-          avgBuyCost,
-          latestPurchasePrice,
-          previousBuyPrice,
-          currentBuyPrice: latestPurchasePrice,
-          currentStock,
-          availableStock,
-          sellRate: 0,
-          notes: '',
-          product: {
-            id: prod.id,
-            name: prod.name,
-            urduName: prod.urduName,
-            category: prod.category,
-            availability: prod.availability,
-          },
-        };
-      });
+      if (list) {
+        return res.json({ success: true, isDraft: false, data: { ...list, items: synchronizedItems } });
+      }
 
       return res.json({
         success: true,
@@ -393,7 +426,7 @@ router.get('/', async (req: Request, res: Response) => {
           date: day.toISOString(),
           isActive: true,
           notes: 'Draft based on central inventory catalog',
-          items: draftItems,
+          items: synchronizedItems,
         },
       });
     }
@@ -538,24 +571,17 @@ router.get('/:id', async (req: Request, res: Response) => {
     const invMap = new Map<string, any>();
     inventories.forEach(i => invMap.set(i.productId, i));
 
-    const enrichedItems = list.items.map(item => {
-      const inv = item.productId ? invMap.get(item.productId) : null;
-      const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (item.buyRate ?? 0);
-      const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
-
-      return {
-        ...item,
-        buyRate: avgBuyCost,
-        avgBuyCost,
-        latestPurchasePrice,
-        currentBuyPrice: latestPurchasePrice,
-        previousBuyPrice: inv?.previousBuyPrice ?? 0,
-        currentStock: inv?.qty ?? 0,
-        availableStock: Math.max(0, (inv?.qty ?? 0) - (inv?.reservedQty ?? 0)),
-      };
+    const activeProducts = await prisma.product.findMany({
+      where: {
+        availability: { in: ['AVAILABLE', 'SEASONAL'] },
+        isActive: true,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
 
-    return res.json({ success: true, data: { ...list, items: enrichedItems } });
+    const synchronizedItems = buildSynchronizedPriceListItems(list, activeProducts, invMap);
+
+    return res.json({ success: true, data: { ...list, items: synchronizedItems } });
   } catch (err: any) {
     console.error('Error in GET /api/pricelist/:id:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load price list' });

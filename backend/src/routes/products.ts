@@ -55,8 +55,12 @@ router.get('/:id/audit-logs', async (req: Request, res: Response) => {
   }
 });
 
+import { getCurrentBusinessDateRange } from '../lib/businessDate';
+
 // POST /api/products
 router.post('/', async (req: Request, res: Response) => {
+  const branchId = (req.headers['x-branch-id'] as string) || 'branch_main';
+  const userId = (req.headers['x-user-id'] as string) || null;
   const { name, urduName, emoji, category, defaultUnit, availability, minStock, sortOrder } = req.body;
   if (!name?.trim()) return res.status(400).json({ success: false, error: 'Name required' });
 
@@ -66,19 +70,81 @@ router.post('/', async (req: Request, res: Response) => {
   const normalizedAvail = (availability ?? 'AVAILABLE').toString().toUpperCase();
 
   try {
-    const product = await prisma.product.create({
-      data: {
-        name: name.trim(),
-        urduName: urduName?.trim() || undefined,
-        emoji: emoji?.trim() || undefined,
-        category: normalizedCategory as any,
-        defaultUnit: normalizedUnit as any,
-        availability: normalizedAvail as any,
-        minStock: minStock ?? 0,
-        sortOrder: sortOrder ?? 0,
-        isActive: true,
-      },
+    const product = await prisma.$transaction(async (tx) => {
+      const p = await tx.product.create({
+        data: {
+          name: name.trim(),
+          urduName: urduName?.trim() || undefined,
+          emoji: emoji?.trim() || undefined,
+          category: normalizedCategory as any,
+          defaultUnit: normalizedUnit as any,
+          availability: normalizedAvail as any,
+          minStock: minStock ?? 0,
+          sortOrder: sortOrder ?? 0,
+          isActive: true,
+        },
+      });
+
+      // 1. Auto-initialize Inventory record for this product
+      const existingInv = await tx.inventory.findFirst({
+        where: { productId: p.id, branchId }
+      });
+      if (!existingInv) {
+        await tx.inventory.create({
+          data: {
+            productId: p.id,
+            branchId,
+            qty: 0,
+            reservedQty: 0,
+            minStock: minStock ?? 0,
+            avgCost: 0,
+            currentBuyPrice: 0,
+            previousBuyPrice: 0,
+          }
+        });
+      }
+
+      // 2. If today's active PriceList exists, auto-attach a PriceItem
+      const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
+      const activePriceList = await tx.priceList.findFirst({
+        where: {
+          branchId,
+          date: { gte: todayStart, lte: todayEnd },
+          isActive: true,
+        }
+      });
+
+      if (activePriceList) {
+        await tx.priceItem.upsert({
+          where: { priceListId_itemName: { priceListId: activePriceList.id, itemName: p.name } },
+          update: {
+            productId: p.id,
+            unit: p.defaultUnit,
+          },
+          create: {
+            priceListId: activePriceList.id,
+            productId: p.id,
+            itemName: p.name,
+            unit: p.defaultUnit,
+            buyRate: 0,
+            sellRate: 0,
+          }
+        });
+      }
+
+      return p;
     });
+
+    const validUser = await getValidUserId(userId);
+    await writeAuditLog({
+      userId: validUser ?? undefined,
+      branchId,
+      action: 'CREATE',
+      entity: 'Product',
+      entityId: product.id,
+      newData: { name: product.name, unit: product.defaultUnit, category: product.category }
+    });
+
     return res.status(201).json({ success: true, data: product });
   } catch (e: any) {
     console.error('Error creating product:', e);
