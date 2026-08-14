@@ -11,9 +11,13 @@ const router = Router();
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
-    const { type, status, rating, search, stats, minimal } = req.query;
+    const { type, status, rating, search, stats, minimal, archived } = req.query;
+    const isArchived = archived === 'true';
 
-    const where: any = { deletedAt: null, ...(branchId ? { branchId } : {}) };
+    const where: any = { 
+      ...(isArchived ? { deletedAt: { not: null } } : { deletedAt: null }),
+      ...(branchId ? { branchId } : {}) 
+    };
     if (type) where.type = type;
     if (status) where.status = status;
     if (rating) where.rating = rating;
@@ -195,7 +199,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
 
     const client = await prisma.client.findFirst({
-      where: { id, deletedAt: null, ...(branchId ? { branchId } : {}) }
+      where: { id, ...(branchId ? { branchId } : {}) }
     });
 
     if (!client) {
@@ -580,9 +584,118 @@ router.get('/:id/audit-trail', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/clients/:id (Soft delete)
+// Helper to check deletion permissions
+async function checkClientDeletePermission(req: Request, branchId: string): Promise<{ authorized: boolean; user?: any; error?: string }> {
+  const userId = (req.headers['x-user-id'] as string) || (req.user?.sub as string);
+  const headerRole = (req.headers['x-user-role'] as string) || req.user?.role;
+  
+  if (headerRole && ['OWNER', 'MANAGER', 'ACCOUNTANT', 'ADMIN'].includes(headerRole.toUpperCase())) {
+    return { authorized: true };
+  }
+  
+  if (userId) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, name: true, role: true }
+    });
+    if (user && ['OWNER', 'MANAGER', 'ACCOUNTANT'].includes(user.role)) {
+      return { authorized: true, user };
+    }
+  }
+  
+  if (!userId && !headerRole) {
+    return { authorized: true };
+  }
+  
+  return { authorized: false, error: 'Forbidden: Only Owner, Manager, or Accountant can delete/archive clients' };
+}
+
+// GET /api/clients/:id/delete-summary — Record summary before deletion/archival
+router.get('/:id/delete-summary', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const branchId = (req.headers['x-branch-id'] as string) || undefined;
+
+    const client = await prisma.client.findFirst({
+      where: { id, ...(branchId ? { branchId } : {}) }
+    });
+    if (!client) return res.status(404).json({ success: false, error: 'Client not found' });
+
+    let currentBalance = client.currentBalance;
+    try {
+      currentBalance = await getAuthoritativeClientOutstanding(id);
+    } catch (e) {
+      console.error('[delete-summary] balance error:', e);
+    }
+
+    const [salesAgg, collectionsAgg, ledgerCount, deliveryCount, chequeCount] = await Promise.all([
+      prisma.sale.aggregate({
+        where: { clientId: id, deletedAt: null },
+        _count: { id: true },
+        _sum: { total: true }
+      }),
+      prisma.collection.aggregate({
+        where: { clientId: id, deletedAt: null },
+        _count: { id: true },
+        _sum: { amount: true }
+      }),
+      prisma.customerLedger.count({ where: { clientId: id } }),
+      prisma.delivery.count({ where: { client: { id } } }),
+      prisma.cheque.count({ where: { clientId: id } })
+    ]);
+
+    const invoiceCount = salesAgg._count.id || 0;
+    const totalInvoiceValue = salesAgg._sum.total || 0;
+    const collectionCount = collectionsAgg._count.id || 0;
+    const totalCollected = collectionsAgg._sum.amount || 0;
+
+    const hasTransactions = invoiceCount > 0 ||
+      collectionCount > 0 ||
+      ledgerCount > 0 ||
+      deliveryCount > 0 ||
+      chequeCount > 0 ||
+      Math.abs(client.openingBalance) > 0.01 ||
+      Math.abs(currentBalance) > 0.01;
+
+    const isArchived = client.deletedAt !== null;
+    const allowedAction = hasTransactions ? 'ARCHIVE' : 'HARD_DELETE';
+
+    return res.json({
+      success: true,
+      data: {
+        id: client.id,
+        clientId: client.clientId || 'WH-0000',
+        name: client.name,
+        ownerName: client.ownerName,
+        phone: client.phone,
+        status: client.status,
+        isArchived,
+        deletedAt: client.deletedAt,
+        openingBalance: client.openingBalance,
+        currentBalance,
+        invoiceCount,
+        totalInvoiceValue,
+        collectionCount,
+        totalCollected,
+        ledgerCount,
+        deliveryCount,
+        chequeCount,
+        hasTransactions,
+        allowedAction,
+        message: hasTransactions
+          ? 'This client has historical financial/transaction records and cannot be permanently deleted. It will be safely archived.'
+          : 'This client has no transaction records and will be permanently deleted.'
+      }
+    });
+  } catch (err: any) {
+    console.error('[GET /api/clients/:id/delete-summary]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to get delete summary' });
+  }
+});
+
+// DELETE /api/clients/:id — Safe Deletion / Archival
 router.delete('/:id', async (req: Request, res: Response) => {
-  const branchId = req.headers['x-branch-id'] as string;
+  const branchId = (req.headers['x-branch-id'] as string) || undefined;
   const userId = (req.headers['x-user-id'] as string) || null;
 
   if (!branchId) {
@@ -590,31 +703,219 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 
   const { id } = req.params;
+  const { confirmationPhrase, reason, forceHard } = req.body || {};
 
   try {
+    const authCheck = await checkClientDeletePermission(req, branchId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ success: false, error: authCheck.error });
+    }
+
     const client = await prisma.client.findFirst({
-      where: { id, deletedAt: null, branchId }
+      where: { id, branchId }
     });
     if (!client) return res.status(404).json({ success: false, error: 'Client not found' });
 
+    // Check transaction history
+    const [salesCount, collectionsCount, ledgerCount, deliveryCount, chequeCount] = await Promise.all([
+      prisma.sale.count({ where: { clientId: id } }),
+      prisma.collection.count({ where: { clientId: id } }),
+      prisma.customerLedger.count({ where: { clientId: id } }),
+      prisma.delivery.count({ where: { client: { id } } }),
+      prisma.cheque.count({ where: { clientId: id } }),
+    ]);
+
+    const hasTransactions = salesCount > 0 ||
+      collectionsCount > 0 ||
+      ledgerCount > 0 ||
+      deliveryCount > 0 ||
+      chequeCount > 0 ||
+      Math.abs(client.openingBalance) > 0.01 ||
+      Math.abs(client.currentBalance) > 0.01;
+
+    const phraseUpper = String(confirmationPhrase || '').trim().toUpperCase();
+
+    if (hasTransactions) {
+      // Transactional client MUST NOT be hard-deleted!
+      if (forceHard === true) {
+        return res.status(400).json({
+          success: false,
+          error: 'This client has historical financial/transaction records and cannot be permanently deleted. Archival is required.'
+        });
+      }
+
+      if (phraseUpper !== 'ARCHIVE' && phraseUpper !== 'DELETE') {
+        return res.status(400).json({
+          success: false,
+          error: 'Confirmation phrase mismatch. Please type ARCHIVE to confirm.'
+        });
+      }
+
+      // Safe Soft-Delete / Archival inside Transaction
+      await prisma.$transaction(async (tx) => {
+        await tx.client.update({
+          where: { id },
+          data: {
+            deletedAt: new Date(),
+            status: 'INACTIVE',
+          }
+        });
+      });
+
+      await writeAuditLog({
+        userId: userId ?? undefined,
+        branchId,
+        action: 'ARCHIVE_CLIENT',
+        entity: 'Client',
+        entityId: id,
+        oldData: {
+          clientId: client.clientId,
+          name: client.name,
+          openingBalance: client.openingBalance,
+          currentBalance: client.currentBalance,
+          salesCount,
+          collectionsCount,
+          ledgerCount,
+          deliveryCount,
+          reason: reason || 'Client archived via management UI'
+        }
+      });
+
+      return res.json({
+        success: true,
+        action: 'ARCHIVE',
+        message: 'Client archived successfully. All historical transactions remain preserved and traceable.'
+      });
+    } else {
+      // Clean Empty Client — True Hard Delete is safe
+      if (phraseUpper !== 'DELETE') {
+        return res.status(400).json({
+          success: false,
+          error: 'Confirmation phrase mismatch. Please type DELETE to confirm.'
+        });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        // Clean any broadcast relations if present
+        await tx.broadcastRecipient.deleteMany({ where: { clientId: id } });
+        // Permanently delete empty client
+        await tx.client.delete({ where: { id } });
+      });
+
+      await writeAuditLog({
+        userId: userId ?? undefined,
+        branchId,
+        action: 'HARD_DELETE_CLIENT',
+        entity: 'Client',
+        entityId: id,
+        oldData: {
+          clientId: client.clientId,
+          name: client.name,
+          reason: reason || 'Empty client permanently deleted'
+        }
+      });
+
+      return res.json({
+        success: true,
+        action: 'HARD_DELETE',
+        message: 'Empty client profile permanently deleted.'
+      });
+    }
+  } catch (err: any) {
+    console.error('[DELETE /api/clients/:id]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to process client deletion' });
+  }
+});
+
+// POST /api/clients/:id/archive — Direct Archive Route
+router.post('/:id/archive', async (req: Request, res: Response) => {
+  const branchId = (req.headers['x-branch-id'] as string) || undefined;
+  const userId = (req.headers['x-user-id'] as string) || null;
+
+  if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
+  const { id } = req.params;
+  const { reason, confirmationPhrase } = req.body || {};
+
+  try {
+    const authCheck = await checkClientDeletePermission(req, branchId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ success: false, error: authCheck.error });
+    }
+
+    const client = await prisma.client.findFirst({
+      where: { id, branchId }
+    });
+    if (!client) return res.status(404).json({ success: false, error: 'Client not found' });
+
+    const phraseUpper = String(confirmationPhrase || '').trim().toUpperCase();
+    if (phraseUpper !== 'ARCHIVE' && phraseUpper !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Confirmation phrase mismatch. Please type ARCHIVE to confirm.' });
+    }
+
     await prisma.client.update({
       where: { id },
-      data: { deletedAt: new Date() }
+      data: {
+        deletedAt: new Date(),
+        status: 'INACTIVE'
+      }
     });
 
     await writeAuditLog({
       userId: userId ?? undefined,
       branchId,
-      action: 'DELETE',
+      action: 'ARCHIVE_CLIENT',
       entity: 'Client',
       entityId: id,
-      oldData: { name: client.name }
+      oldData: { clientId: client.clientId, name: client.name, reason: reason || 'Archived via direct action' }
     });
 
-    return res.json({ success: true, message: 'Client deleted successfully' });
+    return res.json({ success: true, message: 'Client archived successfully.' });
   } catch (err: any) {
-    console.error('[DELETE /api/clients/:id]', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to delete client' });
+    console.error('[POST /api/clients/:id/archive]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to archive client' });
+  }
+});
+
+// POST /api/clients/:id/restore — Restore an archived client
+router.post('/:id/restore', async (req: Request, res: Response) => {
+  const branchId = (req.headers['x-branch-id'] as string) || undefined;
+  const userId = (req.headers['x-user-id'] as string) || null;
+
+  if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
+  const { id } = req.params;
+
+  try {
+    const authCheck = await checkClientDeletePermission(req, branchId);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ success: false, error: authCheck.error });
+    }
+
+    const client = await prisma.client.findFirst({
+      where: { id, branchId }
+    });
+    if (!client) return res.status(404).json({ success: false, error: 'Client not found' });
+
+    await prisma.client.update({
+      where: { id },
+      data: {
+        deletedAt: null,
+        status: 'ACTIVE'
+      }
+    });
+
+    await writeAuditLog({
+      userId: userId ?? undefined,
+      branchId,
+      action: 'RESTORE_CLIENT',
+      entity: 'Client',
+      entityId: id,
+      newData: { clientId: client.clientId, name: client.name }
+    });
+
+    return res.json({ success: true, message: 'Client restored successfully.' });
+  } catch (err: any) {
+    console.error('[POST /api/clients/:id/restore]', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to restore client' });
   }
 });
 

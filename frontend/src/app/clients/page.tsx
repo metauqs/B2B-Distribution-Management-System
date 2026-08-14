@@ -36,8 +36,12 @@ import {
   mdiWhatsapp,
   mdiEye,
   mdiAlert,
-  mdiPlus
+  mdiPlus,
+  mdiArchive,
+  mdiDelete,
+  mdiRestore
 } from '@mdi/js';
+import { DeleteClientModal } from '@/components/modals/DeleteClientModal';
 
 const TYPE_ICON: Record<string, string> = {
   RETAIL: mdiCart,
@@ -85,6 +89,7 @@ interface Client {
   paymentTerms: number;
   openingBalance: number;
   notes?: string | null;
+  deletedAt?: string | null;
   // computed
   currentBalance:  number;
   totalSales:      number;
@@ -238,6 +243,9 @@ export default function ClientsPage() {
 
   const [form,     setForm]     = useState({ ...BLANK_FORM });
   const [editId,   setEditId]   = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; clientId?: string | null } | null>(null);
+  const [showArchived, setShowArchived] = useState<boolean>(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -247,6 +255,7 @@ export default function ClientsPage() {
     if (!isBackground && clients.length === 0) setLoading(true);
     const params = new URLSearchParams();
     params.set('stats', 'true');
+    if (showArchived)           params.set('archived', 'true');
     if (typeFilter !== 'all')   params.set('type', typeFilter);
     if (ratingFilter !== 'all') params.set('rating', ratingFilter);
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
@@ -259,7 +268,44 @@ export default function ClientsPage() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, typeFilter, ratingFilter, clients.length]);
+  }, [debouncedSearch, typeFilter, ratingFilter, showArchived, clients.length]);
+
+  const handleRestore = async (clientId: string) => {
+    if (restoringId) return;
+    setRestoringId(clientId);
+    try {
+      const res = await apiFetch(`/api/clients/${clientId}/restore`, { method: 'POST' });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        invalidateCache('/api/clients');
+        invalidateCache('/api/reports');
+        window.dispatchEvent(new Event('app-revalidate'));
+        showToast('✅ Client restored successfully');
+        await loadClients(true);
+        if (profile?.client?.id === clientId) {
+          await loadProfile(clientId, true);
+        }
+      } else {
+        showToast(`❌ ${json.error || 'Failed to restore client'}`);
+      }
+    } catch (err: any) {
+      showToast(`❌ ${err.message || 'Network error'}`);
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const handleDeleteSuccess = (action: 'ARCHIVE' | 'HARD_DELETE', message: string) => {
+    setDeleteTarget(null);
+    invalidateCache('/api/clients');
+    invalidateCache('/api/reports');
+    window.dispatchEvent(new Event('app-revalidate'));
+    showToast(`✅ ${message}`);
+    loadClients(true);
+    if (view === 'profile' || view === 'edit') {
+      setView('list');
+    }
+  };
 
   const loadProfile = useCallback(async (id: string, isBackground = false) => {
     if (!isBackground) setProfLoad(true);
@@ -491,26 +537,67 @@ export default function ClientsPage() {
 
           {/* Filters */}
           <div className="va-panel" style={{ padding: '10px 16px' }}>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <input
-                value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="🔍 Search name, owner, phone, address…"
-                style={{ flex: 2, minWidth: 200, padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', fontSize: 13 }}
-              />
-              <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-                style={{ padding: '6px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}>
-                <option value="all">All Types</option>
-                {CLIENT_TYPES.map(t => <option key={t} value={t}>{TYPE_EMOJI[t]} {t}</option>)}
-              </select>
-              <select value={ratingFilter} onChange={e => setRatingFilter(e.target.value)}
-                style={{ padding: '6px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}>
-                <option value="all">All Ratings</option>
-                <option value="GREEN">🟢 Green</option>
-                <option value="YELLOW">🟡 Yellow</option>
-                <option value="ORANGE">🟠 Orange</option>
-                <option value="RED">🔴 Red</option>
-                <option value="NEW">⚪ New</option>
-              </select>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', flex: 1 }}>
+                <input
+                  value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="🔍 Search name, owner, phone, address…"
+                  style={{ flex: 2, minWidth: 200, padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', fontSize: 13 }}
+                />
+                <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+                  style={{ padding: '6px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}>
+                  <option value="all">All Types</option>
+                  {CLIENT_TYPES.map(t => <option key={t} value={t}>{TYPE_EMOJI[t]} {t}</option>)}
+                </select>
+                <select value={ratingFilter} onChange={e => setRatingFilter(e.target.value)}
+                  style={{ padding: '6px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}>
+                  <option value="all">All Ratings</option>
+                  <option value="GREEN">🟢 Green</option>
+                  <option value="YELLOW">🟡 Yellow</option>
+                  <option value="ORANGE">🟠 Orange</option>
+                  <option value="RED">🔴 Red</option>
+                  <option value="NEW">⚪ New</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: 6, background: 'var(--panel, #f1f5f9)', padding: 3, borderRadius: 8, border: '1px solid var(--line)' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowArchived(false)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: !showArchived ? 'var(--primary, #1b4332)' : 'transparent',
+                    color: !showArchived ? '#fff' : 'var(--muted)'
+                  }}
+                >
+                  Active Accounts
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowArchived(true)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: showArchived ? '#D97706' : 'transparent',
+                    color: showArchived ? '#fff' : 'var(--muted)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}
+                >
+                  <Icon path={mdiArchive} size={0.6} />
+                  <span>Archived</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -588,7 +675,19 @@ export default function ClientsPage() {
                           <td>
                             <div style={{ display: 'flex', gap: 4 }}>
                               <button className="va-btn secondary small" onClick={() => openProfile(c)}>Profile</button>
-                              <button className="va-btn secondary small" onClick={() => openEdit(c)}>✏️</button>
+                              {showArchived ? (
+                                <button
+                                  className="va-btn small"
+                                  disabled={restoringId === c.id}
+                                  onClick={() => handleRestore(c.id)}
+                                  style={{ background: '#166534', color: '#fff', border: 'none' }}
+                                  title="Restore client to active accounts"
+                                >
+                                  {restoringId === c.id ? 'Restoring...' : '🔄 Restore'}
+                                </button>
+                              ) : (
+                                <button className="va-btn secondary small" onClick={() => openEdit(c)} title="Edit client details">✏️</button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -619,13 +718,24 @@ export default function ClientsPage() {
                             >
                               👤 Profile
                             </button>
-                            <button 
-                              onClick={() => openEdit(c)}
-                              className="va-btn secondary small"
-                              style={{ flex: 1, fontWeight: 700 }}
-                            >
-                              ✏️ Edit
-                            </button>
+                            {showArchived ? (
+                              <button 
+                                onClick={() => handleRestore(c.id)}
+                                disabled={restoringId === c.id}
+                                className="va-btn small"
+                                style={{ flex: 1, fontWeight: 700, background: '#166534', color: '#fff', border: 'none' }}
+                              >
+                                {restoringId === c.id ? 'Restoring...' : '🔄 Restore'}
+                              </button>
+                            ) : (
+                              <button 
+                                onClick={() => openEdit(c)}
+                                className="va-btn secondary small"
+                                style={{ flex: 1, fontWeight: 700 }}
+                              >
+                                ✏️ Edit
+                              </button>
+                            )}
                           </div>
                         }
                       >
@@ -706,7 +816,27 @@ export default function ClientsPage() {
                   </h3>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                {profile && (profile.client.deletedAt || profile.client.status === 'INACTIVE') ? (
+                  <button
+                    className="va-btn small"
+                    disabled={restoringId === profile.client.id}
+                    onClick={() => handleRestore(profile.client.id)}
+                    style={{ background: '#166534', color: '#fff', border: 'none' }}
+                  >
+                    {restoringId === profile.client.id ? 'Restoring...' : '🔄 Restore Client'}
+                  </button>
+                ) : profile ? (
+                  <button
+                    className="va-btn secondary small"
+                    onClick={() => setDeleteTarget({ id: profile.client.id, name: profile.client.name, clientId: profile.client.clientId })}
+                    style={{ color: '#DC2626', borderColor: '#FECACA' }}
+                    title="Delete or Archive client profile"
+                  >
+                    <Icon path={mdiDelete} size={0.65} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                    Delete Client
+                  </button>
+                ) : null}
                 {profile && <button className="va-btn secondary small" onClick={() => openEdit(profile.client)}>✏️ Edit</button>}
                 <button className="va-btn secondary small" onClick={exportPDF}>📄 PDF</button>
                 <button className="va-btn secondary small" onClick={downloadPDF}>💾 Download PDF</button>
@@ -1639,6 +1769,54 @@ export default function ClientsPage() {
                   )}
                 </div>
               )}
+
+              {/* Danger Zone / Client Management Card */}
+              <div
+                className="va-panel"
+                style={{
+                  marginTop: 20,
+                  border: profile.client.deletedAt || profile.client.status === 'INACTIVE' ? '1px solid #FCD34D' : '1px solid #FECACA',
+                  background: profile.client.deletedAt || profile.client.status === 'INACTIVE' ? '#FFFBEB' : '#FFF5F5',
+                  padding: '16px 20px',
+                  borderRadius: 10
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: profile.client.deletedAt || profile.client.status === 'INACTIVE' ? '#92400E' : '#991B1B', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Icon path={profile.client.deletedAt || profile.client.status === 'INACTIVE' ? mdiArchive : mdiAlert} size={0.8} />
+                      <span>{profile.client.deletedAt || profile.client.status === 'INACTIVE' ? 'Archived Client Account' : 'Client Profile Management & Deletion'}</span>
+                    </div>
+                    <p style={{ margin: '4px 0 0', fontSize: 12.5, color: profile.client.deletedAt || profile.client.status === 'INACTIVE' ? '#B45309' : '#7F1D1D', maxWidth: 650, lineHeight: 1.4 }}>
+                      {profile.client.deletedAt || profile.client.status === 'INACTIVE'
+                        ? 'This client is currently archived. All historical invoices, collections, deliveries, and ledgers remain preserved and traceable. You can restore it to active status at any time.'
+                        : 'If this client has historical transactions, deleting will safely archive the profile so accounting history remains preserved. Clean/empty accounts with 0 transactions can be permanently removed.'}
+                    </p>
+                  </div>
+                  <div>
+                    {profile.client.deletedAt || profile.client.status === 'INACTIVE' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRestore(profile.client.id)}
+                        disabled={restoringId === profile.client.id}
+                        className="va-btn small"
+                        style={{ background: '#166534', color: '#fff', border: 'none', fontWeight: 700, padding: '8px 16px' }}
+                      >
+                        {restoringId === profile.client.id ? 'Restoring...' : '🔄 Restore Account'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget({ id: profile.client.id, name: profile.client.name, clientId: profile.client.clientId })}
+                        className="va-btn small"
+                        style={{ background: '#DC2626', color: '#fff', border: 'none', fontWeight: 700, padding: '8px 16px' }}
+                      >
+                        🗑 Delete / Archive Client
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </>
           ) : null}
         </>
@@ -1763,11 +1941,31 @@ export default function ClientsPage() {
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-                <button type="button" className="va-btn secondary" onClick={() => setView('list')}>Cancel</button>
-                <button type="submit" className="va-btn" disabled={saving}>
-                  {saving ? 'Saving…' : (view === 'edit' ? '✓ Update Client' : '✓ Add Client')}
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, borderTop: '1px solid var(--line)', paddingTop: 16, flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  {view === 'edit' && editId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetClient = clients.find(c => c.id === editId) || profile?.client;
+                        if (targetClient) {
+                          setDeleteTarget({ id: targetClient.id, name: targetClient.name, clientId: targetClient.clientId });
+                        }
+                      }}
+                      className="va-btn secondary"
+                      style={{ color: '#DC2626', borderColor: '#FECACA', fontSize: 13 }}
+                    >
+                      <Icon path={mdiDelete} size={0.65} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                      Delete Client
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="va-btn secondary" onClick={() => setView('list')}>Cancel</button>
+                  <button type="submit" className="va-btn" disabled={saving}>
+                    {saving ? 'Saving…' : (view === 'edit' ? '✓ Update Client' : '✓ Add Client')}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1779,6 +1977,15 @@ export default function ClientsPage() {
           invoices={statementInvoices}
           mode={statementMode}
           onClose={() => setStatementClient(null)}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteClientModal
+          clientId={deleteTarget.id}
+          clientName={deleteTarget.name}
+          clientCode={deleteTarget.clientId}
+          onClose={() => setDeleteTarget(null)}
+          onSuccess={handleDeleteSuccess}
         />
       )}
     </DashboardLayout>
