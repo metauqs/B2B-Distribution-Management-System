@@ -34,7 +34,7 @@ interface DeleteSummary {
   deliveryCount: number;
   chequeCount: number;
   hasTransactions: boolean;
-  allowedAction: 'ARCHIVE' | 'HARD_DELETE';
+  allowedAction: 'ARCHIVE' | 'HARD_DELETE' | 'PERMANENT_DELETE';
   message: string;
 }
 
@@ -42,14 +42,16 @@ interface DeleteClientModalProps {
   clientId: string;
   clientName: string;
   clientCode?: string | null;
+  isPermanentPurge?: boolean;
   onClose: () => void;
-  onSuccess: (action: 'ARCHIVE' | 'HARD_DELETE', message: string) => void;
+  onSuccess: (action: 'ARCHIVE' | 'HARD_DELETE' | 'PERMANENT_DELETE', message: string) => void;
 }
 
 export function DeleteClientModal({
   clientId,
   clientName,
   clientCode,
+  isPermanentPurge = false,
   onClose,
   onSuccess
 }: DeleteClientModalProps) {
@@ -86,7 +88,8 @@ export function DeleteClientModal({
     return () => { isMounted = false; };
   }, [clientId]);
 
-  const requiredPhrase = summary?.hasTransactions ? 'ARCHIVE' : 'DELETE';
+  const isPurgeMode = isPermanentPurge || (summary?.isArchived && summary?.hasTransactions);
+  const requiredPhrase = isPurgeMode ? 'DELETE PERMANENTLY' : (summary?.hasTransactions ? 'ARCHIVE' : 'DELETE');
   const isPhraseMatching = inputPhrase.trim().toUpperCase() === requiredPhrase;
 
   const handleConfirm = async (e: React.FormEvent) => {
@@ -103,12 +106,13 @@ export function DeleteClientModal({
         body: JSON.stringify({
           confirmationPhrase: inputPhrase.trim(),
           reason: reason.trim() || undefined,
+          permanent: isPurgeMode
         })
       });
 
       const json = await res.json();
       if (res.ok && json.success) {
-        onSuccess(json.action || (summary?.hasTransactions ? 'ARCHIVE' : 'HARD_DELETE'), json.message);
+        onSuccess(json.action || (isPurgeMode ? 'PERMANENT_DELETE' : summary?.hasTransactions ? 'ARCHIVE' : 'HARD_DELETE'), json.message);
       } else {
         setError(json.error || 'Failed to complete client deletion/archival');
         setIsSubmitting(false);
@@ -158,7 +162,7 @@ export function DeleteClientModal({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: summary?.hasTransactions ? '#FFF8E6' : '#FFF0F0'
+            background: isPurgeMode ? '#FEF2F2' : summary?.hasTransactions ? '#FFF8E6' : '#FFF0F0'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -167,24 +171,32 @@ export function DeleteClientModal({
                 width: 36,
                 height: 36,
                 borderRadius: '50%',
-                background: summary?.hasTransactions ? '#FFEAA7' : '#FFD2D2',
+                background: isPurgeMode ? '#FEE2E2' : summary?.hasTransactions ? '#FFEAA7' : '#FFD2D2',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: summary?.hasTransactions ? '#D97706' : '#DC2626'
+                color: isPurgeMode ? '#991B1B' : summary?.hasTransactions ? '#D97706' : '#DC2626'
               }}
             >
               <Icon
-                path={summary?.hasTransactions ? mdiArchive : mdiAlert}
+                path={isPurgeMode ? mdiDelete : summary?.hasTransactions ? mdiArchive : mdiAlert}
                 size={0.9}
               />
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1a202c' }}>
-                {summary?.hasTransactions ? 'Archive Client Profile' : 'Delete Client Profile'}
+                {isPurgeMode
+                  ? 'Permanently Delete Archived Client'
+                  : summary?.hasTransactions
+                  ? 'Archive Client Profile'
+                  : 'Delete Client Profile'}
               </h3>
               <p style={{ margin: '2px 0 0', fontSize: 12, color: '#718096' }}>
-                {summary?.hasTransactions ? 'Preserve financial history & deactivate' : 'Permanent deletion of empty account'}
+                {isPurgeMode
+                  ? 'Irreversible database purge of client & records'
+                  : summary?.hasTransactions
+                  ? 'Preserve financial history & deactivate'
+                  : 'Permanent deletion of empty account'}
               </p>
             </div>
           </div>
@@ -322,7 +334,26 @@ export function DeleteClientModal({
               </div>
 
               {/* Safeguard Notice Box */}
-              {summary.hasTransactions ? (
+              {isPurgeMode ? (
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 8,
+                    background: '#FEF2F2',
+                    border: '2px solid #DC2626',
+                    color: '#991B1B',
+                    fontSize: 12.5,
+                    lineHeight: 1.5,
+                    marginBottom: 16
+                  }}
+                >
+                  <div style={{ fontWeight: 800, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Icon path={mdiAlert} size={0.8} color="#DC2626" />
+                    <span>⚠️ PERMANENT DATABASE PURGE (IRREVERSIBLE)</span>
+                  </div>
+                  You are about to permanently delete this client profile from the database along with all associated historical sales invoices, payment allocations, customer ledgers, and delivery records. <strong>This action CANNOT be undone or recovered.</strong>
+                </div>
+              ) : summary.hasTransactions ? (
                 <div
                   style={{
                     padding: '12px 14px',
@@ -366,13 +397,13 @@ export function DeleteClientModal({
               <form onSubmit={handleConfirm}>
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#374151' }}>
-                    Reason for {summary.hasTransactions ? 'Archiving' : 'Deletion'} (Optional)
+                    Reason for {isPurgeMode ? 'Permanent Purge' : summary.hasTransactions ? 'Archiving' : 'Deletion'} (Optional)
                   </label>
                   <input
                     type="text"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    placeholder="e.g. Business closed, duplicate account, inactive..."
+                    placeholder="e.g. Business closed, duplicate account, permanent removal requested..."
                     disabled={isSubmitting}
                     style={{
                       width: '100%',
@@ -387,7 +418,7 @@ export function DeleteClientModal({
 
                 <div style={{ marginBottom: 20 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#111827' }}>
-                    Type <span style={{ color: summary.hasTransactions ? '#D97706' : '#DC2626', background: '#F3F4F6', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace' }}>{requiredPhrase}</span> to confirm:
+                    Type <span style={{ color: isPurgeMode ? '#991B1B' : summary.hasTransactions ? '#D97706' : '#DC2626', background: '#F3F4F6', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace' }}>{requiredPhrase}</span> to confirm:
                   </label>
                   <input
                     type="text"
@@ -401,12 +432,12 @@ export function DeleteClientModal({
                       padding: '9px 12px',
                       borderRadius: 6,
                       border: isPhraseMatching
-                        ? `2px solid ${summary.hasTransactions ? '#D97706' : '#DC2626'}`
+                        ? `2px solid ${isPurgeMode ? '#DC2626' : summary.hasTransactions ? '#D97706' : '#DC2626'}`
                         : '1px solid var(--line, #cbd5e1)',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      letterSpacing: 1,
-                      outline: 'none'
+                        fontSize: 14,
+                        fontWeight: 600,
+                        letterSpacing: 1,
+                        outline: 'none'
                     }}
                   />
                 </div>
@@ -434,6 +465,8 @@ export function DeleteClientModal({
                       cursor: !isPhraseMatching || isSubmitting ? 'not-allowed' : 'pointer',
                       background: !isPhraseMatching
                         ? '#E2E8F0'
+                        : isPurgeMode
+                        ? '#991B1B'
                         : summary.hasTransactions
                         ? '#D97706'
                         : '#DC2626',
@@ -448,6 +481,11 @@ export function DeleteClientModal({
                       <>
                         <Icon path={mdiLoading} size={0.7} spin />
                         <span>Processing...</span>
+                      </>
+                    ) : isPurgeMode ? (
+                      <>
+                        <Icon path={mdiDelete} size={0.75} />
+                        <span>Permanently Delete Client & Records</span>
                       </>
                     ) : summary.hasTransactions ? (
                       <>

@@ -657,8 +657,8 @@ router.get('/:id/delete-summary', async (req: Request, res: Response) => {
       Math.abs(client.openingBalance) > 0.01 ||
       Math.abs(currentBalance) > 0.01;
 
-    const isArchived = client.deletedAt !== null;
-    const allowedAction = hasTransactions ? 'ARCHIVE' : 'HARD_DELETE';
+    const isArchived = Boolean(client.deletedAt !== null || client.status === 'INACTIVE');
+    const allowedAction = isArchived ? 'PERMANENT_DELETE' : (hasTransactions ? 'ARCHIVE' : 'HARD_DELETE');
 
     return res.json({
       success: true,
@@ -703,7 +703,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 
   const { id } = req.params;
-  const { confirmationPhrase, reason, forceHard } = req.body || {};
+  const { confirmationPhrase, reason, forceHard, permanent } = req.body || {};
 
   try {
     const authCheck = await checkClientDeletePermission(req, branchId);
@@ -735,12 +735,126 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     const phraseUpper = String(confirmationPhrase || '').trim().toUpperCase();
 
+    // ─── PERMANENT PURGE (Available for archived clients or explicit purge) ────
+    if (permanent === true || phraseUpper === 'DELETE PERMANENTLY') {
+      if (phraseUpper !== 'DELETE PERMANENTLY') {
+        return res.status(400).json({
+          success: false,
+          error: 'Confirmation phrase mismatch. Please type DELETE PERMANENTLY to confirm permanent removal.'
+        });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        // 1. Find all sales for this client
+        const sales = await tx.sale.findMany({
+          where: { clientId: id },
+          select: { id: true }
+        });
+        const saleIds = sales.map(s => s.id);
+
+        // 2. Find all collections for this client
+        const collections = await tx.collection.findMany({
+          where: { clientId: id },
+          select: { id: true }
+        });
+        const collectionIds = collections.map(c => c.id);
+
+        // 3. Delete StockMovements linked to sales
+        if (saleIds.length > 0) {
+          await tx.stockMovement.deleteMany({
+            where: {
+              OR: [
+                { refType: 'sale', refId: { in: saleIds } },
+                { refType: 'sale_cancelled', refId: { in: saleIds } }
+              ]
+            }
+          });
+        }
+
+        // 4. Delete Deliveries linked to sales or client
+        const deliveries = await tx.delivery.findMany({
+          where: {
+            OR: [
+              { clientId: id },
+              ...(saleIds.length > 0 ? [{ saleId: { in: saleIds } }] : [])
+            ]
+          },
+          select: { id: true }
+        });
+        const deliveryIds = deliveries.map(d => d.id);
+        if (deliveryIds.length > 0) {
+          await tx.delivery.deleteMany({
+            where: { id: { in: deliveryIds } }
+          });
+        }
+
+        // 5. Delete CollectionAllocations
+        if (saleIds.length > 0 || collectionIds.length > 0) {
+          await tx.collectionAllocation.deleteMany({
+            where: {
+              OR: [
+                ...(saleIds.length > 0 ? [{ saleId: { in: saleIds } }] : []),
+                ...(collectionIds.length > 0 ? [{ collectionId: { in: collectionIds } }] : [])
+              ]
+            }
+          });
+        }
+
+        // 6. Delete SaleItems & Sales
+        if (saleIds.length > 0) {
+          await tx.saleItem.deleteMany({
+            where: { saleId: { in: saleIds } }
+          });
+          await tx.sale.deleteMany({
+            where: { id: { in: saleIds } }
+          });
+        }
+
+        // 7. Delete Collections
+        if (collectionIds.length > 0) {
+          await tx.collection.deleteMany({
+            where: { id: { in: collectionIds } }
+          });
+        }
+
+        // 8. Delete Ledgers, Cheques, BroadcastRecipients
+        await tx.customerLedger.deleteMany({ where: { clientId: id } });
+        await tx.cheque.deleteMany({ where: { clientId: id } });
+        await tx.broadcastRecipient.deleteMany({ where: { clientId: id } });
+
+        // 9. Delete Client
+        await tx.client.delete({ where: { id } });
+      });
+
+      await writeAuditLog({
+        userId: userId ?? undefined,
+        branchId,
+        action: 'PERMANENT_PURGE_CLIENT',
+        entity: 'Client',
+        entityId: id,
+        oldData: {
+          clientId: client.clientId,
+          name: client.name,
+          salesPurged: salesCount,
+          collectionsPurged: collectionsCount,
+          ledgerPurged: ledgerCount,
+          deliveriesPurged: deliveryCount,
+          reason: reason || 'Archived client profile and all records permanently purged'
+        }
+      });
+
+      return res.json({
+        success: true,
+        action: 'PERMANENT_DELETE',
+        message: 'Client and all associated records permanently purged from the database.'
+      });
+    }
+
     if (hasTransactions) {
-      // Transactional client MUST NOT be hard-deleted!
       if (forceHard === true) {
         return res.status(400).json({
           success: false,
-          error: 'This client has historical financial/transaction records and cannot be permanently deleted. Archival is required.'
+          error: 'This client has active financial records. Please archive the client first or type DELETE PERMANENTLY to purge.'
         });
       }
 

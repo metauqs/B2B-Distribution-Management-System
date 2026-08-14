@@ -243,7 +243,7 @@ export default function ClientsPage() {
 
   const [form,     setForm]     = useState({ ...BLANK_FORM });
   const [editId,   setEditId]   = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; clientId?: string | null } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; clientId?: string | null; isPermanent?: boolean } | null>(null);
   const [showArchived, setShowArchived] = useState<boolean>(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
@@ -295,7 +295,7 @@ export default function ClientsPage() {
     }
   };
 
-  const handleDeleteSuccess = (action: 'ARCHIVE' | 'HARD_DELETE', message: string) => {
+  const handleDeleteSuccess = (action: 'ARCHIVE' | 'HARD_DELETE' | 'PERMANENT_DELETE', message: string) => {
     setDeleteTarget(null);
     invalidateCache('/api/clients');
     invalidateCache('/api/reports');
@@ -676,15 +676,25 @@ export default function ClientsPage() {
                             <div style={{ display: 'flex', gap: 4 }}>
                               <button className="va-btn secondary small" onClick={() => openProfile(c)}>Profile</button>
                               {showArchived ? (
-                                <button
-                                  className="va-btn small"
-                                  disabled={restoringId === c.id}
-                                  onClick={() => handleRestore(c.id)}
-                                  style={{ background: '#166534', color: '#fff', border: 'none' }}
-                                  title="Restore client to active accounts"
-                                >
-                                  {restoringId === c.id ? 'Restoring...' : '🔄 Restore'}
-                                </button>
+                                <>
+                                  <button
+                                    className="va-btn small"
+                                    disabled={restoringId === c.id}
+                                    onClick={() => handleRestore(c.id)}
+                                    style={{ background: '#166534', color: '#fff', border: 'none' }}
+                                    title="Restore client to active accounts"
+                                  >
+                                    {restoringId === c.id ? 'Restoring...' : '🔄 Restore'}
+                                  </button>
+                                  <button
+                                    className="va-btn secondary small"
+                                    onClick={() => setDeleteTarget({ id: c.id, name: c.name, clientId: c.clientId, isPermanent: true })}
+                                    style={{ color: '#DC2626', borderColor: '#FECACA' }}
+                                    title="Permanently purge client and records from database"
+                                  >
+                                    🗑 Purge
+                                  </button>
+                                </>
                               ) : (
                                 <button className="va-btn secondary small" onClick={() => openEdit(c)} title="Edit client details">✏️</button>
                               )}
@@ -719,14 +729,23 @@ export default function ClientsPage() {
                               👤 Profile
                             </button>
                             {showArchived ? (
-                              <button 
-                                onClick={() => handleRestore(c.id)}
-                                disabled={restoringId === c.id}
-                                className="va-btn small"
-                                style={{ flex: 1, fontWeight: 700, background: '#166534', color: '#fff', border: 'none' }}
-                              >
-                                {restoringId === c.id ? 'Restoring...' : '🔄 Restore'}
-                              </button>
+                              <>
+                                <button 
+                                  onClick={() => handleRestore(c.id)}
+                                  disabled={restoringId === c.id}
+                                  className="va-btn small"
+                                  style={{ flex: 1, fontWeight: 700, background: '#166534', color: '#fff', border: 'none' }}
+                                >
+                                  {restoringId === c.id ? 'Restoring...' : '🔄 Restore'}
+                                </button>
+                                <button 
+                                  onClick={() => setDeleteTarget({ id: c.id, name: c.name, clientId: c.clientId, isPermanent: true })}
+                                  className="va-btn secondary small"
+                                  style={{ flex: 1, fontWeight: 700, color: '#DC2626', borderColor: '#FECACA' }}
+                                >
+                                  🗑 Purge
+                                </button>
+                              </>
                             ) : (
                               <button 
                                 onClick={() => openEdit(c)}
@@ -818,18 +837,29 @@ export default function ClientsPage() {
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 {profile && (profile.client.deletedAt || profile.client.status === 'INACTIVE') ? (
-                  <button
-                    className="va-btn small"
-                    disabled={restoringId === profile.client.id}
-                    onClick={() => handleRestore(profile.client.id)}
-                    style={{ background: '#166534', color: '#fff', border: 'none' }}
-                  >
-                    {restoringId === profile.client.id ? 'Restoring...' : '🔄 Restore Client'}
-                  </button>
+                  <>
+                    <button
+                      className="va-btn small"
+                      disabled={restoringId === profile.client.id}
+                      onClick={() => handleRestore(profile.client.id)}
+                      style={{ background: '#166534', color: '#fff', border: 'none' }}
+                    >
+                      {restoringId === profile.client.id ? 'Restoring...' : '🔄 Restore Client'}
+                    </button>
+                    <button
+                      className="va-btn secondary small"
+                      onClick={() => setDeleteTarget({ id: profile.client.id, name: profile.client.name, clientId: profile.client.clientId, isPermanent: true })}
+                      style={{ color: '#DC2626', borderColor: '#FECACA' }}
+                      title="Permanently purge client and records from database"
+                    >
+                      <Icon path={mdiDelete} size={0.65} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                      Delete Permanently
+                    </button>
+                  </>
                 ) : profile ? (
                   <button
                     className="va-btn secondary small"
-                    onClick={() => setDeleteTarget({ id: profile.client.id, name: profile.client.name, clientId: profile.client.clientId })}
+                    onClick={() => setDeleteTarget({ id: profile.client.id, name: profile.client.name, clientId: profile.client.clientId, isPermanent: false })}
                     style={{ color: '#DC2626', borderColor: '#FECACA' }}
                     title="Delete or Archive client profile"
                   >
@@ -1795,19 +1825,29 @@ export default function ClientsPage() {
                   </div>
                   <div>
                     {profile.client.deletedAt || profile.client.status === 'INACTIVE' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleRestore(profile.client.id)}
-                        disabled={restoringId === profile.client.id}
-                        className="va-btn small"
-                        style={{ background: '#166534', color: '#fff', border: 'none', fontWeight: 700, padding: '8px 16px' }}
-                      >
-                        {restoringId === profile.client.id ? 'Restoring...' : '🔄 Restore Account'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleRestore(profile.client.id)}
+                          disabled={restoringId === profile.client.id}
+                          className="va-btn small"
+                          style={{ background: '#166534', color: '#fff', border: 'none', fontWeight: 700, padding: '8px 16px' }}
+                        >
+                          {restoringId === profile.client.id ? 'Restoring...' : '🔄 Restore Account'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget({ id: profile.client.id, name: profile.client.name, clientId: profile.client.clientId, isPermanent: true })}
+                          className="va-btn small"
+                          style={{ background: '#991B1B', color: '#fff', border: 'none', fontWeight: 700, padding: '8px 16px' }}
+                        >
+                          🗑 Delete Permanently
+                        </button>
+                      </div>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => setDeleteTarget({ id: profile.client.id, name: profile.client.name, clientId: profile.client.clientId })}
+                        onClick={() => setDeleteTarget({ id: profile.client.id, name: profile.client.name, clientId: profile.client.clientId, isPermanent: false })}
                         className="va-btn small"
                         style={{ background: '#DC2626', color: '#fff', border: 'none', fontWeight: 700, padding: '8px 16px' }}
                       >
@@ -1984,6 +2024,7 @@ export default function ClientsPage() {
           clientId={deleteTarget.id}
           clientName={deleteTarget.name}
           clientCode={deleteTarget.clientId}
+          isPermanentPurge={deleteTarget.isPermanent ?? false}
           onClose={() => setDeleteTarget(null)}
           onSuccess={handleDeleteSuccess}
         />
