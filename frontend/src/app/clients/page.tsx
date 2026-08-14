@@ -88,6 +88,10 @@ interface Client {
   creditLimit: number;
   paymentTerms: number;
   openingBalance: number;
+  openingBalanceRemaining?: number;
+  openingBalancePaid?: number;
+  openingBalanceStatus?: 'CLEARED' | 'UNPAID' | 'NO_OPENING';
+  activeInvoiceDue?: number;
   notes?: string | null;
   deletedAt?: string | null;
   // computed
@@ -666,6 +670,15 @@ export default function ClientsPage() {
                           <td className="mono" style={{ textAlign: 'right', color: c.currentBalance > 0 ? 'var(--clay)' : c.currentBalance < 0 ? 'var(--ok)' : undefined, fontWeight: 700 }}>
                             {fmtMoney(Math.abs(c.currentBalance))}
                             {c.currentBalance < 0 && <span style={{ fontSize: 10 }}> CR</span>}
+                            {c.openingBalance > 0 && (
+                              <div style={{ fontSize: 10, fontWeight: 600, marginTop: 2 }}>
+                                {c.openingBalanceRemaining && c.openingBalanceRemaining > 0 ? (
+                                  <span style={{ color: '#B45309' }}>Opening: {fmtMoney(c.openingBalanceRemaining)} (UNPAID)</span>
+                                ) : (
+                                  <span style={{ color: '#16A34A' }}>Opening: CLEARED</span>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td className="mono" style={{ textAlign: 'right', fontSize: 12, color: 'var(--muted)' }}>
                             {c.salesCount > 0 ? fmtMoney(c.totalSales) : '—'}
@@ -766,6 +779,16 @@ export default function ClientsPage() {
                           valueColor={c.currentBalance > 0 ? '#991B1B' : '#166534'} 
                           isMono 
                         />
+                        {c.openingBalance > 0 && (
+                          <MobileCardRow 
+                            label="Opening Balance" 
+                            value={c.openingBalanceRemaining && c.openingBalanceRemaining > 0 
+                              ? `${fmtMoney(c.openingBalanceRemaining)} (UNPAID)` 
+                              : 'CLEARED (Rs 0)'}
+                            valueColor={c.openingBalanceRemaining && c.openingBalanceRemaining > 0 ? '#B45309' : '#16A34A'}
+                            isMono
+                          />
+                        )}
                         <MobileCardRow label="Client Rating">
                           <select 
                             value={c.rating} 
@@ -1951,6 +1974,38 @@ export default function ClientsPage() {
                     />
                   </div>
                   <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Enter existing outstanding dues prior to using ERP</span>
+
+                  {view === 'edit' && (() => {
+                    const editingC = clients.find(c => c.id === editId);
+                    const origOpen = editingC?.openingBalance ?? form.openingBalance ?? 0;
+                    const remOpen = editingC?.openingBalanceRemaining ?? 0;
+                    const paidOpen = editingC?.openingBalancePaid ?? (origOpen > remOpen ? origOpen - remOpen : 0);
+                    const isCleared = origOpen > 0 && remOpen <= 0.01;
+                    const isUnpaid = origOpen > 0 && remOpen > 0.01;
+
+                    if (origOpen === 0) return null;
+
+                    return (
+                      <div style={{
+                        marginTop: 8,
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        background: isCleared ? '#F0FDF4' : '#FFFBEB',
+                        border: `1px solid ${isCleared ? '#BBF7D0' : '#FDE68A'}`,
+                        fontSize: 12
+                      }}>
+                        <div style={{ fontWeight: 700, color: isCleared ? '#166534' : '#92400E', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>{isCleared ? '✅ Opening Balance Status: CLEARED' : '⚠️ Opening Balance Status: UNPAID'}</span>
+                          <span className="mono" style={{ fontWeight: 800 }}>
+                            {isCleared ? 'Rs 0 Due' : `Rs ${fmtMoney(remOpen)} Due`}
+                          </span>
+                        </div>
+                        <div style={{ color: isCleared ? '#15803D' : '#B45309', fontSize: 11, marginTop: 3 }}>
+                          Original: Rs {fmtMoney(origOpen)} • Paid Against Opening: Rs {fmtMoney(paidOpen)} • Remaining Due: Rs {fmtMoney(remOpen)}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="va-field">
                   <label>Initial Risk Rating</label>

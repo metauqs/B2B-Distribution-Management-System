@@ -69,7 +69,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     const clientIds = clients.map(c => c.id);
 
-    const [salesArr, collectionsArr] = await Promise.all([
+    const [salesArr, collectionsArr, activeSalesArr] = await Promise.all([
       prisma.sale.groupBy({
         by: ['clientId'],
         where: { 
@@ -89,11 +89,22 @@ router.get('/', async (req: Request, res: Response) => {
           clientId: { in: clientIds }
         },
         _sum: { amount: true },
+      }),
+      prisma.sale.groupBy({
+        by: ['clientId'],
+        where: {
+          ...(branchId ? { branchId } : {}),
+          deletedAt: null,
+          status: { not: 'CANCELLED' },
+          clientId: { in: clientIds }
+        },
+        _sum: { balance: true }
       })
     ]);
 
     const salesMap = Object.fromEntries(salesArr.map(x => [x.clientId, { total: x._sum.total ?? 0, count: x._count.id, lastDate: x._max.date }]));
     const collectionsMap = Object.fromEntries(collectionsArr.map(x => [x.clientId, x._sum.amount ?? 0]));
+    const activeSalesMap = Object.fromEntries(activeSalesArr.map(x => [x.clientId, x._sum.balance ?? 0]));
 
     const data = clients.map(c => {
       const sCount = salesMap[c.id]?.count ?? 0;
@@ -102,6 +113,12 @@ router.get('/', async (req: Request, res: Response) => {
       const calcLimit = aov > 0 ? Math.round(aov * 3) : 50000;
       const effLimit = (c.creditLimit && c.creditLimit > 0) ? c.creditLimit : calcLimit;
 
+      const invDue = activeSalesMap[c.id] ?? 0;
+      const openingBal = c.openingBalance ?? 0;
+      const openingRem = openingBal > 0 ? Math.max(0, Math.round(((c.currentBalance ?? 0) - invDue) * 100) / 100) : 0;
+      const openingPaid = openingBal > 0 ? Math.max(0, Math.round((openingBal - openingRem) * 100) / 100) : 0;
+      const openingStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingRem <= 0.01 ? 'CLEARED' : 'UNPAID';
+
       return {
         ...c,
         totalSales: sTotal,
@@ -109,6 +126,10 @@ router.get('/', async (req: Request, res: Response) => {
         lastOrderDate: salesMap[c.id]?.lastDate ?? null,
         totalCollected: collectionsMap[c.id] ?? 0,
         currentBalance: c.currentBalance,
+        activeInvoiceDue: invDue,
+        openingBalanceRemaining: openingRem,
+        openingBalancePaid: openingPaid,
+        openingBalanceStatus: openingStatus,
         averageOrderValue: aov,
         calculatedCreditLimit: calcLimit,
         effectiveCreditLimit: effLimit,
@@ -136,12 +157,16 @@ router.post('/', async (req: Request, res: Response) => {
     type, creditLimit, paymentTerms, openingBalance, notes, rating
   } = req.body;
 
-  if (!name?.trim()) {
-    return res.status(400).json({ success: false, error: 'Business name is required' });
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, error: 'Name is required' });
+  }
+
+  const openBal = openingBalance ? Number(openingBalance) : 0;
+  if (isNaN(openBal) || openBal < 0) {
+    return res.status(400).json({ success: false, error: 'Opening balance cannot be negative' });
   }
 
   try {
-    const openBal = Number(openingBalance ?? 0);
     const uniqueClientId = await generateClientId(whatsapp || phone);
 
     const client = await prisma.$transaction(async tx => {
@@ -285,12 +310,20 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const invoiceOutstanding = sales.filter(s => s.status !== 'CANCELLED').reduce((sum, s) => sum + (s.balance ?? 0), 0);
-    const openingBalanceRemaining = Math.max(0, Math.round((client.currentBalance - invoiceOutstanding) * 100) / 100);
+    const openingBal = client.openingBalance ?? 0;
+    const openingBalanceRemaining = openingBal > 0 ? Math.max(0, Math.round((client.currentBalance - invoiceOutstanding) * 100) / 100) : 0;
+    const openingBalancePaid = openingBal > 0 ? Math.max(0, Math.round((openingBal - openingBalanceRemaining) * 100) / 100) : 0;
+    const openingBalanceStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingBalanceRemaining <= 0.01 ? 'CLEARED' : 'UNPAID';
 
     return res.json({
       success: true,
       data: {
-        client,
+        client: {
+          ...client,
+          openingBalanceRemaining,
+          openingBalancePaid,
+          openingBalanceStatus,
+        },
         currentBalance: client.currentBalance,
         totalSales,
         totalCollected,
@@ -298,6 +331,8 @@ router.get('/:id', async (req: Request, res: Response) => {
         outstandingInvoices,
         invoiceOutstanding,
         openingBalanceRemaining,
+        openingBalancePaid,
+        openingBalanceStatus,
         sales,
         collections,
         deliveries,
