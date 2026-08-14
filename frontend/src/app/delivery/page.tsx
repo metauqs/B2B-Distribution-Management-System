@@ -169,7 +169,8 @@ export default function DeliveryPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        invalidateCache('/api/delivery');
+        invalidateCache();
+        window.dispatchEvent(new Event('app-revalidate'));
         showToast('✅ Returns processed, invoice recalculated & stock restored');
         await load(true);
       } else {

@@ -336,6 +336,7 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
 
   const sales = await db.sale.findMany({
     where: { clientId, deletedAt: null, status: { not: 'CANCELLED' } },
+    include: { items: true },
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
   });
 
@@ -344,8 +345,14 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
   });
 
-  // Single Precision Policy: Synchronize historical CustomerLedger invoice debits with billed Sale.total
+  // Single Precision Policy: Synchronize historical CustomerLedger invoice debits & return credit notes with billed Sale.total
   for (const sale of sales) {
+    const grossInvoiceTotal = sale.items.reduce((s: number, i: any) => s + (Number(i.qty) * Number(i.rate)), 0) - Number(sale.discount || 0) + Number(sale.deliveryCharge || 0);
+    const totalReturnCredit = sale.items.reduce((s: number, i: any) => s + (Number(i.returnedQty || 0) * Number(i.rate)), 0);
+    const netBilledTotal = Math.max(0, grossInvoiceTotal - totalReturnCredit);
+    const netSubtotal = sale.items.reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
+
+    // 1. Synchronize INVOICE debit entry in CustomerLedger with Gross Total
     await db.customerLedger.updateMany({
       where: {
         clientId,
@@ -354,12 +361,65 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
           { referenceId: sale.id },
           { referenceNo: sale.invoiceNo }
         ],
-        debit: { not: sale.total }
+        debit: { not: grossInvoiceTotal }
       },
       data: {
-        debit: sale.total
+        debit: grossInvoiceTotal
       }
     });
+
+    // 2. Synchronize CREDIT_NOTE entry in CustomerLedger with Return Credit
+    if (totalReturnCredit > 0) {
+      const returnLedger = await db.customerLedger.findFirst({
+        where: {
+          clientId,
+          type: 'CREDIT_NOTE',
+          referenceId: sale.id,
+        }
+      });
+      if (returnLedger) {
+        if (Math.abs(returnLedger.credit - totalReturnCredit) > 0.001) {
+          await db.customerLedger.update({
+            where: { id: returnLedger.id },
+            data: { credit: totalReturnCredit }
+          });
+        }
+      } else {
+        await db.customerLedger.create({
+          data: {
+            clientId,
+            branchId: sale.branchId,
+            type: 'CREDIT_NOTE',
+            date: sale.date,
+            referenceId: sale.id,
+            referenceNo: sale.invoiceNo,
+            description: `Partial Product Return — Invoice ${sale.invoiceNo}`,
+            debit: 0,
+            credit: totalReturnCredit,
+            balance: 0,
+          }
+        });
+      }
+    } else {
+      await db.customerLedger.deleteMany({
+        where: {
+          clientId,
+          type: 'CREDIT_NOTE',
+          referenceId: sale.id,
+          description: { contains: 'Return' }
+        }
+      });
+    }
+
+    // 3. Ensure Sale record has correct net totals
+    if (Math.abs(sale.total - netBilledTotal) > 0.01 || Math.abs(sale.subtotal - netSubtotal) > 0.01) {
+      await db.sale.update({
+        where: { id: sale.id },
+        data: { total: netBilledTotal, subtotal: netSubtotal }
+      });
+      sale.total = netBilledTotal;
+      sale.subtotal = netSubtotal;
+    }
   }
 
   const totalCollections = collections.reduce((sum: number, c: any) => sum + c.amount, 0);

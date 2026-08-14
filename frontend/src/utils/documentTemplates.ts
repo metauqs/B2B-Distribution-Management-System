@@ -645,6 +645,8 @@ export interface InvoiceItem {
   rate: number;
   amount: number;
   urduName?: string | null;
+  returnedQty?: number;
+  returnReason?: string | null;
 }
 
 export interface InvoiceData {
@@ -731,7 +733,10 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
         <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:16px;font-weight:700;color:#000000;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</div>
         <div style="font-size:10.5px;color:#555555;">${item.itemName}</div>
       </td>
-      <td class="center mono" style="font-size:10px;padding:4px 6px;">${item.qty} ${item.unit}</td>
+      <td class="center mono" style="font-size:10px;padding:4px 6px;">
+        ${item.qty} ${item.unit}
+        ${item.returnedQty && item.returnedQty > 0 ? `<div style="font-size:8.5px;color:#C2410C;font-weight:700;">↩ ${item.returnedQty} Ret</div>` : ''}
+      </td>
       <td class="right mono" style="font-size:10px;padding:4px 6px;">${item.rate.toLocaleString()}</td>
       <td class="right mono" style="font-size:10px;padding:4px 6px;font-weight:600;">${item.amount.toLocaleString()}</td>
     </tr>
@@ -785,7 +790,10 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
               <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:17px;font-weight:700;color:#000000;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</div>
               <div style="font-size:11px;color:#555555;font-weight:500;">${item.itemName}</div>
             </td>
-            <td class="center mono">${item.qty}</td>
+            <td class="center mono">
+              ${item.qty}
+              ${item.returnedQty && item.returnedQty > 0 ? `<div style="font-size:9.5px;color:#C2410C;font-weight:700;margin-top:2px;">↩ ${item.returnedQty} ${item.unit} Ret</div>` : ''}
+            </td>
             <td class="muted">${item.unit}</td>
             <td class="right mono">${item.rate.toLocaleString()}</td>
             <td class="right mono">${item.amount.toLocaleString()}</td>
@@ -805,10 +813,31 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     </div>
   `;
 
+  const totalReturnCredit = inv.items.reduce((s, i) => s + (Number(i.returnedQty || 0) * Number(i.rate || 0)), 0);
+  const grossInvoiceTotal = inv.items.reduce((s, i) => s + (Number(i.qty || 0) * Number(i.rate || 0)), 0);
+
+  const returnBreakdownRows = totalReturnCredit > 0 ? `
+    <div class="doc-summary-row" style="color:#64748B;">
+      <span class="label">
+        <span class="urdu-main" style="color:#64748B;">اصل آرڈر رقم</span>
+        <span class="eng-sub">Gross Order Amount</span>
+      </span>
+      <span class="val">Rs ${grossInvoiceTotal.toLocaleString()}</span>
+    </div>
+    <div class="doc-summary-row" style="color:#C2410C;">
+      <span class="label">
+        <span class="urdu-main" style="color:#C2410C;">واپسی کٹوتی (کریڈٹ)</span>
+        <span class="eng-sub">Sales Return Credit</span>
+      </span>
+      <span class="val" style="color:#C2410C;font-weight:700;">- Rs ${totalReturnCredit.toLocaleString()}</span>
+    </div>
+  ` : '';
+
   const summary = `
     <div class="doc-summary-wrap">
       <div class="doc-summary-box">
         ${prevBalRow}
+        ${returnBreakdownRows}
         <div class="doc-summary-row">
           <span class="label">
             <span class="urdu-main">موجودہ بل</span>

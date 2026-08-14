@@ -1878,7 +1878,10 @@ export default function SalesPage() {
                     )}
                   </td>
                   <td style={{ padding: '10px 12px', fontSize: '13px', fontFamily: 'monospace', textAlign: 'right', color: '#374151' }}>Rs. {item.rate.toFixed(2)}</td>
-                  <td style={{ padding: '10px 12px', fontSize: '13px', fontFamily: 'monospace', fontWeight: 'bold', textAlign: 'center', color: '#111827' }}>{item.qty} {item.unit}</td>
+                  <td style={{ padding: '10px 12px', fontSize: '13px', fontFamily: 'monospace', fontWeight: 'bold', textAlign: 'center', color: '#111827' }}>
+                    {item.qty} {item.unit}
+                    {(item as any).returnedQty ? <div style={{ fontSize: '10px', color: '#C2410C' }}>↩ {(item as any).returnedQty} Ret</div> : null}
+                  </td>
                   <td style={{ padding: '10px 12px', fontSize: '13px', fontFamily: 'monospace', fontWeight: 'bold', textAlign: 'right', color: '#183B25' }}>Rs. {item.amount.toFixed(2)}</td>
                 </tr>
               ))}

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { stockReturn } from '../lib/inventoryService';
 import { getBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
+import { reconcileClientBalancesAndAllocations, deriveInvoiceStatus } from '../lib/business';
 
 const router = Router();
 
@@ -382,43 +383,19 @@ router.post('/return', async (req: Request, res: Response) => {
       if (totalReturnedValueDelta > 0) {
         // Recalculate Sale totals
         const updatedItems = await tx.saleItem.findMany({ where: { saleId: delivery.saleId } });
-        const newSubtotal = updatedItems.reduce((sum, i) => sum + i.amount, 0);
-        const newTotal = Math.max(0, newSubtotal - delivery.sale.discount + delivery.sale.deliveryCharge);
-        const rawBal = newTotal - delivery.sale.paid;
-        const newBalance = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
-        const newStatus = newBalance <= 0 ? 'PAID' : (delivery.sale.paid > 0 ? 'PARTIAL' : 'PENDING');
+        const netSubtotal = updatedItems.reduce((sum, i) => sum + i.amount, 0);
+        const newTotal = Math.max(0, netSubtotal - delivery.sale.discount + delivery.sale.deliveryCharge);
 
         await tx.sale.update({
           where: { id: delivery.saleId },
           data: {
-            subtotal: newSubtotal,
+            subtotal: netSubtotal,
             total: newTotal,
-            balance: newBalance,
-            status: newStatus
           }
         });
 
-        // Update Client Ledger & currentBalance
-        await tx.customerLedger.create({
-          data: {
-            clientId: delivery.clientId,
-            branchId: delivery.branchId,
-            type: 'CREDIT_NOTE',
-            referenceId: delivery.sale.id,
-            referenceNo: delivery.sale.invoiceNo,
-            description: `Partial Product Return — Invoice ${delivery.sale.invoiceNo}`,
-            debit: 0,
-            credit: totalReturnedValueDelta,
-            balance: Math.max(0, delivery.client.currentBalance - totalReturnedValueDelta),
-          }
-        });
-
-        await tx.client.update({
-          where: { id: delivery.clientId },
-          data: {
-            currentBalance: Math.max(0, delivery.client.currentBalance - totalReturnedValueDelta)
-          }
-        });
+        // Synchronize client ledger, return credit notes, FIFO payment allocations and client balance
+        await reconcileClientBalancesAndAllocations(delivery.clientId, tx);
 
         // Mark Delivery returnedAt timestamp
         await tx.delivery.update({
@@ -435,7 +412,7 @@ router.post('/return', async (req: Request, res: Response) => {
             entity: 'Delivery',
             entityId: deliveryId,
             oldData: { total: delivery.sale.total, balance: delivery.sale.balance },
-            newData: { total: newTotal, balance: newBalance, returnedValue: totalReturnedValueDelta }
+            newData: { total: newTotal, returnedValue: totalReturnedValueDelta }
           }
         });
       }
