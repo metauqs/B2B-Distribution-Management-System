@@ -330,18 +330,30 @@ export default function SalesPage() {
     setClientsLoad(false);
   }, [debouncedClientSrch]);
 
-  // ── Load today's price list (with error guard) ───────────────────────────────
-  const loadPrices = useCallback(async () => {
+  // ── Load today's price list (with error guard & active catalog fallback) ─────
+  const loadPrices = useCallback(async (targetDate?: string) => {
     try {
-      const today = todayInputDate();
-      const data = await fetchWithCache<any>(`/api/pricelist?date=${today}`, { ttl: TTL_MEDIUM });
-      if (data?.items) setPriceItems(data.items);
+      const dateStr = targetDate || invDate || todayInputDate();
+      const data = await fetchWithCache<any>(`/api/pricelist?date=${dateStr}`, { ttl: TTL_MEDIUM });
+      if (data?.items && data.items.length > 0) {
+        setPriceItems(data.items);
+      } else {
+        // Fallback to active price list / products
+        const activeData = await fetchWithCache<any>('/api/pricelist/active', { ttl: TTL_MEDIUM });
+        const itemsList = activeData?.items || activeData?.data?.items || [];
+        if (itemsList.length > 0) {
+          setPriceItems(itemsList);
+        }
+      }
     } catch (err) {
       console.error('loadPrices error:', err);
     }
-  }, []);
+  }, [invDate]);
 
-  useEffect(() => { loadSales(); }, [loadSales]);
+  useEffect(() => {
+    loadSales();
+    loadPrices();
+  }, [loadSales, loadPrices]);
 
   useEffect(() => {
     const handleRevalidate = () => {
@@ -371,11 +383,11 @@ export default function SalesPage() {
     }
 
     const today = todayInputDate();
-    const cachedPrices = getCachedData<any>(`/api/pricelist?date=${today}`);
-    if (cachedPrices?.items) {
+    const cachedPrices = getCachedData<any>(`/api/pricelist?date=${today}`) || getCachedData<any>('/api/pricelist/active');
+    if (cachedPrices?.items && cachedPrices.items.length > 0) {
       setPriceItems(cachedPrices.items);
-    } else {
-      setPriceItems([]);
+    } else if (cachedPrices?.data?.items && cachedPrices.data.items.length > 0) {
+      setPriceItems(cachedPrices.data.items);
     }
 
     setItems([blankItem()]);
@@ -392,7 +404,7 @@ export default function SalesPage() {
     setDelivTime('09:00 AM');
     setView('new');          // ← switch immediately so no await blocks the UI
     loadClients();           // load data async in background
-    loadPrices();
+    loadPrices(today);
     loadEmployees();
   };
 

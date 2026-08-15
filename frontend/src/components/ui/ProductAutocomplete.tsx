@@ -42,8 +42,52 @@ export function ProductAutocomplete({
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Normalize source list
-  const rawList: any[] = items || priceItems || products || [];
+  const [fallbackList, setFallbackList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Normalize source list with fallback
+  const rawList: any[] = (items && items.length > 0)
+    ? items
+    : (priceItems && priceItems.length > 0)
+    ? priceItems
+    : (products && products.length > 0)
+    ? products
+    : fallbackList;
+
+  // Auto-fetch active product/price list if passed list is empty
+  useEffect(() => {
+    if (rawList.length === 0 && !loading) {
+      let isMounted = true;
+      setLoading(true);
+      (async () => {
+        try {
+          const res = await fetch('/api/pricelist/active');
+          if (res.ok) {
+            const data = await res.json();
+            const fetched = data?.data?.items || data?.items || [];
+            if (isMounted && fetched.length > 0) {
+              setFallbackList(fetched);
+            }
+          }
+          if (isMounted && fallbackList.length === 0) {
+            const prodRes = await fetch('/api/products');
+            if (prodRes.ok) {
+              const prodData = await prodRes.json();
+              const pList = prodData?.data || (Array.isArray(prodData) ? prodData : []);
+              if (isMounted && pList.length > 0) {
+                setFallbackList(pList);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('ProductAutocomplete fallback fetch failed:', e);
+        } finally {
+          if (isMounted) setLoading(false);
+        }
+      })();
+      return () => { isMounted = false; };
+    }
+  }, [rawList.length]);
 
   const q = value.trim().toLowerCase();
 
@@ -266,7 +310,7 @@ export function ProductAutocomplete({
             })
           ) : (
             <div style={{ padding: '12px 16px', fontSize: 13, color: '#64748B', textAlign: 'center', fontWeight: 500 }}>
-              No matching products found.
+              {loading ? '⏳ Loading products...' : q ? `No products matching "${value}"` : 'No products available in catalog'}
             </div>
           )}
         </div>
