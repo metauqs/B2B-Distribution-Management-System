@@ -384,10 +384,10 @@ export async function stockOut(tx: any, p: StockOutParams): Promise<void> {
 // ── 2b. syncInvoiceEditStock — Difference-Based Invoice Edit Engine ─────────────
 
 export interface InvoiceEditItemSync {
-  productId: string;
+  productId?: string | null;
+  itemName: string;
   qty: number;
   unit?: string;
-  itemName?: string;
 }
 
 export async function syncInvoiceEditStock(
@@ -404,30 +404,71 @@ export async function syncInvoiceEditStock(
   const db = tx || prisma;
   const { saleId, invoiceNo, branchId, userId, oldItems, newItems } = params;
 
-  const oldMap = new Map<string, InvoiceEditItemSync>();
+  // Helper to normalize and resolve productId
+  const resolveProductId = async (item: InvoiceEditItemSync): Promise<string | null> => {
+    if (item.productId && item.productId.trim()) return item.productId.trim();
+    if (item.itemName && item.itemName.trim()) {
+      const prod = await db.product.findFirst({
+        where: {
+          name: { equals: item.itemName.trim(), mode: 'insensitive' }
+        },
+        select: { id: true }
+      });
+      if (prod) return prod.id;
+    }
+    return null;
+  };
+
+  // Group and sum old finalized quantities by productId
+  const oldMap = new Map<string, { productId: string; itemName: string; unit: string; qty: number }>();
   for (const item of oldItems) {
-    if (item.productId) oldMap.set(item.productId, item);
+    const pid = await resolveProductId(item);
+    if (!pid) continue;
+    const existing = oldMap.get(pid);
+    if (existing) {
+      existing.qty += Number(item.qty);
+    } else {
+      oldMap.set(pid, {
+        productId: pid,
+        itemName: item.itemName,
+        unit: item.unit || 'KG',
+        qty: Number(item.qty),
+      });
+    }
   }
 
-  const newMap = new Map<string, InvoiceEditItemSync>();
+  // Group and sum new quantities by productId
+  const newMap = new Map<string, { productId: string; itemName: string; unit: string; qty: number }>();
   for (const item of newItems) {
-    if (item.productId) newMap.set(item.productId, item);
+    const pid = await resolveProductId(item);
+    if (!pid) continue;
+    const existing = newMap.get(pid);
+    if (existing) {
+      existing.qty += Number(item.qty);
+    } else {
+      newMap.set(pid, {
+        productId: pid,
+        itemName: item.itemName,
+        unit: item.unit || 'KG',
+        qty: Number(item.qty),
+      });
+    }
   }
 
   const allProductIds = new Set<string>([...oldMap.keys(), ...newMap.keys()]);
 
   for (const productId of allProductIds) {
-    const oldItem = oldMap.get(productId);
-    const newItem = newMap.get(productId);
+    const oldEntry = oldMap.get(productId);
+    const newEntry = newMap.get(productId);
 
-    const oldQty = oldItem ? oldItem.qty : 0;
-    const newQty = newItem ? newItem.qty : 0;
+    const oldQty = oldEntry ? oldEntry.qty : 0;
+    const newQty = newEntry ? newEntry.qty : 0;
     const delta = newQty - oldQty; // positive = quantity increased (deduct stock), negative = quantity decreased (restore stock)
 
-    if (Math.abs(delta) < 0.00001) continue; // No change for this product
+    if (Math.abs(delta) < 0.0001) continue; // Case A: No change — 0 inventory movement
 
-    const unit = newItem?.unit || oldItem?.unit || 'KG';
-    const itemName = newItem?.itemName || oldItem?.itemName || 'Item';
+    const unit = newEntry?.unit || oldEntry?.unit || 'KG';
+    const itemName = newEntry?.itemName || oldEntry?.itemName || 'Item';
 
     const existing = await db.inventory.findUnique({
       where: { productId_branchId: { productId, branchId } },
@@ -439,7 +480,7 @@ export async function syncInvoiceEditStock(
     const available = Math.max(0, currentQty - reserved);
 
     if (delta > 0) {
-      // Quantity INCREASED — system must deduct delta from stock
+      // Case B / C / F: Quantity INCREASED or NEW product added — system must deduct delta from stock
       if (delta > available) {
         throw new Error(`Insufficient inventory stock for ${itemName}. Available: ${available} ${unit}, Additional Required: ${delta} ${unit}`);
       }
@@ -465,11 +506,11 @@ export async function syncInvoiceEditStock(
           refId: saleId,
           userId: userId ?? undefined,
           date: new Date(),
-          note: `Invoice Edit Stock Out — ${invoiceNo} | ${productId.slice(-6)} Qty: ${oldQty} → ${newQty} (−${delta} ${unit})`,
+          note: `Invoice Edit Stock Out — ${invoiceNo} | Qty: ${oldQty} → ${newQty} (−${delta} ${unit})`,
         }
       });
     } else {
-      // Quantity DECREASED or item removed — system must restore Math.abs(delta) to stock
+      // Case D / E / F: Quantity DECREASED or item removed — system must restore Math.abs(delta) to stock
       const restoreQty = Math.abs(delta);
       const finalQty = currentQty + restoreQty;
 
@@ -491,7 +532,7 @@ export async function syncInvoiceEditStock(
           refId: saleId,
           userId: userId ?? undefined,
           date: new Date(),
-          note: `Invoice Edit Stock Restore — ${invoiceNo} | ${productId.slice(-6)} Qty: ${oldQty} → ${newQty} (+${restoreQty} ${unit})`,
+          note: `Invoice Edit Stock Restore — ${invoiceNo} | Qty: ${oldQty} → ${newQty} (+${restoreQty} ${unit})`,
         }
       });
     }

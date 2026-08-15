@@ -469,50 +469,86 @@ router.put('/:id', async (req: Request, res: Response) => {
 
   if (!items?.length) return res.status(400).json({ success: false, error: 'At least one item is required' });
 
-  const existingSale = await prisma.sale.findUnique({
-    where: { id, deletedAt: null },
-    include: {
-      items: { include: { product: true } },
-      client: true,
-      deliveries: true,
-    }
-  });
-
-  if (!existingSale) {
-    return res.status(404).json({ success: false, error: 'Invoice not found' });
-  }
-
-  // Permission Checks:
-  if (existingSale.status === 'CANCELLED') {
-    return res.status(400).json({ success: false, error: 'Cannot edit invoice: Invoice is cancelled.' });
-  }
-
-  if (existingSale.isLocked) {
-    return res.status(400).json({ success: false, error: 'Cannot edit invoice: Invoice is locked.' });
-  }
-
   const rawSubtotal = items.reduce((s: number, i: any) => s + (Number(i.qty) * Number(i.rate)), 0);
   const subtotal = Math.round(rawSubtotal);
   const rawTotal = subtotal - Number(discount) + Number(deliveryCharge);
   const total = Math.max(0, Math.round(rawTotal));
-  const paidAmt = Math.round(Number(existingSale.paid));
-
-  if (paidAmt > total) {
-    return res.status(400).json({
-      success: false,
-      error: `Amount paid so far (Rs ${paidAmt.toLocaleString()}) exceeds the new invoice total (Rs ${total.toLocaleString()}). Please adjust discount/charges or refund excess payment.`
-    });
-  }
-
-  const rawBal = total - paidAmt;
-  const balance = Math.abs(rawBal) < 1.0 ? 0 : Math.max(0, Math.round(rawBal));
-  const status = deriveInvoiceStatus(total, paidAmt);
 
   try {
     const updatedSale = await prisma.$transaction(async tx => {
+      // 1. Authoritative baseline: Fetch current persisted invoice inside the transaction
+      const existingSale = await tx.sale.findUnique({
+        where: { id, deletedAt: null },
+        include: {
+          items: { include: { product: true } },
+          client: true,
+          deliveries: true,
+        }
+      });
+
+      if (!existingSale) {
+        throw new Error('Invoice not found');
+      }
+
+      if (existingSale.status === 'CANCELLED') {
+        throw new Error('Cannot edit invoice: Invoice is cancelled.');
+      }
+
+      if (existingSale.isLocked) {
+        throw new Error('Cannot edit invoice: Invoice is locked.');
+      }
+
+      const paidAmt = Math.round(Number(existingSale.paid));
+      if (paidAmt > total) {
+        throw new Error(`Amount paid so far (Rs ${paidAmt.toLocaleString()}) exceeds the new invoice total (Rs ${total.toLocaleString()}). Please adjust discount/charges or refund excess payment.`);
+      }
+
+      const rawBal = total - paidAmt;
+      const balance = Math.abs(rawBal) < 1.0 ? 0 : Math.max(0, Math.round(rawBal));
+      const status = deriveInvoiceStatus(total, paidAmt);
       const validatedUserId = await getValidUserId(userId, tx);
 
-      // 1. Difference-based stock synchronization (calculates exact delta per product)
+      // 2. Resolve Product IDs and determine costPrice for each submitted line item
+      const resolvedNewItems = await Promise.all(
+        items.map(async (i: any) => {
+          let pid = i.productId && String(i.productId).trim() ? String(i.productId).trim() : null;
+          const itemName = i.itemName ?? i.name ?? 'Item';
+          if (!pid && itemName) {
+            const match = await tx.product.findFirst({
+              where: { name: { equals: itemName.trim(), mode: 'insensitive' } },
+              select: { id: true }
+            });
+            if (match) pid = match.id;
+          }
+
+          // Retain existing costPrice if unchanged product, or lookup from current inventory
+          let costBasis = 0;
+          if (pid) {
+            const existingLine = existingSale.items.find(oldI => oldI.productId === pid);
+            if (existingLine && existingLine.costPrice > 0) {
+              costBasis = existingLine.costPrice;
+            } else {
+              const inv = await tx.inventory.findUnique({
+                where: { productId_branchId: { productId: pid, branchId } },
+                select: { avgCost: true, currentBuyPrice: true }
+              });
+              costBasis = inv?.avgCost && inv.avgCost > 0 ? inv.avgCost : (inv?.currentBuyPrice ?? 0);
+            }
+          }
+
+          return {
+            productId: pid,
+            itemName,
+            qty: Number(i.qty),
+            unit: i.unit ?? 'KG',
+            rate: Number(i.rate),
+            amount: Number(i.qty) * Number(i.rate),
+            costPrice: costBasis,
+          };
+        })
+      );
+
+      // 3. Difference-based stock synchronization (calculates exact delta per product)
       await syncInvoiceEditStock(tx, {
         saleId: existingSale.id,
         invoiceNo: existingSale.invoiceNo,
@@ -520,19 +556,19 @@ router.put('/:id', async (req: Request, res: Response) => {
         userId: validatedUserId ?? undefined,
         oldItems: existingSale.items.map(i => ({
           productId: i.productId || '',
+          qty: i.qty - (i.returnedQty || 0),
+          unit: i.unit,
+          itemName: i.itemName,
+        })),
+        newItems: resolvedNewItems.map(i => ({
+          productId: i.productId || '',
           qty: i.qty,
           unit: i.unit,
           itemName: i.itemName,
         })),
-        newItems: items.map((i: any) => ({
-          productId: i.productId || '',
-          qty: Number(i.qty),
-          unit: i.unit ?? 'KG',
-          itemName: i.itemName ?? i.name ?? 'Item',
-        })),
       });
 
-      // 3. Replace SaleItems and update Sale record
+      // 4. Replace SaleItems and update Sale record
       await tx.saleItem.deleteMany({ where: { saleId: existingSale.id } });
 
       const updated = await tx.sale.update({
@@ -549,13 +585,14 @@ router.put('/:id', async (req: Request, res: Response) => {
           deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
           deliveryTime: deliveryTime || undefined,
           items: {
-            create: items.map((i: any) => ({
+            create: resolvedNewItems.map(i => ({
               productId: i.productId || undefined,
-              itemName: i.itemName ?? i.name ?? 'Item',
-              qty: Number(i.qty),
-              unit: i.unit ?? 'KG',
-              rate: Number(i.rate),
-              amount: Number(i.qty) * Number(i.rate),
+              itemName: i.itemName,
+              qty: i.qty,
+              unit: i.unit,
+              rate: i.rate,
+              amount: i.amount,
+              costPrice: i.costPrice,
             })),
           },
         },
@@ -567,7 +604,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         }
       });
 
-      // 4. Update linked delivery record if present
+      // 5. Update linked delivery record if present
       if (existingSale.deliveries.length > 0) {
         await tx.delivery.updateMany({
           where: { saleId: existingSale.id },
@@ -579,7 +616,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         });
       }
 
-      // 5. Update Customer Ledger entry for this invoice
+      // 6. Update Customer Ledger entry for this invoice
       const ledgerEntry = await tx.customerLedger.findFirst({
         where: {
           clientId: existingSale.clientId,
@@ -610,10 +647,10 @@ router.put('/:id', async (req: Request, res: Response) => {
         });
       }
 
-      // Single Source of Truth: Reconcile client allocations, invoice statuses, customer ledger & current balance
+      // 7. Single Source of Truth: Reconcile client allocations, invoice statuses, customer ledger & current balance
       await reconcileClientBalancesAndAllocations(existingSale.clientId, tx);
 
-      // Synchronize Financial Ledger double-entry records for this edited invoice
+      // 8. Synchronize Financial Ledger double-entry records for this edited invoice
       let updatedCogs = 0;
       for (const item of updated.items) {
         const costBasis = (item as any).costPrice > 0 ? (item as any).costPrice : 0;
@@ -636,24 +673,23 @@ router.put('/:id', async (req: Request, res: Response) => {
         deliveryCharge: Number(deliveryCharge),
       });
 
-      // Build structured changes summary for audit log
-      const oldItemsMap = new Map(existingSale.items.map(i => [i.itemName.toLowerCase(), i]));
-      const newItemsMap = new Map(items.map((i: any) => [(i.itemName ?? i.name ?? '').toLowerCase(), i]));
+      // 9. Build structured changes summary for audit log
+      const oldItemsMap = new Map(existingSale.items.map(i => [i.productId || i.itemName.toLowerCase(), i]));
+      const newItemsMap = new Map(resolvedNewItems.map(i => [i.productId || i.itemName.toLowerCase(), i]));
 
       const changesSummary: string[] = [];
 
-      for (const [name, newItemRaw] of Array.from(newItemsMap.entries())) {
-        const newItem = newItemRaw as any;
-        const oldItem = oldItemsMap.get(String(name));
+      for (const [key, newItem] of Array.from(newItemsMap.entries())) {
+        const oldItem = oldItemsMap.get(key);
         if (!oldItem) {
-          changesSummary.push(`+ ${newItem.itemName ?? newItem.name} ${newItem.qty} ${newItem.unit ?? 'KG'} @ Rs ${newItem.rate}`);
+          changesSummary.push(`+ ${newItem.itemName} ${newItem.qty} ${newItem.unit} @ Rs ${newItem.rate}`);
         } else if (Number(oldItem.qty) !== Number(newItem.qty) || Number(oldItem.rate) !== Number(newItem.rate)) {
-          changesSummary.push(`${oldItem.itemName}: ${oldItem.qty} ${oldItem.unit} → ${newItem.qty} ${newItem.unit ?? 'KG'} @ Rs ${newItem.rate}`);
+          changesSummary.push(`${oldItem.itemName}: ${oldItem.qty} ${oldItem.unit} → ${newItem.qty} ${newItem.unit} @ Rs ${newItem.rate}`);
         }
       }
 
-      for (const [name, oldItem] of Array.from(oldItemsMap.entries())) {
-        if (!newItemsMap.has(String(name))) {
+      for (const [key, oldItem] of Array.from(oldItemsMap.entries())) {
+        if (!newItemsMap.has(key)) {
           changesSummary.push(`- ${oldItem.itemName} (${oldItem.qty} ${oldItem.unit}) removed`);
         }
       }
@@ -662,7 +698,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         changesSummary.push(`Total: Rs ${existingSale.total.toLocaleString()} → Rs ${total.toLocaleString()}`);
       }
 
-      // Record Audit Log
+      // 10. Record Audit Log
       await tx.auditLog.create({
         data: {
           userId: validatedUserId ?? undefined,
@@ -679,7 +715,7 @@ router.put('/:id', async (req: Request, res: Response) => {
           newData: {
             subtotal,
             total,
-            items: items.map((i: any) => ({ name: i.itemName ?? i.name, qty: i.qty, rate: i.rate, amount: Number(i.qty) * Number(i.rate) })),
+            items: resolvedNewItems.map(i => ({ name: i.itemName, qty: i.qty, rate: i.rate, amount: i.amount })),
             notes,
             reason: reason || undefined,
             changesSummary,
@@ -690,14 +726,20 @@ router.put('/:id', async (req: Request, res: Response) => {
       return updated;
     }, { maxWait: 10000, timeout: 30000 });
 
-    updateClientCreditRating(existingSale.clientId).catch(err =>
-      console.warn('[PUT /api/sales/:id] Async credit rating update warning:', err)
-    );
+    const clientToUpdate = (updatedSale as any)?.clientId;
+    if (clientToUpdate) {
+      updateClientCreditRating(clientToUpdate).catch(err =>
+        console.warn('[PUT /api/sales/:id] Async credit rating update warning:', err)
+      );
+    }
 
     return res.json({ success: true, data: updatedSale });
   } catch (error: any) {
     console.error('[PUT /api/sales/:id] Error editing invoice:', error);
-    return res.status(500).json({ success: false, error: error.message ?? 'Failed to edit invoice.' });
+    return res.status(error.message?.includes('Insufficient') || error.message?.includes('Cannot edit') ? 400 : 500).json({
+      success: false,
+      error: error.message ?? 'Failed to edit invoice.'
+    });
   }
 });
 
