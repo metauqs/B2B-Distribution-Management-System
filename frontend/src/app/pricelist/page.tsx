@@ -238,9 +238,9 @@ export default function PriceListPage() {
 
   // ─── Data Loaders ──────────────────────────────────────────────────────────
 
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (forceRefresh = false) => {
     try {
-      const data = await fetchWithCache<Product[]>('/api/products?availability=ALL', { ttl: TTL_LONG });
+      const data = await fetchWithCache<Product[]>('/api/products?availability=ALL', { ttl: TTL_LONG, forceRefresh });
       if (data) setProducts(data);
     } catch (err) {
       console.error('loadProducts error:', err);
@@ -705,7 +705,7 @@ export default function PriceListPage() {
         invalidateCache();
         window.dispatchEvent(new Event('app-revalidate'));
         showToast('✅ Status updated');
-        await loadProducts();
+        await loadProducts(true);
         await loadDateList(targetDate, true);
       }
     } catch {
@@ -777,7 +777,7 @@ export default function PriceListPage() {
         window.dispatchEvent(new Event('app-revalidate'));
         showToast(`✅ Updated "${editName.trim()}" successfully`);
         setEditingProduct(null);
-        await loadProducts();
+        await loadProducts(true);
         await loadDateList(targetDate, true);
       } else {
         setEditError(data.error || 'Failed to update product');

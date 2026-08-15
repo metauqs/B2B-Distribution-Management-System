@@ -59,15 +59,67 @@ import { getCurrentBusinessDateRange } from '../lib/businessDate';
 import path from 'path';
 import fs from 'fs';
 
+function getUploadDirectories() {
+  const dirs = [
+    path.resolve(__dirname, '../../uploads/products'),
+    path.resolve(__dirname, '../uploads/products'),
+    path.resolve(process.cwd(), 'uploads/products'),
+    path.resolve(process.cwd(), '../frontend/public/uploads/products'),
+  ];
+  return [...new Set(dirs)];
+}
+
+function findImageFile(filename: string): string | null {
+  const safeFilename = path.basename(filename);
+  for (const dir of getUploadDirectories()) {
+    const candidate = path.join(dir, safeFilename);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 // GET /api/products/image/:filename — Public product image serving
 router.get('/image/:filename', (req: Request, res: Response) => {
   const { filename } = req.params;
-  const safeFilename = path.basename(filename);
-  const filePath = path.join(__dirname, '../../uploads/products', safeFilename);
-  if (fs.existsSync(filePath)) {
+  const filePath = findImageFile(filename);
+  if (filePath) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     return res.sendFile(filePath);
   }
   return res.status(404).json({ success: false, error: 'Image not found' });
+});
+
+// GET /api/products/:id/image — Serve image by Product ID
+router.get('/:id/image', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const product = await prisma.product.findUnique({ where: { id }, select: { imageUrl: true } });
+    if (!product || !product.imageUrl) {
+      return res.status(404).json({ success: false, error: 'No image found for product' });
+    }
+
+    if (product.imageUrl.startsWith('data:image/')) {
+      const match = product.imageUrl.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/);
+      if (match) {
+        const mimeType = match[1];
+        const buffer = Buffer.from(match[2], 'base64');
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return res.send(buffer);
+      }
+    }
+
+    const filename = path.basename(product.imageUrl.split('?')[0]);
+    const filePath = findImageFile(filename);
+    if (filePath) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.sendFile(filePath);
+    }
+
+    return res.status(404).json({ success: false, error: 'Image file not found on server' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // POST /api/products
@@ -205,25 +257,35 @@ router.post('/:id/image', async (req: Request, res: Response) => {
     if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = 'jpg';
     else if (mimeType.includes('webp')) ext = 'webp';
 
-    const uploadDir = path.join(__dirname, '../../uploads/products');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
+    const timestamp = Date.now();
+    const newFilename = `prod_${id}_${timestamp}.${ext}`;
+    const allDirs = getUploadDirectories();
 
-    // Safely remove previous uploaded image if exists
-    if (existingProduct.imageUrl && existingProduct.imageUrl.startsWith('/uploads/products/')) {
-      const oldFilename = path.basename(existingProduct.imageUrl);
-      const oldPath = path.join(uploadDir, oldFilename);
-      if (fs.existsSync(oldPath)) {
-        try { fs.unlinkSync(oldPath); } catch (err) { console.warn('Could not delete old product image:', err); }
+    // 1. Clean up old image files across all upload directories
+    if (existingProduct.imageUrl) {
+      const oldFilename = path.basename(existingProduct.imageUrl.split('?')[0]);
+      for (const dir of allDirs) {
+        const oldPath = path.join(dir, oldFilename);
+        if (fs.existsSync(oldPath)) {
+          try { fs.unlinkSync(oldPath); } catch (err) { /* ignore */ }
+        }
       }
     }
 
-    const newFilename = `prod_${id}_${Date.now()}.${ext}`;
-    const newFilePath = path.join(uploadDir, newFilename);
-    fs.writeFileSync(newFilePath, buffer);
+    // 2. Write file to all existing upload directories
+    for (const dir of allDirs) {
+      try {
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        const targetPath = path.join(dir, newFilename);
+        fs.writeFileSync(targetPath, buffer);
+      } catch (err) {
+        console.warn(`Could not write image to directory ${dir}:`, err);
+      }
+    }
 
-    const imageUrl = `/uploads/products/${newFilename}`;
+    const imageUrl = `/api/products/image/${newFilename}?v=${timestamp}`;
 
     const updatedProduct = await prisma.product.update({
       where: { id },
@@ -259,12 +321,13 @@ router.delete('/:id/image', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Product not found' });
     }
 
-    if (existingProduct.imageUrl && existingProduct.imageUrl.startsWith('/uploads/products/')) {
-      const oldFilename = path.basename(existingProduct.imageUrl);
-      const uploadDir = path.join(__dirname, '../../uploads/products');
-      const oldPath = path.join(uploadDir, oldFilename);
-      if (fs.existsSync(oldPath)) {
-        try { fs.unlinkSync(oldPath); } catch (err) { console.warn('Could not delete product image:', err); }
+    if (existingProduct.imageUrl) {
+      const oldFilename = path.basename(existingProduct.imageUrl.split('?')[0]);
+      for (const dir of getUploadDirectories()) {
+        const oldPath = path.join(dir, oldFilename);
+        if (fs.existsSync(oldPath)) {
+          try { fs.unlinkSync(oldPath); } catch (err) { /* ignore */ }
+        }
       }
     }
 

@@ -89,11 +89,22 @@ interface ProductVisualProps {
 export function ProductVisual({ name, emoji, imageUrl, size = 22, style, className }: ProductVisualProps) {
   const [imgError, setImgError] = useState(false);
 
+  // Reset imgError whenever the imageUrl prop changes
+  React.useEffect(() => {
+    setImgError(false);
+  }, [imageUrl]);
+
   // 1. Highest Priority: Uploaded Image from Product Master (imageUrl)
   if (imageUrl && imageUrl.trim() && !imgError) {
+    const rawUrl = imageUrl.trim();
+    // Normalize URL to ensure it routes through API proxy if needed
+    const finalUrl = rawUrl.startsWith('/uploads/products/')
+      ? `/api/products/image/${rawUrl.replace('/uploads/products/', '')}`
+      : rawUrl;
+
     return (
       <img
-        src={imageUrl.trim()}
+        src={finalUrl}
         alt={name}
         onError={() => setImgError(true)}
         style={{
