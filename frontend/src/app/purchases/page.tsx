@@ -688,9 +688,9 @@ export default function PurchasesPage() {
                                 <input
                                   type="number"
                                   value={item.qty}
-                                  min="0.01"
-                                  step="0.01"
-                                  onChange={e => updateItem(itemIdx, 'qty', +e.target.value)}
+                                  min="0.001"
+                                  step="any"
+                                  onChange={e => updateItem(itemIdx, 'qty', e.target.value === '' ? 0 : +e.target.value)}
                                   onClick={e => (e.target as HTMLInputElement).select()}
                                   style={{ width: '100%', padding: '5px 6px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', color: 'var(--ink)', fontSize: 13, fontWeight: 700 }}
                                 />
@@ -711,9 +711,9 @@ export default function PurchasesPage() {
                                   type="number"
                                   value={item.rate || ''}
                                   min="0"
-                                  step="0.01"
+                                  step="any"
                                   placeholder="0"
-                                  onChange={e => updateItem(itemIdx, 'rate', +e.target.value)}
+                                  onChange={e => updateItem(itemIdx, 'rate', e.target.value === '' ? 0 : +e.target.value)}
                                   onClick={e => (e.target as HTMLInputElement).select()}
                                   style={{ width: '100%', padding: '5px 6px', border: '1.5px solid var(--mustard)', borderRadius: 6, background: 'var(--paper)', color: 'var(--forest)', fontSize: 13, fontWeight: 700 }}
                                 />

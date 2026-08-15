@@ -909,7 +909,7 @@ export default function DeliveryPage() {
                             type="number"
                             min={0}
                             max={item.qty}
-                            step="0.1"
+                            step="any"
                             value={currentInput.returnedQty || ''}
                             onChange={e => {
                               const val = Math.min(item.qty, Math.max(0, parseFloat(e.target.value) || 0));

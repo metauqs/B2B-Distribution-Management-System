@@ -1320,9 +1320,9 @@ export default function SalesPage() {
                       <input
                         type="number"
                         value={item.qty || ''}
-                        min="0.01"
-                        step="0.01"
-                        onChange={e => updateItem(i, 'qty', +e.target.value)}
+                        min="0.001"
+                        step="any"
+                        onChange={e => updateItem(i, 'qty', e.target.value === '' ? 0 : +e.target.value)}
                         required
                         className="mono"
                         style={{ background: 'var(--paper)', color: 'var(--ink)' }}
@@ -1344,8 +1344,8 @@ export default function SalesPage() {
                         type="number"
                         value={item.rate || ''}
                         min="0"
-                        step="0.01"
-                        onChange={e => updateItem(i, 'rate', +e.target.value)}
+                        step="any"
+                        onChange={e => updateItem(i, 'rate', e.target.value === '' ? 0 : +e.target.value)}
                         required
                         className="mono"
                         style={{ background: 'var(--paper)', color: 'var(--ink)' }}

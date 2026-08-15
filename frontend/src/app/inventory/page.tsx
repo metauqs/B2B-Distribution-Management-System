@@ -718,7 +718,7 @@ export default function InventoryPage() {
                   New Buy Rate (Rs / Unit) *
                 </label>
                 <input
-                  type="number" min="0" step="0.01" required
+                  type="number" min="0" step="any" required
                   value={pNewPrice}
                   onChange={e => setPNewPrice(e.target.value === '' ? '' : +e.target.value)}
                   placeholder="0.00"
@@ -1191,8 +1191,8 @@ export default function InventoryPage() {
 
               <div className="va-field">
                 <label>Quantity Wasted *</label>
-                <input type="number" required min="0.01" step="0.01"
-                  value={wQty || ''} onChange={e => setWQty(+e.target.value)}
+                <input type="number" required min="0.001" step="any"
+                  value={wQty || ''} onChange={e => setWQty(e.target.value === '' ? 0 : +e.target.value)}
                   style={{ background: '#ffffff', color: '#0F172A', fontSize: 14, fontWeight: 700, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
                 />
                 {wProdId && wQty > 0 && (() => {
@@ -1521,7 +1521,7 @@ export default function InventoryPage() {
                         : 'QUANTITY RETURNED (-)'}
                     </div>
                     <input
-                      type="number" min="0" step="0.01" required
+                      type="number" min="0" step="any" required
                       value={aQtyVal}
                       onChange={e => setAQtyVal(e.target.value === '' ? '' : +e.target.value)}
                       style={{ width: '100%', fontSize: 22, fontWeight: 800, fontFamily: 'monospace', border: 'none', background: 'transparent', color: 'var(--forest)', outline: 'none', marginTop: 2 }}
