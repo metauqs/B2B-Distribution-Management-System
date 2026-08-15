@@ -13,6 +13,8 @@ import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import Icon from '@mdi/react';
 import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline, mdiTagOutline } from '@mdi/js';
 
+import { ProductVisual } from '@/components/ui/ProductVisual';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface InventoryItem {
@@ -30,8 +32,15 @@ interface InventoryItem {
   totalValue: number;
   stockStatus: 'OK' | 'LOW' | 'OUT_OF_STOCK';
   product: {
-    id: string; name: string; urduName?: string;
-    category?: string; defaultUnit: string; minStock: number; availability: string;
+    id: string;
+    name: string;
+    urduName?: string;
+    emoji?: string | null;
+    imageUrl?: string | null;
+    category?: string;
+    defaultUnit: string;
+    minStock: number;
+    availability: string;
   };
 }
 
@@ -873,12 +882,22 @@ export default function InventoryPage() {
                           <tr key={i.id} style={{ background: sc.bg }}>
                             <td className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>{idx + 1}</td>
                             <td style={{ fontWeight: 700 }}>
-                              {getProductEmoji(i.product?.name)} {i.product?.name}
-                              {i.lastPurchaseDate && (
-                                <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
-                                  Last buy: {new Date(i.lastPurchaseDate).toLocaleDateString('en-GB')} ({i.lastPurchaseQty ?? 0} {i.product?.defaultUnit})
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <ProductVisual
+                                  name={i.product?.name ?? ''}
+                                  emoji={(i.product as any)?.emoji}
+                                  imageUrl={(i.product as any)?.imageUrl}
+                                  size={24}
+                                />
+                                <div>
+                                  <div>{i.product?.name}</div>
+                                  {i.lastPurchaseDate && (
+                                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
+                                      Last buy: {new Date(i.lastPurchaseDate).toLocaleDateString('en-GB')} ({i.lastPurchaseQty ?? 0} {i.product?.defaultUnit})
+                                    </div>
+                                  )}
                                 </div>
-                              )}
+                              </div>
                             </td>
                             <td style={{ fontSize: 14, color: 'var(--muted)', fontFamily: 'serif' }}>{i.product?.urduName ?? '—'}</td>
                             <td style={{ color: 'var(--muted)', fontSize: 12 }}>{i.product?.defaultUnit ?? 'KG'}</td>
@@ -953,9 +972,18 @@ export default function InventoryPage() {
                     return (
                       <MobileCard
                         key={i.id}
-                        title={`${getProductEmoji(i.product?.name)} ${i.product?.name ?? 'Product'}`}
+                        title={i.product?.name ?? 'Product'}
                         headerBadge={i.product?.urduName || (i.product?.defaultUnit ?? 'KG')}
                       >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>
+                          <ProductVisual
+                            name={i.product?.name ?? ''}
+                            emoji={(i.product as any)?.emoji}
+                            imageUrl={(i.product as any)?.imageUrl}
+                            size={28}
+                          />
+                          <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{i.product?.name}</span>
+                        </div>
                         <MobileCardRow label="Total Stock" value={`${i.qty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} isMono />
                         <MobileCardRow label="Available Qty" value={`${i.availableQty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} valueColor="var(--primary)" isMono />
                         <MobileCardRow label="Average Buy Cost" value={`Rs ${avgCostVal.toFixed(2)} / ${i.product?.defaultUnit ?? 'KG'}`} valueColor="var(--forest)" isMono />

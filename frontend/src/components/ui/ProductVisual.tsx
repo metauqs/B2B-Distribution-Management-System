@@ -80,12 +80,37 @@ export function getProductVisual(name: string): { type: 'emoji' | 'image'; value
 interface ProductVisualProps {
   name: string;
   emoji?: string | null;
+  imageUrl?: string | null;
   size?: number;
   style?: React.CSSProperties;
   className?: string;
 }
 
-export function ProductVisual({ name, emoji, size = 22, style, className }: ProductVisualProps) {
+export function ProductVisual({ name, emoji, imageUrl, size = 22, style, className }: ProductVisualProps) {
+  const [imgError, setImgError] = useState(false);
+
+  // 1. Highest Priority: Uploaded Image from Product Master (imageUrl)
+  if (imageUrl && imageUrl.trim() && !imgError) {
+    return (
+      <img
+        src={imageUrl.trim()}
+        alt={name}
+        onError={() => setImgError(true)}
+        style={{
+          width: size,
+          height: size,
+          objectFit: 'cover',
+          borderRadius: size > 30 ? 6 : 4,
+          display: 'inline-block',
+          verticalAlign: 'middle',
+          ...style
+        }}
+        className={className}
+      />
+    );
+  }
+
+  // 2. Second Priority: Explicit Product Master Emoji
   if (emoji && emoji.trim()) {
     return (
       <span
@@ -104,15 +129,15 @@ export function ProductVisual({ name, emoji, size = 22, style, className }: Prod
     );
   }
 
+  // 3. Third Priority: Pre-mapped static assets or dynamic fallback emoji
   const visual = getProductVisual(name);
-  const [hasError, setHasError] = useState(false);
 
-  if (visual.type === 'image' && !hasError) {
+  if (visual.type === 'image' && !imgError) {
     return (
       <img
         src={visual.value}
         alt={name}
-        onError={() => setHasError(true)}
+        onError={() => setImgError(true)}
         style={{
           width: size,
           height: size,

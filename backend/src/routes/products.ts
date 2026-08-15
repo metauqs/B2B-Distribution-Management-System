@@ -56,12 +56,25 @@ router.get('/:id/audit-logs', async (req: Request, res: Response) => {
 });
 
 import { getCurrentBusinessDateRange } from '../lib/businessDate';
+import path from 'path';
+import fs from 'fs';
+
+// GET /api/products/image/:filename — Public product image serving
+router.get('/image/:filename', (req: Request, res: Response) => {
+  const { filename } = req.params;
+  const safeFilename = path.basename(filename);
+  const filePath = path.join(__dirname, '../../uploads/products', safeFilename);
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+  return res.status(404).json({ success: false, error: 'Image not found' });
+});
 
 // POST /api/products
 router.post('/', async (req: Request, res: Response) => {
   const branchId = (req.headers['x-branch-id'] as string) || 'branch_main';
   const userId = (req.headers['x-user-id'] as string) || null;
-  const { name, urduName, emoji, category, defaultUnit, availability, minStock, sortOrder } = req.body;
+  const { name, urduName, emoji, imageUrl, category, defaultUnit, availability, minStock, sortOrder } = req.body;
   if (!name?.trim()) return res.status(400).json({ success: false, error: 'Name required' });
 
   // Normalize enum values — accept both 'vegetable' and 'VEGETABLE'
@@ -76,6 +89,7 @@ router.post('/', async (req: Request, res: Response) => {
           name: name.trim(),
           urduName: urduName?.trim() || undefined,
           emoji: emoji?.trim() || undefined,
+          imageUrl: imageUrl?.trim() || undefined,
           category: normalizedCategory as any,
           defaultUnit: normalizedUnit as any,
           availability: normalizedAvail as any,
@@ -142,7 +156,7 @@ router.post('/', async (req: Request, res: Response) => {
       action: 'CREATE',
       entity: 'Product',
       entityId: product.id,
-      newData: { name: product.name, unit: product.defaultUnit, category: product.category }
+      newData: { name: product.name, unit: product.defaultUnit, category: product.category, imageUrl: product.imageUrl, emoji: product.emoji }
     });
 
     return res.status(201).json({ success: true, data: product });
@@ -153,10 +167,136 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/products/:id/image (Upload / Replace product image)
+router.post('/:id/image', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { imageBase64, filename } = req.body;
+
+  if (!imageBase64 || typeof imageBase64 !== 'string') {
+    return res.status(400).json({ success: false, error: 'Missing imageBase64 payload' });
+  }
+
+  try {
+    const existingProduct = await prisma.product.findUnique({ where: { id } });
+    if (!existingProduct) {
+      return res.status(404).json({ success: false, error: 'Product not found' });
+    }
+
+    // Extract base64 data and mime type
+    let mimeType = 'image/png';
+    let base64Data = imageBase64;
+    const match = imageBase64.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1].toLowerCase();
+      base64Data = match[2];
+    }
+
+    const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!allowedMimeTypes.includes(mimeType)) {
+      return res.status(400).json({ success: false, error: 'Invalid image type. Only PNG, JPG, and WEBP are supported.' });
+    }
+
+    const buffer = Buffer.from(base64Data, 'base64');
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Image size exceeds maximum allowed 5MB.' });
+    }
+
+    let ext = 'png';
+    if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = 'jpg';
+    else if (mimeType.includes('webp')) ext = 'webp';
+
+    const uploadDir = path.join(__dirname, '../../uploads/products');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    // Safely remove previous uploaded image if exists
+    if (existingProduct.imageUrl && existingProduct.imageUrl.startsWith('/uploads/products/')) {
+      const oldFilename = path.basename(existingProduct.imageUrl);
+      const oldPath = path.join(uploadDir, oldFilename);
+      if (fs.existsSync(oldPath)) {
+        try { fs.unlinkSync(oldPath); } catch (err) { console.warn('Could not delete old product image:', err); }
+      }
+    }
+
+    const newFilename = `prod_${id}_${Date.now()}.${ext}`;
+    const newFilePath = path.join(uploadDir, newFilename);
+    fs.writeFileSync(newFilePath, buffer);
+
+    const imageUrl = `/uploads/products/${newFilename}`;
+
+    const updatedProduct = await prisma.product.update({
+      where: { id },
+      data: { imageUrl },
+    });
+
+    const rawUserId = (req.headers['x-user-id'] as string) || (req.headers['x-staff-id'] as string) || null;
+    const validatedUserId = await getValidUserId(rawUserId);
+
+    await writeAuditLog({
+      userId: validatedUserId,
+      branchId: (req.headers['x-branch-id'] as string) || undefined,
+      action: 'PRODUCT_IMAGE_UPDATED',
+      entity: 'Product',
+      entityId: id,
+      oldData: { imageUrl: existingProduct.imageUrl },
+      newData: { imageUrl: updatedProduct.imageUrl },
+    });
+
+    return res.json({ success: true, data: updatedProduct, imageUrl });
+  } catch (err: any) {
+    console.error('Error uploading product image:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to upload product image' });
+  }
+});
+
+// DELETE /api/products/:id/image (Remove product image)
+router.delete('/:id/image', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const existingProduct = await prisma.product.findUnique({ where: { id } });
+    if (!existingProduct) {
+      return res.status(404).json({ success: false, error: 'Product not found' });
+    }
+
+    if (existingProduct.imageUrl && existingProduct.imageUrl.startsWith('/uploads/products/')) {
+      const oldFilename = path.basename(existingProduct.imageUrl);
+      const uploadDir = path.join(__dirname, '../../uploads/products');
+      const oldPath = path.join(uploadDir, oldFilename);
+      if (fs.existsSync(oldPath)) {
+        try { fs.unlinkSync(oldPath); } catch (err) { console.warn('Could not delete product image:', err); }
+      }
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: { id },
+      data: { imageUrl: null },
+    });
+
+    const rawUserId = (req.headers['x-user-id'] as string) || (req.headers['x-staff-id'] as string) || null;
+    const validatedUserId = await getValidUserId(rawUserId);
+
+    await writeAuditLog({
+      userId: validatedUserId,
+      branchId: (req.headers['x-branch-id'] as string) || undefined,
+      action: 'PRODUCT_IMAGE_REMOVED',
+      entity: 'Product',
+      entityId: id,
+      oldData: { imageUrl: existingProduct.imageUrl },
+      newData: { imageUrl: null },
+    });
+
+    return res.json({ success: true, data: updatedProduct });
+  } catch (err: any) {
+    console.error('Error removing product image:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to remove product image' });
+  }
+});
+
 // PUT /api/products/:id (Update product) — also accepts PATCH
 const updateProduct = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, urduName, emoji, category, defaultUnit, availability, minStock, sortOrder, isActive } = req.body;
+  const { name, urduName, emoji, imageUrl, category, defaultUnit, availability, minStock, sortOrder, isActive } = req.body;
 
   const trimmedName = name !== undefined ? name.trim() : undefined;
   if (name !== undefined && !trimmedName) {
@@ -193,6 +333,7 @@ const updateProduct = async (req: Request, res: Response) => {
         ...(trimmedName !== undefined && { name: trimmedName }),
         ...(urduName !== undefined && { urduName: urduName?.trim() || null }),
         ...(emoji !== undefined && { emoji: emoji?.trim() || null }),
+        ...(imageUrl !== undefined && { imageUrl: imageUrl?.trim() || null }),
         ...(normalizedCategory && { category: normalizedCategory as any }),
         ...(normalizedUnit && { defaultUnit: normalizedUnit as any }),
         ...(normalizedAvail && { availability: normalizedAvail as any }),
@@ -238,6 +379,7 @@ const updateProduct = async (req: Request, res: Response) => {
         name: existingProduct.name,
         urduName: existingProduct.urduName,
         emoji: existingProduct.emoji,
+        imageUrl: existingProduct.imageUrl,
         category: existingProduct.category,
         defaultUnit: existingProduct.defaultUnit,
         availability: existingProduct.availability,
@@ -246,6 +388,7 @@ const updateProduct = async (req: Request, res: Response) => {
         name: product.name,
         urduName: product.urduName,
         emoji: product.emoji,
+        imageUrl: product.imageUrl,
         category: product.category,
         defaultUnit: product.defaultUnit,
         availability: product.availability,

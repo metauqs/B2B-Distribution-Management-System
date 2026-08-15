@@ -41,7 +41,7 @@ export async function findActiveEditableSale(clientId: string, branchId?: string
     },
     include: {
       client: { select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, address: true, deliveryLocation: true, creditLimit: true, currentBalance: true } },
-      items: { include: { product: { select: { id: true, name: true, urduName: true } } } },
+      items: { include: { product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } } } },
       deliveries: { include: { driver: true, vehicle: true, employee: true } },
       employee: true,
     },
@@ -92,7 +92,7 @@ router.get('/', async (req: Request, res: Response) => {
       where,
       include: {
         client: { select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, type: true } },
-        items: { include: { product: { select: { id: true, name: true, urduName: true } } } },
+        items: { include: { product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } } } },
         employee: true,
       },
       orderBy: { date: 'asc' },

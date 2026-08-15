@@ -1,6 +1,5 @@
-'use client';
-
 import React, { useState, useEffect, useRef } from 'react';
+import { ProductVisual } from './ProductVisual';
 
 export interface PriceItem {
   productId: string;
@@ -8,7 +7,7 @@ export interface PriceItem {
   unit: string;
   sellRate?: number;
   buyRate?: number;
-  product?: { id: string; name: string; urduName?: string | null; category?: string };
+  product?: { id: string; name: string; urduName?: string | null; emoji?: string | null; imageUrl?: string | null; category?: string };
 }
 
 interface ProductAutocompleteProps {
@@ -96,11 +95,13 @@ export function ProductAutocomplete({
     const itemName = (p?.itemName || p?.name || '').toString();
     const prodName = (p?.product?.name || '').toString();
     const urdu = (p?.product?.urduName || p?.urduName || '').toString();
+    const emoji = p?.product?.emoji || p?.emoji || null;
+    const imageUrl = p?.product?.imageUrl || p?.imageUrl || null;
     const unit = p?.unit || p?.defaultUnit || 'KG';
     const rate = p?.sellRate ?? p?.rate ?? p?.buyRate ?? 0;
     const productId = p?.productId || p?.id || '';
     const availableStock = p?.availableStock ?? p?.currentStock ?? p?.stock ?? p?.qty ?? undefined;
-    return { itemName, prodName, urdu, unit, rate, productId, availableStock };
+    return { itemName, prodName, urdu, emoji, imageUrl, unit, rate, productId, availableStock };
   };
 
   // 1. Prefix matches (itemName, product name, or urduName starts with query)
@@ -247,7 +248,7 @@ export function ProductAutocomplete({
           {suggestions.length > 0 ? (
             suggestions.map((item, index) => {
               const isHighlighted = index === highlightedIndex;
-              const { itemName, urdu, unit, rate, productId, availableStock } = getSearchFields(item);
+              const { itemName, urdu, emoji, imageUrl, unit, rate, productId, availableStock } = getSearchFields(item);
               return (
                 <div
                   key={productId || `${itemName}-${index}`}
@@ -272,13 +273,16 @@ export function ProductAutocomplete({
                     lineHeight: '1.4',
                   }}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: 600, color: '#0F172A' }}>{itemName}</span>
-                    {urdu && (
-                      <span style={{ fontSize: 11, color: '#64748B' }}>
-                        {urdu}
-                      </span>
-                    )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <ProductVisual name={itemName} emoji={emoji} imageUrl={imageUrl} size={22} />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 600, color: '#0F172A' }}>{itemName}</span>
+                      {urdu && (
+                        <span style={{ fontSize: 11, color: '#64748B' }}>
+                          {urdu}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', whiteSpace: 'nowrap' }}>
                     <div>

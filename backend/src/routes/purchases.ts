@@ -16,7 +16,10 @@ router.get('/', async (req: Request, res: Response) => {
 
     const purchases = await prisma.purchase.findMany({
       where: { ...(branchId ? { branchId } : {}), deletedAt: null },
-      include: { supplier: { select: { id: true, name: true } }, items: true },
+      include: {
+        supplier: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } } } }
+      },
       orderBy: { date: 'asc' },
       take: limit,
     });

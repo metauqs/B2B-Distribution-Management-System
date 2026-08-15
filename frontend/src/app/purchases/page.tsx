@@ -19,7 +19,7 @@ interface Purchase {
   items?: PurchaseItem[];
 }
 interface Supplier { id: string; name: string; currentBalance: number; }
-interface Product  { id: string; name: string; urduName?: string | null; defaultUnit?: string; category?: string; }
+interface Product  { id: string; name: string; urduName?: string | null; emoji?: string | null; imageUrl?: string | null; defaultUnit?: string; category?: string; }
 interface InventoryRecord { productId: string; qty: number; avgCost: number; currentBuyPrice: number; previousBuyPrice: number; latestPurchasePrice: number; }
 
 const blankItem = (): PurchaseItem => ({ itemName: '', qty: 1, unit: 'KG', rate: 0, amount: 0 });
@@ -677,7 +677,7 @@ export default function PurchasesPage() {
                             onClick={() => toggleProduct(prod)}
                             style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: isSelected ? 10 : 0 }}
                           >
-                            <ProductVisual name={prod.name} size={22} />
+                            <ProductVisual name={prod.name} emoji={prod.emoji} imageUrl={prod.imageUrl} size={24} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               {prod.urduName && (
                                 <div style={{

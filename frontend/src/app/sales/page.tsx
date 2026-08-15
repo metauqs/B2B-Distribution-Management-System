@@ -9,6 +9,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
+import { ProductVisual } from '@/components/ui/ProductVisual';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
@@ -35,7 +36,7 @@ interface Client {
 interface PriceItem {
   productId: string; itemName: string; unit: string; sellRate: number;
   availableStock?: number; currentStock?: number;
-  product?: { id: string; name: string; urduName?: string | null; category: string };
+  product?: { id: string; name: string; urduName?: string | null; emoji?: string | null; imageUrl?: string | null; category: string };
 }
 
 interface OrderItem {
@@ -44,7 +45,7 @@ interface OrderItem {
 
 interface SaleItem {
   id: string; productId?: string | null; itemName: string; qty: number; unit: string; rate: number; amount: number;
-  product?: { id: string; name: string; urduName?: string | null } | null;
+  product?: { id: string; name: string; urduName?: string | null; emoji?: string | null; imageUrl?: string | null } | null;
 }
 
 interface DeliveryInfo { id: string; status: string; zone?: string | null; deliveredAt?: string | null; }
@@ -1936,12 +1937,22 @@ export default function SalesPage() {
                 <tr key={item.id} style={{ background: i % 2 === 1 ? '#F4F7EE' : '#FFFFFF', borderBottom: '1px solid #E3EBD7' }}>
                   <td style={{ padding: '10px 12px', fontSize: '12px', color: '#4B5563', textAlign: 'center', fontWeight: 'bold' }}>{i + 1}</td>
                   <td style={{ padding: '10px 12px', fontSize: '13px', color: '#111827' }}>
-                    <strong style={{ fontWeight: '600' }}>{item.itemName}</strong>
-                    {item.product?.urduName && (
-                      <span style={{ color: '#6B7280', fontSize: '12px', marginLeft: '6px', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif' }}>
-                        ({item.product.urduName})
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <ProductVisual
+                        name={item.itemName}
+                        emoji={(item.product as any)?.emoji}
+                        imageUrl={(item.product as any)?.imageUrl}
+                        size={22}
+                      />
+                      <div>
+                        <strong style={{ fontWeight: '600' }}>{item.itemName}</strong>
+                        {item.product?.urduName && (
+                          <span style={{ color: '#6B7280', fontSize: '12px', marginLeft: '6px', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif' }}>
+                            ({item.product.urduName})
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td style={{ padding: '10px 12px', fontSize: '13px', fontFamily: 'monospace', textAlign: 'right', color: '#374151' }}>Rs. {item.rate.toFixed(2)}</td>
                   <td style={{ padding: '10px 12px', fontSize: '13px', fontFamily: 'monospace', fontWeight: 'bold', textAlign: 'center', color: '#111827' }}>

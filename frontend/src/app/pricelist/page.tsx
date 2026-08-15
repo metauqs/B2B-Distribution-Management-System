@@ -32,6 +32,7 @@ interface Product {
   name:         string;
   urduName?:    string | null;
   emoji?:       string | null;
+  imageUrl?:    string | null;
   category:     string; // vegetable | fruit | other
   defaultUnit:  string;
   availability: ProductAvailability;
@@ -59,6 +60,8 @@ interface PriceItemRow {
     id?:           string;
     name?:         string;
     urduName?:     string | null;
+    emoji?:        string | null;
+    imageUrl?:     string | null;
     category?:     string;
     availability?: ProductAvailability;
   };
@@ -161,15 +164,22 @@ export default function PriceListPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [newProdName, setNewProdName] = useState('');
   const [newProdUrdu, setNewProdUrdu] = useState('');
+  const [newProdEmoji, setNewProdEmoji] = useState('');
   const [newProdCat, setNewProdCat] = useState('vegetable');
   const [newProdUnit, setNewProdUnit] = useState('KG');
   const [newProdAvail, setNewProdAvail] = useState<ProductAvailability>(ProductAvailability.AVAILABLE);
+  const [newProdImageBase64, setNewProdImageBase64] = useState<string | null>(null);
+  const [newProdImagePreview, setNewProdImagePreview] = useState('');
 
   // Edit Product Modal State
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editName, setEditName] = useState('');
   const [editUrdu, setEditUrdu] = useState('');
   const [editEmoji, setEditEmoji] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
+  const [editImagePreview, setEditImagePreview] = useState('');
+  const [editImageBase64, setEditImageBase64] = useState<string | null>(null);
+  const [editImageRemoved, setEditImageRemoved] = useState(false);
   const [editCategory, setEditCategory] = useState('vegetable');
   const [editUnit, setEditUnit] = useState('KG');
   const [editAvailability, setEditAvailability] = useState<ProductAvailability>(ProductAvailability.AVAILABLE);
@@ -592,6 +602,48 @@ export default function PriceListPage() {
 
   // ─── Master Product Catalog Actions ──────────────────────────────────────────
 
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>, isNew: boolean = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      showToast('❌ Only PNG, JPG, and WEBP image formats are supported');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('❌ Image size exceeds 5MB limit');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      if (isNew) {
+        setNewProdImagePreview(result);
+        setNewProdImageBase64(result);
+      } else {
+        setEditImagePreview(result);
+        setEditImageBase64(result);
+        setEditImageRemoved(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = (isNew: boolean = false) => {
+    if (isNew) {
+      setNewProdImagePreview('');
+      setNewProdImageBase64(null);
+    } else {
+      setEditImagePreview('');
+      setEditImageBase64(null);
+      setEditImageUrl('');
+      setEditImageRemoved(true);
+    }
+  };
+
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProdName.trim()) return showToast('Product name is required');
@@ -604,6 +656,7 @@ export default function PriceListPage() {
         body: JSON.stringify({
           name: newProdName,
           urduName: newProdUrdu,
+          emoji: newProdEmoji,
           category: newProdCat,
           defaultUnit: newProdUnit,
           availability: newProdAvail
@@ -611,11 +664,25 @@ export default function PriceListPage() {
       });
       const data = await res.json();
       if (data.success) {
+        if (newProdImageBase64 && data.data?.id) {
+          try {
+            await apiFetch(`/api/products/${data.data.id}/image`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ imageBase64: newProdImageBase64 })
+            });
+          } catch (err) {
+            console.error('Failed to upload image for new product:', err);
+          }
+        }
         invalidateCache();
         window.dispatchEvent(new Event('app-revalidate'));
         showToast(`✅ ${newProdName} added to master catalog`);
         setNewProdName('');
         setNewProdUrdu('');
+        setNewProdEmoji('');
+        setNewProdImagePreview('');
+        setNewProdImageBase64(null);
         await loadProducts();
         await loadDateList(targetDate, true); // refresh dynamic lists
       } else {
@@ -651,6 +718,10 @@ export default function PriceListPage() {
     setEditName(p.name || '');
     setEditUrdu(p.urduName || '');
     setEditEmoji(p.emoji || '');
+    setEditImageUrl(p.imageUrl || '');
+    setEditImagePreview(p.imageUrl || '');
+    setEditImageBase64(null);
+    setEditImageRemoved(false);
     setEditCategory((p.category || 'vegetable').toLowerCase());
     setEditUnit(p.defaultUnit || 'KG');
     setEditAvailability(p.availability || ProductAvailability.AVAILABLE);
@@ -667,6 +738,26 @@ export default function PriceListPage() {
     setEditSaving(true);
     setEditError('');
     try {
+      // 1. Upload or delete image if modified
+      let finalImageUrl: string | null = editImageUrl;
+      if (editImageBase64) {
+        const uploadRes = await apiFetch(`/api/products/${editingProduct.id}/image`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: editImageBase64 })
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.success && uploadData.imageUrl) {
+          finalImageUrl = uploadData.imageUrl;
+        }
+      } else if (editImageRemoved) {
+        await apiFetch(`/api/products/${editingProduct.id}/image`, {
+          method: 'DELETE'
+        });
+        finalImageUrl = null;
+      }
+
+      // 2. Update core product fields
       const res = await apiFetch(`/api/products/${editingProduct.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -674,6 +765,7 @@ export default function PriceListPage() {
           name: editName,
           urduName: editUrdu,
           emoji: editEmoji,
+          imageUrl: finalImageUrl,
           category: editCategory,
           defaultUnit: editUnit,
           availability: editAvailability,
@@ -1108,8 +1200,22 @@ export default function PriceListPage() {
                           return (
                             <tr key={idx} style={{ background: sellChanged ? '#FFFBE6' : undefined }}>
                               <td>
-                                <strong>{item.itemName}</strong>
-                                {item.product?.urduName && <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>({item.product.urduName})</span>}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <ProductVisual
+                                    name={item.itemName}
+                                    emoji={(item.product as any)?.emoji}
+                                    imageUrl={(item.product as any)?.imageUrl}
+                                    size={24}
+                                  />
+                                  <div>
+                                    <strong>{item.itemName}</strong>
+                                    {item.product?.urduName && (
+                                      <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>
+                                        ({item.product.urduName})
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </td>
                               <td style={{ color: 'var(--muted)' }}>{item.unit}</td>
                               <td style={{ textTransform: 'capitalize', fontSize: 12 }}>{item.product?.category}</td>
@@ -1499,13 +1605,62 @@ export default function PriceListPage() {
           <div className="va-panel">
             <div className="va-panel-head"><h3>➕ Add Master Product</h3></div>
             <form onSubmit={handleAddProduct}>
+              {/* Live Visual Preview Box for New Product */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 12px', background: 'var(--line-soft)',
+                borderRadius: 8, marginBottom: 12, border: '1px solid var(--line)'
+              }}>
+                <div style={{
+                  width: 50, height: 50, borderRadius: 8,
+                  background: '#FFFFFF', border: '1px solid var(--line)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  overflow: 'hidden', flexShrink: 0
+                }}>
+                  <ProductVisual name={newProdName} emoji={newProdEmoji} imageUrl={newProdImagePreview} size={38} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>
+                    Visual Icon / Image
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                    <label
+                      className="va-btn secondary small"
+                      style={{ cursor: 'pointer', padding: '2px 8px', fontSize: 11, margin: 0 }}
+                    >
+                      📁 {newProdImagePreview ? 'Replace' : 'Upload Image'}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        style={{ display: 'none' }}
+                        onChange={e => handleImageFileChange(e, true)}
+                      />
+                    </label>
+                    {newProdImagePreview && (
+                      <button
+                        type="button"
+                        className="va-btn secondary small"
+                        style={{ padding: '2px 8px', fontSize: 11, color: 'var(--danger)' }}
+                        onClick={() => handleRemoveImage(true)}
+                      >
+                        🗑️ Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="va-field" style={{ marginBottom: 12 }}>
                 <label>Product Name (English) *</label>
                 <input required value={newProdName} onChange={e => setNewProdName(e.target.value)} placeholder="e.g. Avocado" style={{ background: 'var(--paper)', color: 'var(--ink)' }} />
               </div>
               <div className="va-field" style={{ marginBottom: 12 }}>
                 <label>Urdu Name (Optional)</label>
-                <input value={newProdUrdu} onChange={e => setNewProdUrdu(e.target.value)} placeholder="e.g. ایوکاڈو" style={{ background: 'var(--paper)', color: 'var(--ink)' }} />
+                <input value={newProdUrdu} onChange={e => setNewProdUrdu(e.target.value)} placeholder="e.g. ایوکاڈو" style={{ background: 'var(--paper)', color: 'var(--ink)', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif' }} />
+              </div>
+              <div className="va-field" style={{ marginBottom: 12 }}>
+                <label>Product Emoji / Icon (Optional)</label>
+                <input value={newProdEmoji} onChange={e => setNewProdEmoji(e.target.value)} placeholder="e.g. 🥑" style={{ background: 'var(--paper)', color: 'var(--ink)' }} />
               </div>
               <div className="va-field" style={{ marginBottom: 12 }}>
                 <label>Category *</label>
@@ -1554,7 +1709,7 @@ export default function PriceListPage() {
                     {filteredCatalog.map(p => (
                       <tr key={p.id}>
                         <td style={{ textAlign: 'center' }}>
-                          <ProductVisual name={p.name} emoji={p.emoji} size={22} />
+                          <ProductVisual name={p.name} emoji={p.emoji} imageUrl={p.imageUrl} size={24} />
                         </td>
                         <td>
                           <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)' }}>{p.id}</span>
@@ -1619,7 +1774,7 @@ export default function PriceListPage() {
               {filteredCatalog.map(p => (
                 <div key={p.id} className="va-mobile-card">
                   <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <ProductVisual name={p.name} emoji={p.emoji} size={24} />
+                    <ProductVisual name={p.name} emoji={p.emoji} imageUrl={p.imageUrl} size={28} />
                     <div>
                       <span className="card-title" style={{ color: '#FFFFFF' }}>{p.name}</span>
                       {p.urduName && (
@@ -2229,6 +2384,54 @@ export default function PriceListPage() {
                 ⚠️ {editError}
               </div>
             )}
+
+            {/* Visual Icon & Image Management Box */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '12px 14px', background: 'var(--line-soft)',
+              borderRadius: 8, marginBottom: 16, border: '1px solid var(--line)'
+            }}>
+              <div style={{
+                width: 58, height: 58, borderRadius: 8,
+                background: '#FFFFFF', border: '1px solid var(--line)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden', flexShrink: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+              }}>
+                <ProductVisual name={editName} emoji={editEmoji} imageUrl={editImagePreview || editImageUrl} size={44} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
+                  Product Visual Asset
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                  Priority: Uploaded Image &gt; Emoji &gt; Default Icon
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                  <label
+                    className="va-btn secondary small"
+                    style={{ cursor: 'pointer', padding: '3px 8px', fontSize: 11, margin: 0 }}
+                  >
+                    📁 {editImagePreview || editImageUrl ? 'Replace Image' : 'Upload Image'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      style={{ display: 'none' }}
+                      onChange={e => handleImageFileChange(e, false)}
+                    />
+                  </label>
+                  {(editImagePreview || editImageUrl) && (
+                    <button
+                      type="button"
+                      className="va-btn secondary small"
+                      style={{ padding: '3px 8px', fontSize: 11, color: 'var(--danger)' }}
+                      onClick={() => handleRemoveImage(false)}
+                    >
+                      🗑️ Remove Image
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
 
             <form onSubmit={handleSaveEditProduct}>
               <div className="va-field" style={{ marginBottom: 12 }}>

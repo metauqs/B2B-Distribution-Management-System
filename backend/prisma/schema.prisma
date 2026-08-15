@@ -76,6 +76,7 @@ model Product {
   name           String              @unique
   urduName       String?
   emoji          String?
+  imageUrl       String?
   category       ProductCategory     @default(VEGETABLE)
   defaultUnit    Unit                @default(KG)
   minStock       Float               @default(0)

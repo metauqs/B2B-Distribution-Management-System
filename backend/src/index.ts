@@ -1,9 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
 
 // Load environment variables
 dotenv.config();
+
+// Ensure upload directories exist
+const uploadDir = path.join(__dirname, '../uploads/products');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // Import Routers
 import authRouter from './routes/auth';
@@ -42,9 +50,13 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(idempotencyMiddleware);
 app.use(requestLogger);
+
+// Static uploads serving (publicly accessible)
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Public routes
 app.use('/api/auth', authRouter);
