@@ -14,6 +14,7 @@ import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
 import dynamic from 'next/dynamic';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import { salesService } from '@/services/salesService';
 
 const WhatsAppShareModal = dynamic(() => import('@/components/modals/WhatsAppShareModal').then(m => m.WhatsAppShareModal), { ssr: false });
@@ -505,34 +506,47 @@ export default function SalesPage() {
     } else setCreditWarn(false);
   }, [balance, selClient]);
 
-  // ── Submit invoice ────────────────────────────────────────────────────────────
-  const handleSubmit = async () => {
-    if (!selClient)           return showToast('❌ Select a client first');
-    if (!selEmpId)            return showToast('❌ Please select a Delivery Staff member');
-    if (!items.some(i => i.itemName && i.qty > 0)) return showToast('❌ Add at least one item');
+  // ── Submit invoice with Idempotent Lock ───────────────────────────────────────
+  const { isSubmitting: isSubmittingInvoice, submit: executeSubmitInvoice } = useIdempotentSubmit({
+    onSubmit: async (_: any, idempotencyKey: string) => {
+      if (!selClient) {
+        showToast('❌ Select a client first');
+        return;
+      }
+      if (!selEmpId) {
+        showToast('❌ Please select a Delivery Staff member');
+        return;
+      }
+      if (!items.some(i => i.itemName && i.qty > 0)) {
+        showToast('❌ Add at least one item');
+        return;
+      }
 
-    // Validate inventory stock availability before checkout
-    for (const item of items.filter(i => i.itemName && i.qty > 0)) {
-      const pItem = priceItems.find(p => (item.productId && p.productId === item.productId) || p.itemName.toLowerCase() === item.itemName.toLowerCase());
-      if (pItem && pItem.availableStock !== undefined) {
-        if (item.qty > pItem.availableStock) {
-          return showToast(`❌ Insufficient inventory stock for ${item.itemName}. Available: ${pItem.availableStock} ${item.unit}, Requested: ${item.qty} ${item.unit}`);
+      // Validate inventory stock availability before checkout
+      for (const item of items.filter(i => i.itemName && i.qty > 0)) {
+        const pItem = priceItems.find(p => (item.productId && p.productId === item.productId) || p.itemName.toLowerCase() === item.itemName.toLowerCase());
+        if (pItem && pItem.availableStock !== undefined) {
+          if (item.qty > pItem.availableStock) {
+            showToast(`❌ Insufficient inventory stock for ${item.itemName}. Available: ${pItem.availableStock} ${item.unit}, Requested: ${item.qty} ${item.unit}`);
+            return;
+          }
         }
       }
-    }
 
-    const calcSubtotal = items.filter(i => i.itemName && i.qty > 0).reduce((s, i) => s + (Number(i.qty) * Number(i.rate)), 0);
-    const calcTotal = Math.max(0, calcSubtotal - Number(discount) + Number(deliveryFee));
-    if (paid > calcTotal) {
-      return showToast(`❌ Amount paid (Rs ${paid.toLocaleString()}) cannot exceed invoice total (Rs ${calcTotal.toLocaleString()})`);
-    }
+      const calcSubtotal = items.filter(i => i.itemName && i.qty > 0).reduce((s, i) => s + (Number(i.qty) * Number(i.rate)), 0);
+      const calcTotal = Math.max(0, calcSubtotal - Number(discount) + Number(deliveryFee));
+      if (paid > calcTotal) {
+        showToast(`❌ Amount paid (Rs ${paid.toLocaleString()}) cannot exceed invoice total (Rs ${calcTotal.toLocaleString()})`);
+        return;
+      }
 
-    setSaving(true);
-    try {
       if (editingSale) {
         const res = await apiFetch(`/api/sales/${editingSale.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': idempotencyKey,
+          },
           body: JSON.stringify({
             items: items.filter(i => i.itemName && i.qty > 0),
             discount,
@@ -555,11 +569,16 @@ export default function SalesPage() {
           setEditingSale(null);
           await loadSales(true);
           openDetail(data.data);
-        } else showToast('❌ ' + (data.error ?? 'Failed to edit invoice'));
+        } else {
+          showToast('❌ ' + (data.error ?? 'Failed to edit invoice'));
+        }
       } else {
         const res = await apiFetch('/api/sales', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': idempotencyKey,
+          },
           body: JSON.stringify({
             clientId: selClient.id,
             items: items.filter(i => i.itemName && i.qty > 0),
@@ -584,10 +603,17 @@ export default function SalesPage() {
           showToast(`✅ Invoice ${data.data.invoiceNo} created`);
           await loadSales(true);
           openDetail(data.data);
-        } else showToast('❌ ' + (data.error ?? 'Failed'));
+        } else {
+          showToast('❌ ' + (data.error ?? 'Failed'));
+        }
       }
-    } finally { setSaving(false); }
-  };
+    },
+    onError: (err: any) => {
+      showToast(`❌ ${err.message || 'Network error'}`);
+    },
+  });
+
+  const handleSubmit = () => executeSubmitInvoice();
 
   // ── Open detail ───────────────────────────────────────────────────────────────
   const openDetail = async (s: Sale) => {
@@ -1510,8 +1536,8 @@ export default function SalesPage() {
                   </div>
 
                   <button className="va-btn" style={{ width: '100%', marginTop: 14, fontSize: 15, padding: '12px', background: editingSale ? 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)' : undefined }}
-                    onClick={handleSubmit} disabled={saving}>
-                    {saving ? 'Saving…' : editingSale ? `✓ Save Changes to Invoice #${editingSale.invoiceNo}` : '✓ Generate Invoice'}
+                    onClick={handleSubmit} disabled={isSubmittingInvoice || saving} aria-busy={isSubmittingInvoice || saving}>
+                    {isSubmittingInvoice || saving ? 'Processing…' : editingSale ? `✓ Save Changes to Invoice #${editingSale.invoiceNo}` : '✓ Generate Invoice'}
                   </button>
                 </div>
               </div>

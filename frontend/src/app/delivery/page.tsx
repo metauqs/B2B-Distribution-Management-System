@@ -8,6 +8,7 @@ import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM }
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 
 interface DeliveryItem {
   id: string;
@@ -142,29 +143,32 @@ export default function DeliveryPage() {
     }
   };
 
-  const submitReturnDelivery = async () => {
-    if (!returnModalDelivery) return;
-    const deliveryId = returnModalDelivery.id;
-    const returnsPayload = Object.entries(returnInputs)
-      .filter(([_, val]) => val.returnedQty > 0)
-      .map(([itemId, val]) => ({
-        itemId,
-        returnedQty: val.returnedQty,
-        reason: val.reason || 'Customer Return',
-      }));
+  const { isSubmitting: isSubmittingReturn, submit: executeSubmitReturn } = useIdempotentSubmit({
+    onSubmit: async (_: any, idempotencyKey: string) => {
+      if (!returnModalDelivery) return;
+      const deliveryId = returnModalDelivery.id;
+      const returnsPayload = Object.entries(returnInputs)
+        .filter(([_, val]) => val.returnedQty > 0)
+        .map(([itemId, val]) => ({
+          itemId,
+          returnedQty: val.returnedQty,
+          reason: val.reason || 'Customer Return',
+        }));
 
-    if (returnsPayload.length === 0) {
-      showToast('⚠️ No returned quantities entered');
-      return;
-    }
+      if (returnsPayload.length === 0) {
+        showToast('⚠️ No returned quantities entered');
+        return;
+      }
 
-    setReturnModalDelivery(null);
-    showToast('⏳ Processing returned products...');
+      setReturnModalDelivery(null);
+      showToast('⏳ Processing returned products...');
 
-    try {
       const res = await apiFetch('/api/delivery/return', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify({ deliveryId, returns: returnsPayload }),
       });
       const data = await res.json();
@@ -176,10 +180,13 @@ export default function DeliveryPage() {
       } else {
         showToast(`❌ Error: ${data.error || 'Failed to process returns'}`);
       }
-    } catch {
+    },
+    onError: () => {
       showToast('❌ Network error processing returns');
-    }
-  };
+    },
+  });
+
+  const submitReturnDelivery = () => executeSubmitReturn();
 
   // Detect logged-in user role & auto-select delivery staff
   useEffect(() => {

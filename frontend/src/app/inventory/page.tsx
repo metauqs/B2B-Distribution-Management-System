@@ -9,6 +9,7 @@ import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { useAppSelector } from '@/store';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import Icon from '@mdi/react';
 import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline, mdiTagOutline } from '@mdi/js';
 
@@ -404,18 +405,29 @@ export default function InventoryPage() {
     return () => window.removeEventListener('app-revalidate', handleRevalidate);
   }, [load, view, loadMovements, loadPriceHistory, histProdId]);
 
-  // ── Wastage submit ──────────────────────────────────────────────────────────
-  const handleWastage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!wProdId) return showToast('❌ Select a product');
-    if (!wQty || wQty <= 0) return showToast('❌ Quantity must be > 0');
-    const inv = masterProductsList.find(i => i.productId === wProdId);
-    if (inv && wQty > inv.qty) return showToast(`❌ Qty (${wQty}) exceeds stock (${inv.qty.toFixed(2)})`);
-    setSaving(true);
-    try {
+  // ── Wastage submit with Idempotency Guard ──────────────────────────────────
+  const { isSubmitting: isSubmittingWastage, handleSubmit: executeWastage } = useIdempotentSubmit({
+    onSubmit: async (_: any, idempotencyKey: string) => {
+      if (!wProdId) {
+        showToast('❌ Select a product');
+        return;
+      }
+      if (!wQty || wQty <= 0) {
+        showToast('❌ Quantity must be > 0');
+        return;
+      }
+      const inv = masterProductsList.find(i => i.productId === wProdId);
+      if (inv && wQty > inv.qty) {
+        showToast(`❌ Qty (${wQty}) exceeds stock (${inv.qty.toFixed(2)})`);
+        return;
+      }
+
       const res = await apiFetch('/api/inventory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify({
           productId: wProdId,
           itemName: inv?.name ?? '',
@@ -435,9 +447,17 @@ export default function InventoryPage() {
         showToast(`✅ Wastage recorded — ${data.data?.refNo ?? ''}`);
         setWProdId(''); setWProdSearch(''); setWQty(0); setWRemarks(''); setWDate('');
         await load(true); setView('list');
-      } else showToast('❌ ' + (data.error ?? 'Failed'));
-    } finally { setSaving(false); }
-  };
+      } else {
+        showToast('❌ ' + (data.error ?? 'Failed'));
+      }
+    },
+    onError: (err: any) => {
+      showToast(`❌ ${err.message || 'Network error'}`);
+    },
+    getFingerprint: () => `${wProdId}-${wQty}-${wUnit}-${wReason}-${wDate}`,
+  });
+
+  const handleWastage = (e: React.FormEvent) => executeWastage(e);
 
   // ── Calculation helper for Adjust Form ──────────────────────────────────────
   const prevStock = aSysQty;
@@ -460,23 +480,37 @@ export default function InventoryPage() {
 
   const isStockInvalid = newExpectedStock < 0;
 
-  // ── Adjust submit ───────────────────────────────────────────────────────────
-  const handleAdjust = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aProdId) return showToast('❌ Select a product');
-    if (aQtyVal === '' || isNaN(Number(aQtyVal))) return showToast('❌ Enter a valid quantity');
-    if (Number(aQtyVal) < 0) return showToast('❌ Quantity cannot be negative');
-    if (isStockInvalid) return showToast('❌ Operation would result in negative stock!');
+  // ── Adjust submit with Idempotency Guard ────────────────────────────────────
+  const { isSubmitting: isSubmittingAdjust, handleSubmit: executeAdjust } = useIdempotentSubmit({
+    onSubmit: async (_: any, idempotencyKey: string) => {
+      if (!aProdId) {
+        showToast('❌ Select a product');
+        return;
+      }
+      if (aQtyVal === '' || isNaN(Number(aQtyVal))) {
+        showToast('❌ Enter a valid quantity');
+        return;
+      }
+      if (Number(aQtyVal) < 0) {
+        showToast('❌ Quantity cannot be negative');
+        return;
+      }
+      if (isStockInvalid) {
+        showToast('❌ Operation would result in negative stock!');
+        return;
+      }
 
-    if (['DECREASE', 'WASTAGE', 'DAMAGE', 'SUPPLIER_RETURN'].includes(aType) && numQtyVal > prevStock) {
-      return showToast(`❌ Cannot deduct ${numQtyVal} from current stock (${prevStock.toFixed(2)})`);
-    }
+      if (['DECREASE', 'WASTAGE', 'DAMAGE', 'SUPPLIER_RETURN'].includes(aType) && numQtyVal > prevStock) {
+        showToast(`❌ Cannot deduct ${numQtyVal} from current stock (${prevStock.toFixed(2)})`);
+        return;
+      }
 
-    setSaving(true);
-    try {
       const res = await apiFetch('/api/inventory/adjust', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify({
           productId: aProdId,
           adjustedQty: Number(aQtyVal),
@@ -495,9 +529,17 @@ export default function InventoryPage() {
         showToast(`✅ Stock updated — ${refNo} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)} → New Stock: ${newQty.toFixed(2)})`);
         setAProdId(''); setAProdSearch(''); setAQtyVal(''); setARemarks(''); setASysQty(0);
         await load(true); setView('list');
-      } else showToast('❌ ' + (data.error ?? 'Failed'));
-    } finally { setSaving(false); }
-  };
+      } else {
+        showToast('❌ ' + (data.error ?? 'Failed'));
+      }
+    },
+    onError: (err: any) => {
+      showToast(`❌ ${err.message || 'Network error'}`);
+    },
+    getFingerprint: () => `${aProdId}-${aQtyVal}-${aType}-${aReason}`,
+  });
+
+  const handleAdjust = (e: React.FormEvent) => executeAdjust(e);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const filtered = inventory.filter(i =>

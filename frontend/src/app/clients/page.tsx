@@ -10,6 +10,7 @@ import { loadBrandConfig, loadBrandConfigWithLogo, generateStatementHTML, openPr
 import { DueStatementModal } from '@/components/modals/DueStatementModal';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import Icon from '@mdi/react';
 import {
   mdiAccountMultiple,
@@ -374,17 +375,25 @@ export default function ClientsPage() {
     setView('edit');
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name.trim()) return showToast('Business name is required');
-    if (form.openingBalance < 0) return showToast('Opening balance cannot be negative');
-    setSaving(true);
-    try {
+  const { isSubmitting: isSubmittingClient, handleSubmit: executeSaveClient } = useIdempotentSubmit({
+    onSubmit: async (_: any, idempotencyKey: string) => {
+      if (!form.name.trim()) {
+        showToast('Business name is required');
+        return;
+      }
+      if (form.openingBalance < 0) {
+        showToast('Opening balance cannot be negative');
+        return;
+      }
       const isEdit = view === 'edit' && editId;
       const url    = isEdit ? `/api/clients/${editId}` : '/api/clients';
-      const method = isEdit ? 'PATCH' : 'POST';
+      const method = isEdit ? 'PUT' : 'POST';
       const res    = await apiFetch(url, {
-        method, headers: { 'Content-Type': 'application/json' },
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify(form),
       });
       const data = await res.json();
@@ -398,8 +407,14 @@ export default function ClientsPage() {
       } else {
         showToast('❌ ' + (data.error ?? 'Save failed'));
       }
-    } finally { setSaving(false); }
-  };
+    },
+    onError: () => {
+      showToast('❌ Network error saving client');
+    },
+    getFingerprint: () => `${view}-${editId}-${form.name}-${form.phone}-${form.openingBalance}`,
+  });
+
+  const handleSave = (e: React.FormEvent) => executeSaveClient(e);
 
   const updateRating = async (clientId: string, rating: string) => {
     await apiFetch(`/api/clients/${clientId}`, {

@@ -7,6 +7,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
+import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import Icon from '@mdi/react';
 import {
   mdiCashMinus,
@@ -318,27 +319,36 @@ export default function ExpensesPage() {
     setView('edit');
   };
 
-  // Submit Save or Update
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (form.amount <= 0) return showToast('❌ Amount must be greater than zero');
-    if (!form.date) return showToast('❌ Date is required');
+  // Submit Save or Update with Idempotent Lock
+  const { isSubmitting: isSubmittingExpense, handleSubmit: executeSaveExpense } = useIdempotentSubmit({
+    onSubmit: async (_: any, idempotencyKey: string) => {
+      if (form.amount <= 0) {
+        showToast('❌ Amount must be greater than zero');
+        return;
+      }
+      if (!form.date) {
+        showToast('❌ Date is required');
+        return;
+      }
 
-    if (form.paidBy === 'CASH' && !form.cashAccountId) {
-      return showToast('❌ Please select a Cash Account');
-    }
-    if ((form.paidBy === 'BANK' || form.paidBy === 'ONLINE') && !form.bankAccountId) {
-      return showToast('❌ Please select a Bank Account');
-    }
+      if (form.paidBy === 'CASH' && !form.cashAccountId) {
+        showToast('❌ Please select a Cash Account');
+        return;
+      }
+      if ((form.paidBy === 'BANK' || form.paidBy === 'ONLINE') && !form.bankAccountId) {
+        showToast('❌ Please select a Bank Account');
+        return;
+      }
 
-    setSaving(true);
-    try {
       const url = view === 'edit' ? `/api/expenses/${form.id}` : '/api/expenses';
       const method = view === 'edit' ? 'PUT' : 'POST';
 
       const res = await apiFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify(form),
       });
 
@@ -352,12 +362,14 @@ export default function ExpensesPage() {
       } else {
         showToast('❌ ' + (data.error ?? 'Save failed'));
       }
-    } catch {
+    },
+    onError: () => {
       showToast('❌ Network error saving expense');
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    getFingerprint: () => `${view}-${form.id}-${form.category}-${form.amount}-${form.date}-${form.paidBy}-${form.cashAccountId}-${form.bankAccountId}`,
+  });
+
+  const handleSave = (e: React.FormEvent) => executeSaveExpense(e);
 
   // Confirm Delete
   const handleDeleteConfirm = async () => {

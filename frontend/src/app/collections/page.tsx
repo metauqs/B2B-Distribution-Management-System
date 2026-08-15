@@ -11,6 +11,7 @@ import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiCashRegister } from '@mdi/js';
+import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 
 import { loadBrandConfigWithLogo, generateDailyPaymentHistoryHTML, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 
@@ -69,7 +70,6 @@ export default function CollectionsPage() {
   const [loading,     setLoading]     = useState(() => {
     return !getCachedData<Collection[]>('/api/collections');
   });
-  const [saving,      setSaving]      = useState(false);
   const [toast,       setToast]       = useState('');
   const [view,        setView]        = useState<'list' | 'add'>('list');
   const [form,        setForm]        = useState({ ...BLANK_FORM });
@@ -203,18 +203,28 @@ export default function CollectionsPage() {
     return () => window.removeEventListener('app-revalidate', handleRevalidate);
   }, [load, activeTab, loadDailyHistory]);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.clientId) return showToast('❌ Select a client');
-    if (form.amount <= 0 || isNaN(form.amount)) return showToast('❌ Amount must be > 0');
-    if (!form.date) return showToast('❌ Date is required');
+  const { isSubmitting: saving, handleSubmit: onSubmitPayment } = useIdempotentSubmit({
+    onSubmit: async (formData: typeof form, idempotencyKey: string) => {
+      if (!formData.clientId) {
+        showToast('❌ Select a client');
+        return;
+      }
+      if (formData.amount <= 0 || isNaN(formData.amount)) {
+        showToast('❌ Amount must be > 0');
+        return;
+      }
+      if (!formData.date) {
+        showToast('❌ Date is required');
+        return;
+      }
 
-    setSaving(true);
-    try {
       const res = await apiFetch('/api/collections', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify(formData),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -225,7 +235,7 @@ export default function CollectionsPage() {
         window.dispatchEvent(new Event('app-revalidate'));
         showToast('✅ Payment recorded successfully');
 
-        const clientObj = clients.find(c => c.id === form.clientId);
+        const clientObj = clients.find(c => c.id === formData.clientId);
         setReceiptModal({
           receiptNo: data.data.reference || `PAY-${(data.data.id || '').slice(-6).toUpperCase()}`,
           date: fmtDateTime(data.data.date),
@@ -233,13 +243,13 @@ export default function CollectionsPage() {
           clientId: clientObj?.clientId || undefined,
           phone: (clientObj as any)?.phone || (clientObj as any)?.whatsapp || undefined,
           whatsapp: (clientObj as any)?.whatsapp || (clientObj as any)?.phone || undefined,
-          paymentMethod: form.method,
-          reference: form.reference || undefined,
+          paymentMethod: formData.method,
+          reference: formData.reference || undefined,
           receivedBy: data.data.receivedByUser?.name || undefined,
           previousBalance: data.data.summary?.previousBalance ?? 0,
           currentBillAmount: data.data.summary?.currentBillAmount ?? 0,
           totalPayable: data.data.summary?.totalPayable ?? 0,
-          amountReceived: data.data.summary?.amountReceived ?? form.amount,
+          amountReceived: data.data.summary?.amountReceived ?? formData.amount,
           remainingBalance: data.data.summary?.remainingBalance ?? 0,
           excessPayment: data.data.summary?.excessPayment ?? 0,
           allocations: (data.data.allocations || []).map((a: any) => ({
@@ -247,7 +257,7 @@ export default function CollectionsPage() {
             allocatedAmount: a.allocatedAmount,
             remainingBalance: a.remainingBalance,
           })),
-          notes: form.notes || undefined,
+          notes: formData.notes || undefined,
         });
 
         setForm({ ...BLANK_FORM });
@@ -257,10 +267,14 @@ export default function CollectionsPage() {
       } else {
         showToast(`❌ ${data.error || 'Failed to record payment'}`);
       }
-    } catch (err: any) {
+    },
+    onError: (err: any) => {
       showToast(`❌ ${err.message || 'Network error'}`);
-    } finally { setSaving(false); }
-  };
+    },
+    getFingerprint: (d) => `${d.clientId}-${d.amount}-${d.date}-${d.method}-${d.reference}`,
+  });
+
+  const handleSave = (e: React.FormEvent) => onSubmitPayment(e, form);
 
   const clientInvoices = sales.filter(s => s.clientId === form.clientId && s.balance > 0 && s.status !== 'CANCELLED');
 

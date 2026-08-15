@@ -10,6 +10,7 @@ import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 
 interface PurchaseItem { id?: string; itemName: string; qty: number; unit: string; rate: number; amount: number; productId?: string; }
 interface Purchase {
@@ -363,15 +364,18 @@ export default function PurchasesPage() {
 
 
 
-  const savePurchaseToDb = async (itemsToSave: PurchaseItem[]) => {
-    const finalSupplierId = source === 'MANDI' ? 'mandi' : supplierId;
-    setSaving(true);
-    try {
+  const { isSubmitting: isSubmittingPurchase, submit: executeSavePurchase } = useIdempotentSubmit({
+    onSubmit: async (itemsToSave: PurchaseItem[], idempotencyKey: string) => {
+      const finalSupplierId = source === 'MANDI' ? 'mandi' : supplierId;
       const url = purchaseId ? `/api/purchases/${purchaseId}` : '/api/purchases';
-      const method = purchaseId ? 'PATCH' : 'POST';
+      const method = purchaseId ? 'PUT' : 'POST';
 
-      const res  = await apiFetch(url, {
-        method, headers: { 'Content-Type': 'application/json' },
+      const res = await apiFetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify({ supplierId: finalSupplierId, items: itemsToSave, paid, transportCost, notes, date }),
       });
       const data = await res.json();
@@ -380,18 +384,21 @@ export default function PurchasesPage() {
         invalidateCache('/api/inventory');
         invalidateCache('/api/pricelist');
         invalidateCache('/api/reports');
-        // Notify all open pages (Inventory, Price List, Dashboard) to refresh immediately
         window.dispatchEvent(new Event('app-revalidate'));
         showToast(purchaseId ? '✅ Purchase updated successfully' : '✅ Purchase saved — stock updated');
         handleCancelForm();
         await load(true);
-      } else showToast('❌ ' + (data.error ?? 'Failed'));
-    } catch {
+      } else {
+        showToast('❌ ' + (data.error ?? 'Failed'));
+      }
+    },
+    onError: () => {
       showToast('❌ Network error saving purchase');
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    getFingerprint: (items) => `${purchaseId}-${source}-${supplierId}-${paid}-${transportCost}-${date}-${(items || []).map(i => `${i.itemName}:${i.qty}:${i.rate}`).join(',')}`,
+  });
+
+  const savePurchaseToDb = (itemsToSave: PurchaseItem[]) => executeSavePurchase(itemsToSave);
 
   const checkAndSave = (currentItems: PurchaseItem[], bypassConflictCheck = false) => {
     // 1. Check for duplicate items within the current form

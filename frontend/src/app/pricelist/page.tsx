@@ -11,6 +11,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonTable } from '@/components/ui/Skeleton';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import Icon from '@mdi/react';
 import { mdiFormatListNumbered } from '@mdi/js';
 import { ProductVisual } from '@/components/ui/ProductVisual';
@@ -740,12 +741,17 @@ export default function PriceListPage() {
       showToast('❌ Editing past prices is not allowed.');
       return;
     }
-    setSaving(true);
-    try {
-      // Always store daily snapshot
+    await executeSavePriceList();
+  };
+
+  const { isSubmitting: isSubmittingPriceList, submit: executeSavePriceList } = useIdempotentSubmit({
+    onSubmit: async (_: any, idempotencyKey: string) => {
       const res = await apiFetch('/api/pricelist', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify({
           date: targetDate,
           notes: listNotes,
@@ -767,11 +773,13 @@ export default function PriceListPage() {
         await loadDateList(targetDate, true);
         await loadLists();
       } else {
-        // If conflict (exists), allow PATCH updates
         if (res.status === 409 && currentList?.id) {
           const updateRes = await apiFetch(`/api/pricelist/${currentList.id}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': idempotencyKey,
+            },
             body: JSON.stringify({
               notes: listNotes,
               items: editItems
@@ -791,10 +799,12 @@ export default function PriceListPage() {
           showToast('❌ ' + (data.error ?? 'Save failed'));
         }
       }
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    onError: () => {
+      showToast('❌ Network error saving price list');
+    },
+    getFingerprint: () => `${targetDate}-${listNotes}-${(editItems || []).map(i => `${i.productId}:${i.buyRate}:${i.sellRate}`).join(',')}`,
+  });
 
   const duplicateYesterday = async () => {
     const todayStr = todayInputDate();

@@ -8,6 +8,7 @@ import { fetchWithCache, getCachedData, invalidateCache, TTL_LONG, TTL_MEDIUM } 
 import { SkeletonKPI, SkeletonTable, SkeletonProfile } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import Icon from '@mdi/react';
 import { mdiBriefcase, mdiAccountBadge, mdiTrashCanOutline, mdiAlertCircleOutline } from '@mdi/js';
 import { useAppSelector } from '@/store';
@@ -172,29 +173,35 @@ export default function EmployeesPage() {
     }
   };
 
-  // Create or Update employee
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name.trim()) return showToast('❌ Name is required');
-    if (view === 'add' && (!form.password || !form.password.trim())) {
-      return showToast('❌ Password is required');
-    }
+  // Create or Update employee with Idempotent Lock
+  const { isSubmitting: isSubmittingEmployee, handleSubmit: executeSaveEmployee } = useIdempotentSubmit({
+    onSubmit: async (_: any, idempotencyKey: string) => {
+      if (!form.name.trim()) {
+        showToast('❌ Name is required');
+        return;
+      }
+      if (view === 'add' && (!form.password || !form.password.trim())) {
+        showToast('❌ Password is required');
+        return;
+      }
 
-    const isEdit = view === 'edit';
-    const targetId = activeEmp?.id || form.employeeId;
+      const isEdit = view === 'edit';
+      const targetId = activeEmp?.id || form.employeeId;
 
-    if (isEdit && !targetId) {
-      return showToast('❌ Employee record ID not found');
-    }
+      if (isEdit && !targetId) {
+        showToast('❌ Employee record ID not found');
+        return;
+      }
 
-    setSaving(true);
-    try {
       const url = isEdit ? `/api/employees/${targetId}` : '/api/employees';
       const method = isEdit ? 'PUT' : 'POST';
 
       const res = await apiFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify(form),
       });
 
@@ -213,12 +220,14 @@ export default function EmployeesPage() {
       } else {
         showToast('❌ ' + (data.error ?? 'Save failed'));
       }
-    } catch {
+    },
+    onError: () => {
       showToast('❌ Network error saving employee');
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    getFingerprint: () => `${view}-${form.employeeId}-${form.name}-${form.phone}-${form.salary}`,
+  });
+
+  const handleSubmit = (e: React.FormEvent) => executeSaveEmployee(e);
 
   // Toggle active status
   const toggleActiveStatus = async (emp: Employee) => {
