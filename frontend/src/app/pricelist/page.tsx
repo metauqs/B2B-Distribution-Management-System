@@ -454,13 +454,19 @@ export default function PriceListPage() {
       const html = generatePriceListHTML(
         {
           dateStr,
-          items: items.map(it => ({
-            itemName: it.itemName,
-            unit:     it.unit,
-            sellRate: it.sellRate,
-            urduName: it.product?.urduName || (it as any).urduName || '',
-            category: it.product?.category,
-          })),
+          items: items.map(it => {
+            const master = products.find(p => p.id === it.productId || p.name.toLowerCase() === it.itemName.toLowerCase());
+            return {
+              itemName: it.itemName,
+              unit:     it.unit,
+              sellRate: it.sellRate,
+              urduName: it.product?.urduName || master?.urduName || (it as any).urduName || '',
+              category: it.product?.category || master?.category,
+              imageUrl: it.product?.imageUrl || master?.imageUrl || (it as any).imageUrl || null,
+              emoji:    it.product?.emoji || master?.emoji || (it as any).emoji || null,
+              productId: it.productId || master?.id || null,
+            };
+          }),
           notes: listNotes || undefined,
         },
         brand,
@@ -987,13 +993,19 @@ export default function PriceListPage() {
     const html = generatePriceListHTML(
       {
         dateStr,
-        items: items.map(it => ({
-          itemName: it.itemName,
-          unit:     it.unit,
-          sellRate: it.sellRate,
-          urduName: it.product?.urduName || (it as any).urduName || '',
-          category: it.product?.category,
-        })),
+        items: items.map(it => {
+          const master = products.find(p => p.id === it.productId || p.name.toLowerCase() === it.itemName.toLowerCase());
+          return {
+            itemName: it.itemName,
+            unit:     it.unit,
+            sellRate: it.sellRate,
+            urduName: it.product?.urduName || master?.urduName || (it as any).urduName || '',
+            category: it.product?.category || master?.category,
+            imageUrl: it.product?.imageUrl || master?.imageUrl || (it as any).imageUrl || null,
+            emoji:    it.product?.emoji || master?.emoji || (it as any).emoji || null,
+            productId: it.productId || master?.id || null,
+          };
+        }),
         notes: listNotes || undefined,
       },
       brand,
@@ -1013,13 +1025,19 @@ export default function PriceListPage() {
     const html = generatePriceListHTML(
       {
         dateStr,
-        items: items.map(it => ({
-          itemName: it.itemName,
-          unit:     it.unit,
-          sellRate: it.sellRate,
-          urduName: it.product?.urduName || (it as any).urduName || '',
-          category: it.product?.category,
-        })),
+        items: items.map(it => {
+          const master = products.find(p => p.id === it.productId || p.name.toLowerCase() === it.itemName.toLowerCase());
+          return {
+            itemName: it.itemName,
+            unit:     it.unit,
+            sellRate: it.sellRate,
+            urduName: it.product?.urduName || master?.urduName || (it as any).urduName || '',
+            category: it.product?.category || master?.category,
+            imageUrl: it.product?.imageUrl || master?.imageUrl || (it as any).imageUrl || null,
+            emoji:    it.product?.emoji || master?.emoji || (it as any).emoji || null,
+            productId: it.productId || master?.id || null,
+          };
+        }),
         notes: listNotes || undefined,
       },
       brand,

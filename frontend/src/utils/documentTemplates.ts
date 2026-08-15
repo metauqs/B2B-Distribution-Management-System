@@ -1037,6 +1037,9 @@ export interface PriceListItem {
   sellRate: number;
   urduName?: string | null;
   category?: string;
+  imageUrl?: string | null;
+  emoji?: string | null;
+  productId?: string | null;
 }
 
 export interface PriceListData {
@@ -1047,89 +1050,102 @@ export interface PriceListData {
 
 // ─── Price List HTML Generator ────────────────────────────────────────────────
 
-// ─── Price List HTML Generator ────────────────────────────────────────────────
-
 export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, origin = ''): string {
   // Split items into two halves for 2-column layout
   const half = Math.ceil(data.items.length / 2);
   const col1 = data.items.slice(0, half);
   const col2 = data.items.slice(half);
 
-  const getProductHtmlVisual = (name: string): string => {
+  const getProductHtmlVisual = (name: string, emoji?: string | null, imageUrl?: string | null): string => {
+    // 1. Highest Priority: Uploaded Image from Product Master (imageUrl)
+    if (imageUrl && imageUrl.trim()) {
+      let finalUrl = imageUrl.trim();
+      // Normalize relative paths to include origin
+      if (!finalUrl.startsWith('data:') && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+        finalUrl = `${origin}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
+      }
+      return `<img src="${finalUrl}" alt="${name}" style="width:22px;height:22px;object-fit:cover;vertical-align:middle;border-radius:4px;margin-left:6px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:20px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji || '🥬'}</span>`;
+    }
+
+    // 2. Second Priority: Explicit Product Master Emoji
+    if (emoji && emoji.trim()) {
+      return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji.trim()}</span>`;
+    }
+
     const n = (name || '').toLowerCase().trim();
 
-    // 1. Image Mappings
+    // 3. Pre-mapped static image assets
     if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') {
-      return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫛</span>`;
+      return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫛</span>`;
     }
     if (n.includes('guava') || n.includes('amrood')) {
-      return `<img src="${origin}/guava.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍏</span>`;
+      return `<img src="${origin}/guava.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍏</span>`;
     }
     if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) {
-      return `<img src="${origin}/papaya.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍈</span>`;
+      return `<img src="${origin}/papaya.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍈</span>`;
     }
     if (n.includes('pomegranate') || n.includes('anar')) {
-      return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍎</span>`;
+      return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍎</span>`;
     }
     if (n.includes('turnip') || n.includes('shalgam')) {
-      return `<img src="${origin}/turnip.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
+      return `<img src="${origin}/turnip.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
     }
     if (n.includes('radish') || n.includes('mooli')) {
-      return `<img src="${origin}/radish.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
+      return `<img src="${origin}/radish.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
     }
     if (n.includes('beetroot') || n.includes('chukandar')) {
-      return `<img src="${origin}/beetroot.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
+      return `<img src="${origin}/beetroot.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
     }
     if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) {
-      return `<img src="${origin}/plum.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; this.nextSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍑</span>`;
+      return `<img src="${origin}/plum.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍑</span>`;
     }
 
-    // 2. Standardized Emojis
-    let emoji = '🥬';
-    if (n.includes('beans') || n.includes('phali')) emoji = '🫘';
-    else if (n.includes('bitter') || n.includes('karela')) emoji = '🥒';
-    else if (n.includes('bottle') || n.includes('lauki') || n.includes('ghia') || n.includes('gourd')) emoji = '🥒';
-    else if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) emoji = '🍆';
-    else if (n.includes('broccoli')) emoji = '🥦';
-    else if (n.includes('cabbage') || n.includes('gobhi') || n.includes('gobi')) emoji = '🥬';
-    else if (n.includes('capsicum') || n.includes('shimla')) emoji = '🫑';
-    else if (n.includes('carrot') || n.includes('gajar')) emoji = '🥕';
-    else if (n.includes('cauliflower')) emoji = '🥦';
-    else if (n.includes('coriander') || n.includes('dhaniya')) emoji = '🌿';
-    else if (n.includes('corn') || n.includes('makai') || n.includes('bhutta')) emoji = '🌽';
-    else if (n.includes('cucumber') || n.includes('kheera')) emoji = '🥒';
-    else if (n.includes('garlic') || n.includes('lehsun')) emoji = '🧄';
-    else if (n.includes('ginger') || n.includes('adrak')) emoji = '𫚚';
-    else if (n.includes('green chilli') || n.includes('green chili') || n.includes('hari mirch')) emoji = '🌶️';
-    else if (n.includes('chilli') || n.includes('chili') || n.includes('mirch')) emoji = '🌶️';
-    else if (n.includes('iceberg')) emoji = '🥬';
-    else if (n.includes('lemon') || n.includes('limo') || n.includes('nimbu')) emoji = '🍋';
-    else if (n.includes('lettuce')) emoji = '🥬';
-    else if (n.includes('mint') || n.includes('pudina')) emoji = '🌿';
-    else if (n.includes('mushroom')) emoji = '🍄';
-    else if (n.includes('onion') || n.includes('piaz') || n.includes('pyaz')) emoji = '🧅';
-    else if (n.includes('peas') || n.includes('matar')) emoji = '🫛';
-    else if (n.includes('potato') || n.includes('aloo')) emoji = '🥔';
-    else if (n.includes('pumpkin') || n.includes('kaddu')) emoji = '🎃';
-    else if (n.includes('spinach') || n.includes('palak')) emoji = '🥬';
-    else if (n.includes('sweet potato') || n.includes('shakarkandi')) emoji = '🍠';
-    else if (n.includes('tomato') || n.includes('tamatar')) emoji = '🍅';
-    else if (n.includes('apple') || n.includes('seeb')) emoji = '🍎';
-    else if (n.includes('banana') || n.includes('kela')) emoji = '🍌';
-    else if (n.includes('grapes') || n.includes('angoor')) emoji = '🍇';
-    else if (n.includes('mango') || n.includes('aam')) emoji = '🥭';
-    else if (n.includes('melon') || n.includes('kharbooza')) emoji = '🍈';
-    else if (n.includes('orange') || n.includes('malta') || n.includes('kinnow')) emoji = '🍊';
-    else if (n.includes('peach') || n.includes('aaroo')) emoji = '🍑';
-    else if (n.includes('pear') || n.includes('nashpati')) emoji = '🍐';
-    else if (n.includes('watermelon') || n.includes('tarbooz')) emoji = '🍉';
+    // 4. Standardized Fallback Emojis
+    let fallbackEmoji = '🥬';
+    if (n.includes('beans') || n.includes('phali')) fallbackEmoji = '🫘';
+    else if (n.includes('bitter') || n.includes('karela')) fallbackEmoji = '🥒';
+    else if (n.includes('bottle') || n.includes('lauki') || n.includes('ghia') || n.includes('gourd')) fallbackEmoji = '🥒';
+    else if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) fallbackEmoji = '🍆';
+    else if (n.includes('broccoli')) fallbackEmoji = '🥦';
+    else if (n.includes('cabbage') || n.includes('gobhi') || n.includes('gobi')) fallbackEmoji = '🥬';
+    else if (n.includes('capsicum') || n.includes('shimla')) fallbackEmoji = '🫑';
+    else if (n.includes('carrot') || n.includes('gajar')) fallbackEmoji = '🥕';
+    else if (n.includes('cauliflower')) fallbackEmoji = '🥦';
+    else if (n.includes('coriander') || n.includes('dhaniya')) fallbackEmoji = '🌿';
+    else if (n.includes('corn') || n.includes('makai') || n.includes('bhutta')) fallbackEmoji = '🌽';
+    else if (n.includes('cucumber') || n.includes('kheera')) fallbackEmoji = '🥒';
+    else if (n.includes('garlic') || n.includes('lehsun')) fallbackEmoji = '🧄';
+    else if (n.includes('ginger') || n.includes('adrak')) fallbackEmoji = '𫚚';
+    else if (n.includes('green chilli') || n.includes('green chili') || n.includes('hari mirch')) fallbackEmoji = '🌶️';
+    else if (n.includes('chilli') || n.includes('chili') || n.includes('mirch')) fallbackEmoji = '🌶️';
+    else if (n.includes('iceberg')) fallbackEmoji = '🥬';
+    else if (n.includes('lemon') || n.includes('limo') || n.includes('nimbu')) fallbackEmoji = '🍋';
+    else if (n.includes('lettuce')) fallbackEmoji = '🥬';
+    else if (n.includes('mint') || n.includes('pudina')) fallbackEmoji = '🌿';
+    else if (n.includes('mushroom')) fallbackEmoji = '🍄';
+    else if (n.includes('onion') || n.includes('piaz') || n.includes('pyaz')) fallbackEmoji = '🧅';
+    else if (n.includes('peas') || n.includes('matar')) fallbackEmoji = '🫛';
+    else if (n.includes('potato') || n.includes('aloo')) fallbackEmoji = '🥔';
+    else if (n.includes('pumpkin') || n.includes('kaddu')) fallbackEmoji = '🎃';
+    else if (n.includes('spinach') || n.includes('palak')) fallbackEmoji = '🥬';
+    else if (n.includes('sweet potato') || n.includes('shakarkandi')) fallbackEmoji = '🍠';
+    else if (n.includes('tomato') || n.includes('tamatar')) fallbackEmoji = '🍅';
+    else if (n.includes('apple') || n.includes('seeb')) fallbackEmoji = '🍎';
+    else if (n.includes('banana') || n.includes('kela')) fallbackEmoji = '🍌';
+    else if (n.includes('grapes') || n.includes('angoor')) fallbackEmoji = '🍇';
+    else if (n.includes('mango') || n.includes('aam')) fallbackEmoji = '🥭';
+    else if (n.includes('melon') || n.includes('kharbooza')) fallbackEmoji = '🍈';
+    else if (n.includes('orange') || n.includes('malta') || n.includes('kinnow')) fallbackEmoji = '🍊';
+    else if (n.includes('peach') || n.includes('aaroo')) fallbackEmoji = '🍑';
+    else if (n.includes('pear') || n.includes('nashpati')) fallbackEmoji = '🍐';
+    else if (n.includes('watermelon') || n.includes('tarbooz')) fallbackEmoji = '🍉';
 
-    return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;">${emoji}</span>`;
+    return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;">${fallbackEmoji}</span>`;
   };
 
   const buildPriceRows = (items: typeof data.items, startIdx: number) =>
     items.map((item, i) => {
-      const htmlVisual = getProductHtmlVisual(item.itemName);
+      const htmlVisual = getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl);
       const bg = i % 2 === 0 ? '#072E1D' : '#0A3723';
       return `
         <tr style="background:${bg};border-bottom:1px solid #14492E;">
