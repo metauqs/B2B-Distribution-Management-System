@@ -768,8 +768,13 @@ router.patch('/:id', async (req: Request, res: Response) => {
       });
       if (!sale) throw new Error('Invoice not found');
 
-      if (amt > sale.balance) {
-        throw new Error(`Payment (Rs ${amt.toLocaleString()}) cannot exceed remaining balance (Rs ${sale.balance.toLocaleString()})`);
+      if (amt > sale.balance + 0.001) {
+        const err: any = new Error(`Payment (Rs ${amt.toLocaleString()}) cannot exceed remaining balance (Rs ${sale.balance.toLocaleString()})`);
+        err.statusCode = 422;
+        err.code = 'PAYMENT_EXCEEDS_OUTSTANDING';
+        err.outstanding = sale.balance;
+        err.attempted = amt;
+        throw err;
       }
 
       const newPaid = sale.paid + amt;
@@ -864,7 +869,14 @@ router.patch('/:id', async (req: Request, res: Response) => {
     return res.json({ success: true, data: result });
   } catch (err: any) {
     console.error('[PATCH /api/sales/:id]', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to update invoice payment' });
+    const status = err.statusCode || (err.code === 'PAYMENT_EXCEEDS_OUTSTANDING' ? 422 : 500);
+    return res.status(status).json({
+      success: false,
+      code: err.code || 'UPDATE_PAYMENT_ERROR',
+      error: err.message ?? 'Failed to update invoice payment',
+      outstanding: err.outstanding,
+      attempted: err.attempted,
+    });
   }
 });
 

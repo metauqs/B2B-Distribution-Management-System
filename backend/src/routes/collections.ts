@@ -384,22 +384,53 @@ router.post('/', async (req: Request, res: Response) => {
 
   try {
     const result = await prisma.$transaction(async tx => {
-      const currentClient = await tx.client.findUnique({
-        where: { id: clientId },
-        select: { id: true, name: true, currentBalance: true }
-      });
+      // 1. Authoritative Outstanding Check: Recompute current live balance under transaction lock
+      const authoritativeOutstanding = await getAuthoritativeClientOutstanding(clientId, tx);
+      const roundedOutstanding = Math.max(0, Math.round((authoritativeOutstanding + Number.EPSILON) * 100) / 100);
+
+      // Financial Overpayment Check: Client has no outstanding dues
+      if (roundedOutstanding <= 0.001) {
+        const err: any = new Error(`Client has no outstanding balance (Current Due: Rs 0). Payment cannot be recorded.`);
+        err.statusCode = 422;
+        err.code = 'PAYMENT_EXCEEDS_OUTSTANDING';
+        err.outstanding = 0;
+        err.attempted = numAmount;
+        throw err;
+      }
+
+      // Financial Overpayment Check: Payment exceeds authoritative current outstanding
+      if (numAmount > roundedOutstanding + 0.001) {
+        const err: any = new Error(
+          `Payment amount (Rs ${numAmount.toLocaleString()}) cannot exceed the current outstanding balance of Rs ${roundedOutstanding.toLocaleString()}.`
+        );
+        err.statusCode = 422;
+        err.code = 'PAYMENT_EXCEEDS_OUTSTANDING';
+        err.outstanding = roundedOutstanding;
+        err.attempted = numAmount;
+        throw err;
+      }
 
       let targetSale = null;
       if (saleId && String(saleId).trim()) {
         targetSale = await tx.sale.findUnique({ where: { id: String(saleId) } });
+        if (targetSale && numAmount > targetSale.balance + 0.001) {
+          const err: any = new Error(
+            `Payment amount (Rs ${numAmount.toLocaleString()}) cannot exceed invoice remaining balance of Rs ${targetSale.balance.toLocaleString()}.`
+          );
+          err.statusCode = 422;
+          err.code = 'PAYMENT_EXCEEDS_OUTSTANDING';
+          err.outstanding = targetSale.balance;
+          err.attempted = numAmount;
+          throw err;
+        }
       }
 
-      const previousBalance = currentClient?.currentBalance ?? 0;
+      const previousBalance = roundedOutstanding;
       const currentBillAmount = targetSale ? targetSale.balance : 0;
-      const totalPayable = Math.max(0, previousBalance);
+      const totalPayable = roundedOutstanding;
       const amountReceived = numAmount;
       const remainingBalance = Math.max(0, totalPayable - amountReceived);
-      const excessPayment = Math.max(0, amountReceived - totalPayable);
+      const excessPayment = 0;
 
       // Determine receivedByUserId strictly from authenticated user token (No hardcoded fallback!)
       let receivedByUserId: string | undefined = undefined;
@@ -607,7 +638,14 @@ router.post('/', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('[POST /api/collections]', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Internal server error' });
+    const status = err.statusCode || (err.code === 'PAYMENT_EXCEEDS_OUTSTANDING' ? 422 : 500);
+    return res.status(status).json({
+      success: false,
+      code: err.code || 'COLLECTION_ERROR',
+      error: err.message ?? 'Internal server error',
+      outstanding: err.outstanding,
+      attempted: err.attempted,
+    });
   }
 });
 

@@ -209,10 +209,21 @@ export default function CollectionsPage() {
         showToast('❌ Select a client');
         return;
       }
-      if (formData.amount <= 0 || isNaN(formData.amount)) {
-        showToast('❌ Amount must be > 0');
+      if (formData.amount <= 0 || isNaN(formData.amount) || !isFinite(formData.amount)) {
+        showToast('❌ Amount must be a positive number');
         return;
       }
+
+      const selectedC = clients.find(c => c.id === formData.clientId);
+      const totalOutstanding = Math.max(0, selectedC?.currentBalance ?? 0);
+      const targetSale = formData.saleId ? sales.find(s => s.id === formData.saleId) : null;
+      const maxAllowed = targetSale ? Math.min(totalOutstanding, targetSale.balance) : totalOutstanding;
+
+      if (formData.amount > maxAllowed + 0.001) {
+        showToast(`❌ Payment (Rs ${formData.amount.toLocaleString()}) cannot exceed outstanding balance of Rs ${maxAllowed.toLocaleString()}`);
+        return;
+      }
+
       if (!formData.date) {
         showToast('❌ Date is required');
         return;
@@ -382,168 +393,220 @@ export default function CollectionsPage() {
       {view === 'add' && (
         <div className="va-panel" style={{ maxWidth: 680 }}>
           <div className="va-panel-head"><h3>New Payment Received</h3></div>
-          <form onSubmit={handleSave}>
-            <div className="va-form-row">
-              <div className="va-field">
-                <label>Client *</label>
-                <select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value, saleId: '' }))} required>
-                  <option value="">— Select Customer —</option>
-                  {clients.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.clientId || 'WH-0000'}) — Total Outstanding: {fmtMoney(Math.max(0, c.currentBalance ?? 0))}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="va-field">
-                <label>Amount Collected (Rs) *</label>
-                <input type="number" required min="1" value={form.amount || ''} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} placeholder="Enter payment amount" />
-              </div>
-            </div>
+          {(() => {
+            const selectedC = clients.find(c => c.id === form.clientId);
+            const totalOutstanding = Math.max(0, selectedC?.currentBalance ?? 0);
+            const targetSale = form.saleId ? sales.find(s => s.id === form.saleId) : null;
+            const maxAllowed = targetSale ? Math.min(totalOutstanding, targetSale.balance) : totalOutstanding;
+            const amtRec = Number(form.amount || 0);
+            const isOverpayment = form.clientId ? (amtRec > maxAllowed + 0.001) : false;
+            const isInvalidAmount = isNaN(amtRec) || amtRec <= 0 || !isFinite(amtRec);
 
-            {/* ────── REAL-TIME PAYMENT & RUNNING BALANCE CALCULATION CARD ────── */}
-            {form.clientId && (() => {
-              const selectedC = clients.find(c => c.id === form.clientId);
-              if (!selectedC) return null;
-              const prevBal = selectedC.currentBalance ?? 0;
-              const amtRec = Math.max(0, Number(form.amount || 0));
-              const remBal = Math.max(0, prevBal - amtRec);
-              const excessAmt = Math.max(0, amtRec - prevBal);
-
-              const cSales = sales.filter(s => s.clientId === selectedC.id && s.status !== 'CANCELLED');
-              const invoiceDue = cSales.reduce((sum, s) => sum + (s.balance ?? 0), 0);
-              const openingDue = Math.max(0, Math.round((prevBal - invoiceDue) * 100) / 100);
-
-              // Waterfall Allocation Preview
-              const allocToOpening = Math.min(amtRec, openingDue);
-              const remainingOpeningAfter = Math.max(0, openingDue - allocToOpening);
-              const allocToInvoices = Math.min(Math.max(0, amtRec - allocToOpening), invoiceDue);
-              const remainingInvoicesAfter = Math.max(0, invoiceDue - allocToInvoices);
-
-              return (
-                <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 12, padding: 16, margin: '14px 0 16px' }}>
-                  <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                    <span>📊 Financial Breakdown &amp; Allocation Preview</span>
-                    <span style={{ fontSize: 11, background: '#E2E8F0', padding: '2px 8px', borderRadius: 12, color: '#475569', fontWeight: 700 }}>Authoritative Engine</span>
+            return (
+              <form onSubmit={handleSave}>
+                <div className="va-form-row">
+                  <div className="va-field">
+                    <label>Client *</label>
+                    <select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value, saleId: '' }))} required>
+                      <option value="">— Select Customer —</option>
+                      {clients.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.clientId || 'WH-0000'}) — Total Outstanding: {fmtMoney(Math.max(0, c.currentBalance ?? 0))}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
-                  {/* Financial Bucket Breakdown */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12 }}>
-                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Opening Balance Due</div>
-                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: openingDue > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
-                        {fmtMoney(openingDue)}
-                      </div>
-                      <div style={{ fontSize: 10, color: openingDue > 0 ? '#D97706' : '#16A34A', marginTop: 2, fontWeight: 700 }}>
-                        {openingDue > 0 ? '⚠️ UNPAID' : '✅ CLEARED'}
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                      <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Invoice Outstanding</div>
-                      <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: invoiceDue > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
-                        {fmtMoney(invoiceDue)}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>{cSales.length} Active Invoices</div>
-                    </div>
-
-                    <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #CBD5E1' }}>
-                      <div style={{ fontSize: 10, color: '#1E293B', fontWeight: 700, textTransform: 'uppercase' }}>Total Client Due</div>
-                      <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: prevBal > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
-                        {fmtMoney(prevBal)}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>Opening + Invoices</div>
-                    </div>
-
-                    <div style={{ background: '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
-                      <div style={{ fontSize: 10, color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>Amount to Collect</div>
-                      <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: '#15803D', marginTop: 4 }}>
-                        {fmtMoney(amtRec)}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#16A34A', marginTop: 2 }}>Current payment</div>
-                    </div>
-
-                    <div style={{ background: remBal > 0 ? '#FFFBEB' : '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: `1px solid ${remBal > 0 ? '#FDE68A' : '#BBF7D0'}` }}>
-                      <div style={{ fontSize: 10, color: remBal > 0 ? '#92400E' : '#166534', fontWeight: 700, textTransform: 'uppercase' }}>
-                        {excessAmt > 0 ? 'Advance Credit' : 'Remaining Due'}
-                      </div>
-                      <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: excessAmt > 0 ? '#15803D' : (remBal > 0 ? '#B45309' : '#16A34A'), marginTop: 4 }}>
-                        {excessAmt > 0 ? `+${fmtMoney(excessAmt)}` : fmtMoney(remBal)}
-                      </div>
-                      <div style={{ fontSize: 10, color: remBal > 0 ? '#D97706' : '#16A34A', marginTop: 2 }}>
-                        {excessAmt > 0 ? 'Stored as credit' : (remBal === 0 ? 'Fully settled (Rs 0)' : 'Remaining balance')}
-                      </div>
-                    </div>
+                  <div className="va-field">
+                    <label>
+                      Amount to Collect (Rs) *
+                      {form.clientId && (
+                        <span style={{ float: 'right', fontSize: 11, color: isOverpayment ? '#DC2626' : '#16A34A', fontWeight: 700 }}>
+                          Max Allowed: {fmtMoney(maxAllowed)}
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      max={maxAllowed > 0 ? maxAllowed : undefined}
+                      step="any"
+                      value={form.amount || ''}
+                      onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))}
+                      placeholder={maxAllowed > 0 ? `Enter amount (max ${fmtMoney(maxAllowed)})` : 'Enter payment amount'}
+                      style={{
+                        borderColor: isOverpayment ? '#EF4444' : undefined,
+                        background: isOverpayment ? '#FEF2F2' : undefined
+                      }}
+                    />
                   </div>
-
-                  {/* Allocation Waterfall Preview */}
-                  {amtRec > 0 && (
-                    <div style={{ background: '#FFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '10px 14px', fontSize: 12 }}>
-                      <div style={{ fontWeight: 700, color: '#334155', marginBottom: 6 }}>Priority Allocation Preview:</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
-                          <span>1. <strong>FIRST:</strong> Opening Balance Allocation:</span>
-                          <span className="mono" style={{ fontWeight: 700, color: allocToOpening > 0 ? '#166534' : '#64748B' }}>
-                            {fmtMoney(allocToOpening)} {allocToOpening > 0 && `(Remaining Opening: ${fmtMoney(remainingOpeningAfter)})`}
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
-                          <span>2. <strong>THEN:</strong> Active Invoices FIFO Allocation:</span>
-                          <span className="mono" style={{ fontWeight: 700, color: allocToInvoices > 0 ? '#166534' : '#64748B' }}>
-                            {fmtMoney(allocToInvoices)} {allocToInvoices > 0 && `(Remaining Invoices: ${fmtMoney(remainingInvoicesAfter)})`}
-                          </span>
-                        </div>
-                        {excessAmt > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#15803D' }}>
-                            <span>3. <strong>ADVANCE:</strong> Unallocated Credit Pool:</span>
-                            <span className="mono" style={{ fontWeight: 700 }}>+{fmtMoney(excessAmt)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
-              );
-            })()}
 
-            <div className="va-form-row" style={{ marginTop: 12 }}>
-              <div className="va-field">
-                <label>Specific Invoice to Settle (Optional — FIFO Auto-Allocates Oldest Dues First)</label>
-                <select value={form.saleId} onChange={e => setForm(p => ({ ...p, saleId: e.target.value }))}>
-                  <option value="">— Auto FIFO Allocation (Oldest Invoices First) —</option>
-                  {clientInvoices.map(s => (
-                    <option key={s.id} value={s.id}>
-                      Invoice #{s.invoiceNo} (Total: {fmtMoney(s.total)}, Due: {fmtMoney(s.balance)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+                {/* Overpayment Warning Alert */}
+                {isOverpayment && (
+                  <div style={{
+                    background: '#FEF2F2',
+                    border: '1.5px solid #EF4444',
+                    borderRadius: 8,
+                    padding: '12px 16px',
+                    color: '#991B1B',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    margin: '12px 0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}>
+                    <span style={{ fontSize: 16 }}>⚠️</span>
+                    <span>Payment cannot exceed the outstanding balance of {fmtMoney(maxAllowed)}. Overpayment is not permitted.</span>
+                  </div>
+                )}
 
-            <div className="va-form-row" style={{ marginTop: 12 }}>
-              <div className="va-field">
-                <label>Payment Date &amp; Time *</label>
-                <input type="datetime-local" required value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} />
-              </div>
-              <div className="va-field">
-                <label>Payment Method *</label>
-                <select value={form.method} onChange={e => setForm(p => ({ ...p, method: e.target.value }))}>
-                  {['CASH', 'BANK', 'CHEQUE', 'ONLINE'].map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="va-form-row" style={{ marginTop: 12 }}>
-              <div className="va-field">
-                <label>Reference (Cheque No, Tx ID)</label>
-                <input value={form.reference} onChange={e => setForm(p => ({ ...p, reference: e.target.value }))} placeholder="Optional" />
-              </div>
-              <div className="va-field">
-                <label>Notes</label>
-                <input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Optional" />
-              </div>
-            </div>
-            <button type="submit" className="va-btn" disabled={saving}>{saving ? 'Saving…' : '✓ Record Payment'}</button>
-          </form>
+                {/* ────── REAL-TIME PAYMENT & RUNNING BALANCE CALCULATION CARD ────── */}
+                {form.clientId && selectedC && (() => {
+                  const prevBal = maxAllowed;
+                  const remBal = Math.max(0, prevBal - amtRec);
+
+                  const cSales = sales.filter(s => s.clientId === selectedC.id && s.status !== 'CANCELLED');
+                  const invoiceDue = cSales.reduce((sum, s) => sum + (s.balance ?? 0), 0);
+                  const openingDue = Math.max(0, Math.round((prevBal - invoiceDue) * 100) / 100);
+
+                  // Waterfall Allocation Preview
+                  const allocToOpening = Math.min(amtRec, openingDue);
+                  const remainingOpeningAfter = Math.max(0, openingDue - allocToOpening);
+                  const allocToInvoices = Math.min(Math.max(0, amtRec - allocToOpening), invoiceDue);
+                  const remainingInvoicesAfter = Math.max(0, invoiceDue - allocToInvoices);
+
+                  return (
+                    <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 12, padding: 16, margin: '14px 0 16px' }}>
+                      <div style={{ fontWeight: 800, fontSize: 13, color: '#1E293B', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                        <span>📊 Financial Breakdown &amp; Allocation Preview</span>
+                        <span style={{ fontSize: 11, background: '#E2E8F0', padding: '2px 8px', borderRadius: 12, color: '#475569', fontWeight: 700 }}>Authoritative Engine</span>
+                      </div>
+
+                      {/* Financial Bucket Breakdown */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12 }}>
+                        <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                          <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Opening Balance Due</div>
+                          <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: openingDue > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                            {fmtMoney(openingDue)}
+                          </div>
+                          <div style={{ fontSize: 10, color: openingDue > 0 ? '#D97706' : '#16A34A', marginTop: 2, fontWeight: 700 }}>
+                            {openingDue > 0 ? '⚠️ UNPAID' : '✅ CLEARED'}
+                          </div>
+                        </div>
+
+                        <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                          <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Invoice Outstanding</div>
+                          <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: invoiceDue > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                            {fmtMoney(invoiceDue)}
+                          </div>
+                          <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>{cSales.length} Active Invoices</div>
+                        </div>
+
+                        <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #CBD5E1' }}>
+                          <div style={{ fontSize: 10, color: '#1E293B', fontWeight: 700, textTransform: 'uppercase' }}>Total Outstanding</div>
+                          <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: prevBal > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                            {fmtMoney(prevBal)}
+                          </div>
+                          <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>Maximum Allowed</div>
+                        </div>
+
+                        <div style={{ background: '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
+                          <div style={{ fontSize: 10, color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>Amount to Collect</div>
+                          <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: '#15803D', marginTop: 4 }}>
+                            {fmtMoney(amtRec)}
+                          </div>
+                          <div style={{ fontSize: 10, color: '#16A34A', marginTop: 2 }}>Current payment</div>
+                        </div>
+
+                        <div style={{ background: remBal > 0 ? '#FFFBEB' : '#F0FDF4', padding: '10px 12px', borderRadius: 8, border: `1px solid ${remBal > 0 ? '#FDE68A' : '#BBF7D0'}` }}>
+                          <div style={{ fontSize: 10, color: remBal > 0 ? '#92400E' : '#166534', fontWeight: 700, textTransform: 'uppercase' }}>
+                            Remaining Due
+                          </div>
+                          <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: remBal > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                            {fmtMoney(remBal)}
+                          </div>
+                          <div style={{ fontSize: 10, color: remBal > 0 ? '#D97706' : '#16A34A', marginTop: 2 }}>
+                            {remBal === 0 ? 'Fully settled (Rs 0)' : 'Remaining balance'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Allocation Waterfall Preview */}
+                      {amtRec > 0 && !isOverpayment && (
+                        <div style={{ background: '#FFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '10px 14px', fontSize: 12 }}>
+                          <div style={{ fontWeight: 700, color: '#334155', marginBottom: 6 }}>Priority Allocation Preview:</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                              <span>1. <strong>FIRST:</strong> Opening Balance Allocation:</span>
+                              <span className="mono" style={{ fontWeight: 700, color: allocToOpening > 0 ? '#166534' : '#64748B' }}>
+                                {fmtMoney(allocToOpening)} {allocToOpening > 0 && `(Remaining Opening: ${fmtMoney(remainingOpeningAfter)})`}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                              <span>2. <strong>THEN:</strong> Active Invoices FIFO Allocation:</span>
+                              <span className="mono" style={{ fontWeight: 700, color: allocToInvoices > 0 ? '#166534' : '#64748B' }}>
+                                {fmtMoney(allocToInvoices)} {allocToInvoices > 0 && `(Remaining Invoices: ${fmtMoney(remainingInvoicesAfter)})`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="va-form-row" style={{ marginTop: 12 }}>
+                  <div className="va-field">
+                    <label>Specific Invoice to Settle (Optional — FIFO Auto-Allocates Oldest Dues First)</label>
+                    <select value={form.saleId} onChange={e => setForm(p => ({ ...p, saleId: e.target.value }))}>
+                      <option value="">— Auto FIFO Allocation (Oldest Invoices First) —</option>
+                      {clientInvoices.map(s => (
+                        <option key={s.id} value={s.id}>
+                          Invoice #{s.invoiceNo} (Total: {fmtMoney(s.total)}, Due: {fmtMoney(s.balance)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="va-form-row" style={{ marginTop: 12 }}>
+                  <div className="va-field">
+                    <label>Payment Date &amp; Time *</label>
+                    <input type="datetime-local" required value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} />
+                  </div>
+                  <div className="va-field">
+                    <label>Payment Method *</label>
+                    <select value={form.method} onChange={e => setForm(p => ({ ...p, method: e.target.value }))}>
+                      {['CASH', 'BANK', 'CHEQUE', 'ONLINE'].map(m => <option key={m}>{m}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="va-form-row" style={{ marginTop: 12 }}>
+                  <div className="va-field">
+                    <label>Reference (Cheque No, Tx ID)</label>
+                    <input value={form.reference} onChange={e => setForm(p => ({ ...p, reference: e.target.value }))} placeholder="Optional" />
+                  </div>
+                  <div className="va-field">
+                    <label>Notes</label>
+                    <input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Optional" />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  className="va-btn"
+                  disabled={saving || isOverpayment || isInvalidAmount || !form.clientId}
+                  style={{
+                    opacity: (saving || isOverpayment || isInvalidAmount || !form.clientId) ? 0.6 : 1,
+                    cursor: (saving || isOverpayment || isInvalidAmount || !form.clientId) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {saving ? 'Saving…' : '✓ Record Payment'}
+                </button>
+              </form>
+            );
+          })()}
         </div>
       )}
 
