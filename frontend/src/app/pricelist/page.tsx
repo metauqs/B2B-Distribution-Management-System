@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
+import { fmtMoney, fmtDate, fmtDateTime, todayInputDate, compressProductImage } from '@/utils/formatters';
 import { fmtBusinessDate } from '@/utils/businessDate';
 import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
@@ -608,7 +608,7 @@ export default function PriceListPage() {
 
   // ─── Master Product Catalog Actions ──────────────────────────────────────────
 
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>, isNew: boolean = false) => {
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>, isNew: boolean = false) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -618,24 +618,25 @@ export default function PriceListPage() {
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('❌ Image size exceeds 5MB limit');
+    if (file.size > 15 * 1024 * 1024) {
+      showToast('❌ Image size exceeds 15MB limit');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
+    try {
+      // Automatically compress and resize to max 600px (retina quality ~40KB)
+      const compressedDataUrl = await compressProductImage(file, 600, 0.88);
       if (isNew) {
-        setNewProdImagePreview(result);
-        setNewProdImageBase64(result);
+        setNewProdImagePreview(compressedDataUrl);
+        setNewProdImageBase64(compressedDataUrl);
       } else {
-        setEditImagePreview(result);
-        setEditImageBase64(result);
+        setEditImagePreview(compressedDataUrl);
+        setEditImageBase64(compressedDataUrl);
         setEditImageRemoved(false);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      showToast('❌ Failed to process image file');
+    }
   };
 
   const handleRemoveImage = (isNew: boolean = false) => {
@@ -752,6 +753,12 @@ export default function PriceListPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imageBase64: editImageBase64 })
         });
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          let errJson;
+          try { errJson = JSON.parse(errText); } catch { /* ignore */ }
+          throw new Error(errJson?.error || `Image upload failed (HTTP ${uploadRes.status}): ${errText.slice(0, 80)}`);
+        }
         const uploadData = await uploadRes.json();
         if (uploadData.success && uploadData.imageUrl) {
           finalImageUrl = uploadData.imageUrl;

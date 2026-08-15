@@ -169,3 +169,65 @@ export function toUrduVeg(name: string): string {
 export function cn(...classes: (string | boolean | null | undefined)[]): string {
   return classes.filter(Boolean).join(' ');
 }
+
+/**
+ * Client-side image compression and resizing utility for product images.
+ * Resizes large photos to a crisp max dimension (default 600px) and compresses to WebP/JPEG,
+ * reducing 5MB-15MB raw files to ~30KB-80KB for instant uploads without hitting payload limits.
+ */
+export async function compressProductImage(file: File, maxDim = 600, quality = 0.88): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      if (typeof window === 'undefined') {
+        return resolve(e.target?.result as string);
+      }
+      const img = new Image();
+      img.onerror = () => resolve(e.target?.result as string);
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, width);
+          canvas.height = Math.max(1, height);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            return resolve(e.target?.result as string);
+          }
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+
+          let dataUrl = '';
+          try {
+            dataUrl = canvas.toDataURL('image/webp', quality);
+          } catch {
+            dataUrl = canvas.toDataURL('image/jpeg', quality);
+          }
+
+          if (!dataUrl || dataUrl === 'data:,') {
+            dataUrl = canvas.toDataURL('image/png');
+          }
+
+          resolve(dataUrl || (e.target?.result as string));
+        } catch {
+          resolve(e.target?.result as string);
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
