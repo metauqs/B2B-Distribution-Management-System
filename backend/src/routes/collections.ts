@@ -97,7 +97,7 @@ router.get('/daily-history', async (req: Request, res: Response) => {
       });
 
       const clientCurrBal = col.client?.currentBalance ?? 0;
-      const rawRemBal = (clientCurrBal <= 0) ? 0 : (col.remainingBalance ?? ledgerMap[col.id] ?? null);
+      const rawRemBal = (clientCurrBal <= 0) ? 0 : (ledgerMap[col.id] ?? col.remainingBalance ?? null);
       const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
 
       return {
@@ -212,7 +212,7 @@ router.get('/', async (req: Request, res: Response) => {
     const ledgerMap = Object.fromEntries(ledgers.map(l => [l.referenceId, l.balance]));
 
     const data = collections.map(c => {
-      const rawRemBal = c.remainingBalance ?? ledgerMap[c.id] ?? null;
+      const rawRemBal = ledgerMap[c.id] ?? c.remainingBalance ?? null;
       const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
       return {
         ...c,

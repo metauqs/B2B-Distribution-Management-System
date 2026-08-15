@@ -284,11 +284,11 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
     return client.openingBalance;
   }
 
-  // Type weight for same-day sorting: ADJUSTMENT(1) -> INVOICE/DEBIT_NOTE(2) -> PAYMENT/CREDIT_NOTE(3)
+  // Type weight for same-day sorting: ADJUSTMENT(1) -> INVOICE/DEBIT_NOTE(2) -> PAYMENT/CREDIT_NOTE/CANCELLATION(3)
   const typeWeight = (t: string) => {
     if (t === 'ADJUSTMENT') return 1;
     if (t === 'INVOICE' || t === 'DEBIT_NOTE') return 2;
-    if (t === 'PAYMENT' || t === 'CREDIT_NOTE') return 3;
+    if (t === 'PAYMENT' || t === 'CREDIT_NOTE' || t === 'CANCELLATION') return 3;
     return 4;
   };
 
@@ -313,6 +313,13 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
       await db.customerLedger.update({
         where: { id: entry.id },
         data: { balance: running }
+      });
+    }
+
+    if (entry.type === 'PAYMENT' && entry.referenceId) {
+      await db.collection.updateMany({
+        where: { id: entry.referenceId },
+        data: { remainingBalance: Math.max(0, running) }
       });
     }
   }
