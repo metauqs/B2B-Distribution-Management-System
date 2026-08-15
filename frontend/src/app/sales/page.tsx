@@ -39,7 +39,7 @@ interface PriceItem {
 }
 
 interface OrderItem {
-  productId: string; itemName: string; unit: string; rate: number; qty: number; amount: number;
+  productId: string; itemName: string; unit: string; rate: number | string; qty: number | string; amount: number;
 }
 
 interface SaleItem {
@@ -474,7 +474,9 @@ export default function SalesPage() {
           next[i].productId = match.productId;
         }
       }
-      next[i].amount = Number(next[i].qty) * Number(next[i].rate);
+      const numQty = parseFloat(String(next[i].qty)) || 0;
+      const numRate = parseFloat(String(next[i].rate)) || 0;
+      next[i].amount = numQty * numRate;
       return next;
     });
   };
@@ -486,13 +488,14 @@ export default function SalesPage() {
       next[i].productId = pItem.productId;
       next[i].unit      = pItem.unit;
       next[i].rate      = pItem.sellRate;
-      next[i].amount    = Number(next[i].qty) * Number(pItem.sellRate);
+      const numQty = parseFloat(String(next[i].qty)) || 0;
+      next[i].amount    = numQty * Number(pItem.sellRate);
       return next;
     });
   };
 
   // ── Computed totals ───────────────────────────────────────────────────────────
-  const rawSubtotal = items.reduce((s, i) => s + i.amount, 0);
+  const rawSubtotal = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const subtotal    = Math.round(rawSubtotal);
   const rawTotal    = subtotal - discount + deliveryFee;
   const total       = Math.max(0, Math.round(rawTotal));
@@ -517,13 +520,29 @@ export default function SalesPage() {
         showToast('❌ Please select a Delivery Staff member');
         return;
       }
-      if (!items.some(i => i.itemName && i.qty > 0)) {
+
+      const sanitizedItems = items
+        .map(i => {
+          const numQty = parseFloat(String(i.qty)) || 0;
+          const numRate = parseFloat(String(i.rate)) || 0;
+          return {
+            productId: i.productId || undefined,
+            itemName: i.itemName,
+            unit: i.unit || 'KG',
+            qty: numQty,
+            rate: numRate,
+            amount: numQty * numRate,
+          };
+        })
+        .filter(i => i.itemName && i.qty > 0);
+
+      if (!sanitizedItems.length) {
         showToast('❌ Add at least one item');
         return;
       }
 
       // Validate inventory stock availability before checkout
-      for (const item of items.filter(i => i.itemName && i.qty > 0)) {
+      for (const item of sanitizedItems) {
         const pItem = priceItems.find(p => (item.productId && p.productId === item.productId) || p.itemName.toLowerCase() === item.itemName.toLowerCase());
         if (pItem && pItem.availableStock !== undefined) {
           if (item.qty > pItem.availableStock) {
@@ -533,8 +552,8 @@ export default function SalesPage() {
         }
       }
 
-      const calcSubtotal = items.filter(i => i.itemName && i.qty > 0).reduce((s, i) => s + (Number(i.qty) * Number(i.rate)), 0);
-      const calcTotal = Math.max(0, calcSubtotal - Number(discount) + Number(deliveryFee));
+      const calcSubtotal = sanitizedItems.reduce((s, i) => s + i.amount, 0);
+      const calcTotal = Math.max(0, Math.round(calcSubtotal - Number(discount) + Number(deliveryFee)));
       if (paid > calcTotal) {
         showToast(`❌ Amount paid (Rs ${paid.toLocaleString()}) cannot exceed invoice total (Rs ${calcTotal.toLocaleString()})`);
         return;
@@ -548,7 +567,7 @@ export default function SalesPage() {
             'Idempotency-Key': idempotencyKey,
           },
           body: JSON.stringify({
-            items: items.filter(i => i.itemName && i.qty > 0),
+            items: sanitizedItems,
             discount,
             deliveryCharge: deliveryFee,
             notes: invNotes,
@@ -581,7 +600,7 @@ export default function SalesPage() {
           },
           body: JSON.stringify({
             clientId: selClient.id,
-            items: items.filter(i => i.itemName && i.qty > 0),
+            items: sanitizedItems,
             discount, deliveryCharge: deliveryFee,
             paid, paymentMode: payMode,
             notes: invNotes,
@@ -1318,11 +1337,16 @@ export default function SalesPage() {
                     <div className="va-field" style={{ flex: 1 }}>
                       <label className={i > 0 ? 'show-mobile' : ''}>Qty</label>
                       <input
-                        type="number"
-                        value={item.qty || ''}
-                        min="0.001"
-                        step="any"
-                        onChange={e => updateItem(i, 'qty', e.target.value === '' ? 0 : +e.target.value)}
+                        type="text"
+                        inputMode="decimal"
+                        value={item.qty === 0 ? '' : item.qty}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                            updateItem(i, 'qty', val);
+                          }
+                        }}
+                        placeholder="0"
                         required
                         className="mono"
                         style={{ background: 'var(--paper)', color: 'var(--ink)' }}
@@ -1341,46 +1365,50 @@ export default function SalesPage() {
                     <div className="va-field" style={{ flex: 1.2 }}>
                       <label className={i > 0 ? 'show-mobile' : ''}>Rate (Rs)</label>
                       <input
-                        type="number"
-                        value={item.rate || ''}
-                        min="0"
-                        step="any"
-                        onChange={e => updateItem(i, 'rate', e.target.value === '' ? 0 : +e.target.value)}
+                        type="text"
+                        inputMode="decimal"
+                        value={item.rate === 0 ? '' : item.rate}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                            updateItem(i, 'rate', val);
+                          }
+                        }}
+                        placeholder="0"
                         required
                         className="mono"
                         style={{ background: 'var(--paper)', color: 'var(--ink)' }}
                       />
                     </div>
                     <div className="va-field" style={{ flex: 1.2 }}>
-                      <label className={i > 0 ? 'show-mobile' : ''}>Amount (Rs)</label>
-                      <input
-                        readOnly
-                        value={fmtMoney(item.amount)}
-                        className="mono"
-                        style={{ background: 'var(--line-soft)', fontWeight: 700 }}
-                      />
+                      <label className={i > 0 ? 'show-mobile' : ''}>Amount</label>
+                      <div className="mono" style={{ padding: '8px 10px', background: 'var(--paper-soft)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--line)', fontWeight: 700, color: 'var(--forest)', fontSize: 13 }}>
+                        {fmtMoney(item.amount)}
+                      </div>
                     </div>
                     {items.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setItems(p => p.filter((_, j) => j !== i))}
-                        style={{
-                          alignSelf: 'flex-end',
-                          padding: '8px 10px',
-                          background: 'none',
-                          border: '1px solid var(--line)',
-                          borderRadius: 6,
-                          cursor: 'pointer',
-                          color: 'var(--danger)',
-                          marginBottom: 6,
-                          minHeight: 44,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        ✕
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={() => setItems(p => p.filter((_, j) => j !== i))}
+                          style={{
+                            padding: '8px 10px',
+                            background: 'none',
+                            border: '1px solid var(--line)',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            color: 'var(--danger)',
+                            marginBottom: 6,
+                            minHeight: 44,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                          title="Remove item"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -1406,7 +1434,7 @@ export default function SalesPage() {
                     type="button"
                     className="va-btn"
                     onClick={() => setStep(3)}
-                    disabled={!items.some(i => i.itemName && i.qty > 0)}
+                    disabled={!items.some(i => i.itemName && (parseFloat(String(i.qty)) || 0) > 0)}
                   >
                     Review &amp; Pay →
                   </button>
@@ -1426,7 +1454,7 @@ export default function SalesPage() {
                   <table className="va-table">
                     <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
                     <tbody>
-                      {items.filter(i => i.itemName && i.qty > 0).map((item, i) => (
+                      {items.filter(i => i.itemName && (parseFloat(String(i.qty)) || 0) > 0).map((item, i) => (
                         <tr key={i}>
                           <td style={{ fontWeight: 600 }}>{item.itemName}</td>
                           <td className="mono">{item.qty}</td>

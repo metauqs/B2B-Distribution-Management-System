@@ -12,7 +12,7 @@ import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/Mobile
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 
-interface PurchaseItem { id?: string; itemName: string; qty: number; unit: string; rate: number; amount: number; productId?: string; }
+interface PurchaseItem { id?: string; itemName: string; qty: number | string; unit: string; rate: number | string; amount: number; productId?: string; }
 interface Purchase {
   id: string; date: string; subtotal: number; transportCost: number; total: number; paid: number; balance: number; status: string; notes?: string;
   supplierId: string; supplier?: { id: string; name: string; } | null;
@@ -150,8 +150,9 @@ export default function PurchasesPage() {
     (purchases || []).forEach(p => {
       (p.items || []).forEach(it => {
         const key = it.productId || it.itemName.toLowerCase().trim();
-        if (!map.has(key) && it.rate > 0) {
-          map.set(key, { prevPrice: it.rate, avgCost: it.rate, qty: 0 });
+        const r = Number(it.rate);
+        if (!map.has(key) && r > 0) {
+          map.set(key, { prevPrice: r, avgCost: r, qty: 0 });
         }
       });
     });
@@ -173,7 +174,9 @@ export default function PurchasesPage() {
     setItems(prev => prev.map((item, i) => {
       if (i !== index) return item;
       const updated = { ...item, [key]: val };
-      updated.amount = updated.qty * updated.rate;
+      const numQty = parseFloat(String(updated.qty)) || 0;
+      const numRate = parseFloat(String(updated.rate)) || 0;
+      updated.amount = numQty * numRate;
       return updated;
     }));
   };
@@ -242,7 +245,7 @@ export default function PurchasesPage() {
       qty: i.qty,
       unit: i.unit,
       rate: i.rate,
-      amount: i.qty * i.rate
+      amount: Number(i.qty) * Number(i.rate)
     })) : []);
     setPaid(p.paid);
     setTransportCost(p.transportCost);
@@ -285,10 +288,10 @@ export default function PurchasesPage() {
         supplierId: p.supplierId,
         items: (p.items || []).map(it => ({
           itemName: it.itemName,
-          qty: it.qty,
+          qty: Number(it.qty),
           unit: it.unit,
-          rate: it.rate,
-          amount: it.amount
+          rate: Number(it.rate),
+          amount: Number(it.amount)
         })),
         subtotal: p.subtotal,
         transportCost: p.transportCost,
@@ -315,10 +318,10 @@ export default function PurchasesPage() {
         supplierId: p.supplierId,
         items: (p.items || []).map(it => ({
           itemName: it.itemName,
-          qty: it.qty,
+          qty: Number(it.qty),
           unit: it.unit,
-          rate: it.rate,
-          amount: it.amount
+          rate: Number(it.rate),
+          amount: Number(it.amount)
         })),
         subtotal: p.subtotal,
         transportCost: p.transportCost,
@@ -366,6 +369,19 @@ export default function PurchasesPage() {
 
   const { isSubmitting: isSubmittingPurchase, submit: executeSavePurchase } = useIdempotentSubmit({
     onSubmit: async (itemsToSave: PurchaseItem[], idempotencyKey: string) => {
+      const sanitizedItems = itemsToSave
+        .map(i => {
+          const numQty = parseFloat(String(i.qty)) || 0;
+          const numRate = parseFloat(String(i.rate)) || 0;
+          return {
+            ...i,
+            qty: numQty,
+            rate: numRate,
+            amount: numQty * numRate,
+          };
+        })
+        .filter(i => i.qty > 0);
+
       const finalSupplierId = source === 'MANDI' ? 'mandi' : supplierId;
       const url = purchaseId ? `/api/purchases/${purchaseId}` : '/api/purchases';
       const method = purchaseId ? 'PUT' : 'POST';
@@ -376,7 +392,7 @@ export default function PurchasesPage() {
           'Content-Type': 'application/json',
           'Idempotency-Key': idempotencyKey,
         },
-        body: JSON.stringify({ supplierId: finalSupplierId, items: itemsToSave, paid, transportCost, notes, date }),
+        body: JSON.stringify({ supplierId: finalSupplierId, items: sanitizedItems, paid, transportCost, notes, date }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -407,18 +423,23 @@ export default function PurchasesPage() {
       const item1 = currentItems[dup.index1];
       const item2 = currentItems[dup.index2];
       
-      if (item1.rate === item2.rate) {
+      const q1 = parseFloat(String(item1.qty)) || 0;
+      const q2 = parseFloat(String(item2.qty)) || 0;
+      const r1 = parseFloat(String(item1.rate)) || 0;
+      const r2 = parseFloat(String(item2.rate)) || 0;
+
+      if (r1 === r2) {
         const merged = [...currentItems];
-        merged[dup.index1].qty += item2.qty;
-        merged[dup.index1].amount = merged[dup.index1].qty * item1.rate;
+        merged[dup.index1].qty = q1 + q2;
+        merged[dup.index1].amount = (q1 + q2) * r1;
         const filtered = merged.filter((_, idx) => idx !== dup.index2);
         setItems(filtered);
         checkAndSave(filtered, bypassConflictCheck);
       } else {
         setMergeData({
           itemName: dup.itemName,
-          rate1: item1.rate,
-          rate2: item2.rate,
+          rate1: r1,
+          rate2: r2,
           index1: dup.index1,
           index2: dup.index2,
           currentList: currentItems
@@ -431,15 +452,16 @@ export default function PurchasesPage() {
     // 2. Check for Purchase Price Conflict against Previous Purchase Price (Informational Warning, NOT Block!)
     if (!bypassConflictCheck) {
       for (const item of currentItems) {
-        if (item.rate <= 0) continue;
+        const r = parseFloat(String(item.rate)) || 0;
+        if (r <= 0) continue;
         const key = item.productId || item.itemName.toLowerCase().trim();
         const ref = productRefMap.get(key);
-        if (ref && ref.prevPrice > 0 && Math.abs(item.rate - ref.prevPrice) > 0.01) {
+        if (ref && ref.prevPrice > 0 && Math.abs(r - ref.prevPrice) > 0.01) {
           setPriceConflictData({
             itemName: item.itemName,
             unit: item.unit,
             prevPrice: ref.prevPrice,
-            newPrice: item.rate,
+            newPrice: r,
             currentList: currentItems,
           });
           setShowPriceConflictModal(true);
@@ -457,9 +479,11 @@ export default function PurchasesPage() {
     const { index1, index2, currentList } = mergeData;
     
     const updated = [...currentList];
-    updated[index1].qty += updated[index2].qty;
+    const q1 = parseFloat(String(updated[index1].qty)) || 0;
+    const q2 = parseFloat(String(updated[index2].qty)) || 0;
+    updated[index1].qty = q1 + q2;
     updated[index1].rate = useRate;
-    updated[index1].amount = updated[index1].qty * useRate;
+    updated[index1].amount = (q1 + q2) * useRate;
     
     const filtered = updated.filter((_, i) => i !== index2);
     setItems(filtered);
@@ -485,7 +509,7 @@ export default function PurchasesPage() {
       return showToast('❌ Please add at least one product with valid quantity (>0) and buy rate (>0)');
     }
     
-    const subtotalCalc = validItems.reduce((s, i) => s + (i.qty * i.rate), 0);
+    const subtotalCalc = validItems.reduce((s, i) => s + (Number(i.qty) * Number(i.rate)), 0);
     const totalCalc = subtotalCalc + (transportCost ?? 0);
     if (source !== 'MANDI' && paid > totalCalc) {
       return showToast(`❌ Amount paid (Rs ${paid.toLocaleString()}) cannot exceed total purchase amount (Rs ${totalCalc.toLocaleString()})`);
@@ -686,12 +710,17 @@ export default function PurchasesPage() {
                               <div>
                                 <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>QTY</div>
                                 <input
-                                  type="number"
-                                  value={item.qty}
-                                  min="0.001"
-                                  step="any"
-                                  onChange={e => updateItem(itemIdx, 'qty', e.target.value === '' ? 0 : +e.target.value)}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={item.qty === 0 ? '' : item.qty}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                      updateItem(itemIdx, 'qty', val);
+                                    }
+                                  }}
                                   onClick={e => (e.target as HTMLInputElement).select()}
+                                  placeholder="0"
                                   style={{ width: '100%', padding: '5px 6px', border: '1px solid var(--line)', borderRadius: 6, background: 'var(--paper)', color: 'var(--ink)', fontSize: 13, fontWeight: 700 }}
                                 />
                               </div>
@@ -708,12 +737,16 @@ export default function PurchasesPage() {
                               <div>
                                 <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>RATE (Rs)</div>
                                 <input
-                                  type="number"
-                                  value={item.rate || ''}
-                                  min="0"
-                                  step="any"
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={item.rate === 0 ? '' : item.rate}
                                   placeholder="0"
-                                  onChange={e => updateItem(itemIdx, 'rate', e.target.value === '' ? 0 : +e.target.value)}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                      updateItem(itemIdx, 'rate', val);
+                                    }
+                                  }}
                                   onClick={e => (e.target as HTMLInputElement).select()}
                                   style={{ width: '100%', padding: '5px 6px', border: '1.5px solid var(--mustard)', borderRadius: 6, background: 'var(--paper)', color: 'var(--forest)', fontSize: 13, fontWeight: 700 }}
                                 />
@@ -730,9 +763,9 @@ export default function PurchasesPage() {
                                   </div>
                                 );
                               })()}
-                              {item.rate > 0 && (
+                              {Number(item.rate) > 0 && (
                                 <div style={{ gridColumn: '1 / -1', textAlign: 'right', fontSize: 12, color: 'var(--forest)', fontWeight: 700, marginTop: 2 }}>
-                                  = Rs {(item.qty * item.rate).toLocaleString()}
+                                  = Rs {(Number(item.qty) * Number(item.rate)).toLocaleString()}
                                 </div>
                               )}
                             </div>
