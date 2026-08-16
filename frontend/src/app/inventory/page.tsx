@@ -62,7 +62,7 @@ interface PriceHistoryEntry {
   productId: string;
   buyPrice: number;
   qty: number;
-  product?: { name: string; urduName?: string; defaultUnit: string };
+  product?: { name: string; urduName?: string; defaultUnit: string; imageUrl?: string | null; emoji?: string | null };
   supplier?: { name: string };
 }
 
@@ -72,6 +72,8 @@ interface Movement {
   productId: string;
   productName: string;
   productUrdu: string;
+  imageUrl?: string | null;
+  emoji?: string | null;
   unit: string;
   type: string;
   qty: number;
@@ -1054,7 +1056,20 @@ export default function InventoryPage() {
                   {priceHistory.map(entry => (
                     <tr key={entry.id}>
                       <td style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtDateTime(entry.date)}</td>
-                      <td style={{ fontWeight: 700 }}>{getProductEmoji(entry.product?.name)} {entry.product?.name ?? '—'}</td>
+                      <td style={{ fontWeight: 700 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <ProductVisual
+                            name={entry.product?.name ?? ''}
+                            emoji={entry.product?.emoji}
+                            imageUrl={entry.product?.imageUrl}
+                            size={22}
+                          />
+                          <div>
+                            <div>{entry.product?.name ?? '—'}</div>
+                            {entry.product?.urduName && <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'serif' }}>{entry.product.urduName}</div>}
+                          </div>
+                        </div>
+                      </td>
                       <td>{entry.supplier?.name ?? 'Mandi / Direct / Admin Update'}</td>
                       <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
                         Rs {entry.buyPrice.toFixed(2)}
@@ -1663,8 +1678,18 @@ export default function InventoryPage() {
                       <tr key={m.id}>
                         <td style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDateTime(m.date)}</td>
                         <td>
-                          <div style={{ fontWeight: 600 }}>{getProductEmoji(m.productName)} {m.productName}</div>
-                          {m.productUrdu && <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'serif' }}>{m.productUrdu}</div>}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <ProductVisual
+                              name={m.productName}
+                              emoji={m.emoji}
+                              imageUrl={m.imageUrl}
+                              size={22}
+                            />
+                            <div>
+                              <div style={{ fontWeight: 600 }}>{m.productName}</div>
+                              {m.productUrdu && <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'serif' }}>{m.productUrdu}</div>}
+                            </div>
+                          </div>
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <span style={{

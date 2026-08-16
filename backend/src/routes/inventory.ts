@@ -157,7 +157,7 @@ router.get('/price-history', async (req: Request, res: Response) => {
     const history = await prisma.purchasePriceHistory.findMany({
       where,
       include: {
-        product: { select: { id: true, name: true, urduName: true, defaultUnit: true } },
+        product: { select: { id: true, name: true, urduName: true, defaultUnit: true, imageUrl: true, emoji: true } },
         supplier: { select: { id: true, name: true } },
         purchase: { select: { id: true, date: true } },
       },
@@ -435,7 +435,7 @@ router.get('/movements', async (req: Request, res: Response) => {
     const movements = await prisma.stockMovement.findMany({
       where,
       include: {
-        product: { select: { id: true, name: true, urduName: true, defaultUnit: true } },
+        product: { select: { id: true, name: true, urduName: true, defaultUnit: true, imageUrl: true, emoji: true } },
         user: { select: { id: true, name: true } },
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -448,6 +448,8 @@ router.get('/movements', async (req: Request, res: Response) => {
       productId: m.productId,
       productName: m.product?.name ?? '—',
       productUrdu: m.product?.urduName ?? '',
+      imageUrl: m.product?.imageUrl ?? null,
+      emoji: m.product?.emoji ?? null,
       unit: m.product?.defaultUnit ?? 'KG',
       type: m.type,
       qty: m.qty,
