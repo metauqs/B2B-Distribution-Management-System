@@ -2,16 +2,30 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { fmtMoney, fmtDateTime } from '@/utils/formatters';
+import { fmtMoney, fmtDateTime, todayInputDate, dateOffset } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
-import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
+import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import { useAppSelector } from '@/store';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import Icon from '@mdi/react';
-import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline, mdiTagOutline } from '@mdi/js';
+import {
+  mdiArchive,
+  mdiHistory,
+  mdiTune,
+  mdiDeleteOutline,
+  mdiTagOutline,
+  mdiPlus,
+  mdiRefresh,
+  mdiMagnify,
+  mdiFilterVariant,
+  mdiChevronDown,
+  mdiCalendar,
+  mdiArrowLeft,
+  mdiAccount,
+} from '@mdi/js';
 
 import { ProductVisual } from '@/components/ui/ProductVisual';
 
@@ -248,155 +262,114 @@ export default function InventoryPage() {
   const handleBuyPriceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pProdId) return showToast('❌ Select a product');
-    if (pNewPrice === '' || isNaN(Number(pNewPrice)) || Number(pNewPrice) < 0) {
-      return showToast('❌ Enter a valid non-negative buy rate');
-    }
+    if (pNewPrice === '' || isNaN(pNewPrice) || pNewPrice < 0) return showToast('❌ Enter a valid buy rate');
+
     setSaving(true);
+    showToast('⏳ Updating buy rate...');
     try {
-      const res = await apiFetch('/api/inventory/buy-price', {
+      const res = await apiFetch('/api/inventory/adjust-price', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productId: pProdId,
-          newBuyPrice: Number(pNewPrice),
-          reason: pReason || 'Admin Manual Buy Rate Adjustment',
-        }),
+        body: JSON.stringify({ productId: pProdId, newPrice: pNewPrice, reason: pReason })
       });
       const data = await res.json();
       if (res.ok && data.success) {
         invalidateCache('/api/inventory');
         invalidateCache('/api/pricelist');
-        showToast(`✅ Buy price updated — Rs ${Number(pNewPrice).toFixed(2)}`);
+        window.dispatchEvent(new Event('app-revalidate'));
+        showToast('✅ Product buy rate updated successfully');
         setPriceModalOpen(false);
         await load(true);
-      } else showToast('❌ ' + (data.error ?? 'Failed to update buy price'));
-    } finally { setSaving(false); }
+      } else {
+        showToast(`❌ ${data.error || 'Failed to update buy price'}`);
+      }
+    } catch {
+      showToast('❌ Network error updating buy price');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleReconcile = async () => {
-    setSaving(true);
-    try {
-      const res = await apiFetch('/api/inventory/reconcile', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        invalidateCache('/api/inventory');
-        window.dispatchEvent(new Event('app-revalidate'));
-        showToast(`✅ ${data.message}`);
-        await load(true);
-      } else showToast('❌ ' + (data.error ?? 'Reconciliation failed'));
-    } catch (err: any) {
-      showToast('❌ ' + (err.message || 'Reconciliation failed'));
-    } finally { setSaving(false); }
-  };
-
-  // ── Load inventory & all products ───────────────────────────────────────────
+  // ── Load Inventory ──────────────────────────────────────────────────────────
   const load = useCallback(async (isBackground = false) => {
     if (!isBackground && inventory.length === 0) setLoading(true);
     try {
-      const [invData, prodData] = await Promise.all([
+      const [invRes, prodRes] = await Promise.all([
         fetchWithCache<any>('/api/inventory', { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<any>('/api/products', { ttl: TTL_LONG, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/products?minimal=true', { ttl: TTL_MEDIUM, forceRefresh: isBackground })
       ]);
-      if (invData) {
-        setInventory(invData.data ?? invData ?? []);
-        setSummary(invData.summary ?? null);
-      }
-      if (prodData) {
-        setAllProducts(prodData.data ?? prodData ?? []);
-      }
+      const data = invRes?.data ?? invRes ?? [];
+      setInventory(data);
+      setSummary(invRes?.summary ?? null);
+      if (prodRes) setAllProducts(prodRes);
     } catch (err) {
       console.error('inventory load error:', err);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }, [inventory.length]);
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Combined Master Product List for Dropdowns ──────────────────────────────
+  // Master product list (combines inventory and base products catalog)
   const masterProductsList = useMemo(() => {
-    const map = new Map<string, { productId: string; name: string; urduName?: string; unit: string; qty: number; currentBuyPrice: number; previousBuyPrice: number; lastPurchaseDate?: string; lastPurchaseQty?: number; emoji?: string | null; imageUrl?: string | null }>();
+    const map = new Map<string, { productId: string; name: string; urduName?: string; defaultUnit: string; qty: number; currentBuyPrice: number; avgCost: number; imageUrl?: string | null; emoji?: string | null }>();
 
-    inventory.forEach(inv => {
-      if (inv.productId) {
-        map.set(inv.productId, {
-          productId: inv.productId,
-          name: inv.product?.name ?? 'Product',
-          urduName: inv.product?.urduName ?? '',
-          unit: inv.product?.defaultUnit ?? 'KG',
-          qty: inv.qty ?? 0,
-          currentBuyPrice: inv.currentBuyPrice ?? inv.avgCost ?? 0,
-          previousBuyPrice: inv.previousBuyPrice ?? 0,
-          lastPurchaseDate: inv.lastPurchaseDate,
-          lastPurchaseQty: inv.lastPurchaseQty,
-          emoji: (inv.product as any)?.emoji,
-          imageUrl: (inv.product as any)?.imageUrl,
-        });
-      }
+    allProducts.forEach(p => {
+      map.set(p.id, {
+        productId: p.id,
+        name: p.name,
+        urduName: p.urduName,
+        defaultUnit: p.defaultUnit ?? 'KG',
+        qty: 0,
+        currentBuyPrice: 0,
+        avgCost: 0,
+        imageUrl: p.imageUrl,
+        emoji: p.emoji,
+      });
     });
 
-    allProducts.forEach(prod => {
-      if (prod.id && !map.has(prod.id)) {
-        map.set(prod.id, {
-          productId: prod.id,
-          name: prod.name,
-          urduName: prod.urduName ?? '',
-          unit: prod.defaultUnit ?? 'KG',
-          qty: 0,
-          currentBuyPrice: 0,
-          previousBuyPrice: 0,
-          emoji: prod.emoji,
-          imageUrl: prod.imageUrl,
-        });
-      }
+    inventory.forEach(i => {
+      const existing = map.get(i.productId);
+      map.set(i.productId, {
+        productId: i.productId,
+        name: i.product?.name ?? existing?.name ?? 'Unknown',
+        urduName: i.product?.urduName ?? existing?.urduName,
+        defaultUnit: i.product?.defaultUnit ?? existing?.defaultUnit ?? 'KG',
+        qty: i.qty,
+        currentBuyPrice: i.currentBuyPrice > 0 ? i.currentBuyPrice : (i.latestPurchasePrice ?? i.avgCost),
+        avgCost: i.avgCost,
+        imageUrl: (i.product as any)?.imageUrl ?? existing?.imageUrl,
+        emoji: (i.product as any)?.emoji ?? existing?.emoji,
+      });
     });
 
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [inventory, allProducts]);
 
-  const matchingAdjProducts = useMemo(() => {
-    return masterProductsList.filter(p =>
-      !aProdSearch ||
-      p.name.toLowerCase().includes(aProdSearch.toLowerCase()) ||
-      (p.urduName ?? '').includes(aProdSearch)
-    );
-  }, [masterProductsList, aProdSearch]);
-
-  const matchingWastageProducts = useMemo(() => {
-    return masterProductsList.filter(p =>
-      !wProdSearch ||
-      p.name.toLowerCase().includes(wProdSearch.toLowerCase()) ||
-      (p.urduName ?? '').includes(wProdSearch)
-    );
-  }, [masterProductsList, wProdSearch]);
-
-  const selectedAdjProduct = useMemo(() => {
-    return masterProductsList.find(p => p.productId === aProdId);
-  }, [masterProductsList, aProdId]);
-
-  const openAdjustForProduct = (item: InventoryItem) => {
-    setAProdId(item.productId);
-    setAProdSearch(item.product?.name ?? '');
-    setASysQty(item.qty);
-    setAQtyVal('');
-    setAComboboxOpen(false);
-    setView('adjust');
-  };
-
-  // ── Load movements ──────────────────────────────────────────────────────────
+  // ── Load Movements ──────────────────────────────────────────────────────────
   const loadMovements = useCallback(async (isBackground = false) => {
-    setMovLoad(true);
+    if (!isBackground) setMovLoad(true);
     try {
-      const p = new URLSearchParams({ limit: '300' });
-      if (mProdId) p.set('productId', mProdId);
-      if (mType !== 'all') p.set('type', mType);
-      if (mFrom) p.set('from', mFrom);
-      if (mTo) p.set('to', mTo);
-      const data = await fetchWithCache<any[]>(`/api/inventory/movements?${p}`, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
-      if (data) setMovements(data);
-      else showToast('❌ Failed to load movements');
+      const params = new URLSearchParams();
+      if (mProdId) params.set('productId', mProdId);
+      if (mType && mType !== 'all') params.set('type', mType);
+      if (mFrom) params.set('startDate', mFrom);
+      if (mTo) params.set('endDate', mTo);
+
+      const url = `/api/inventory/movements?${params.toString()}`;
+      const data = await fetchWithCache<any>(url, { ttl: TTL_SHORT, forceRefresh: isBackground });
+      setMovements(data.data ?? data ?? []);
     } catch (err) {
-      console.error('loadMovements error:', err);
+      console.error('movements load error:', err);
     } finally { setMovLoad(false); }
   }, [mProdId, mType, mFrom, mTo]);
+
+  useEffect(() => {
+    if (view === 'movements') {
+      loadMovements();
+    }
+  }, [view, loadMovements]);
 
   // ── Load Price History ──────────────────────────────────────────────────────
   const loadPriceHistory = useCallback(async (prodId?: string) => {
@@ -488,7 +461,6 @@ export default function InventoryPage() {
     newExpectedStock = prevStock + Math.abs(numQtyVal);
     calcDiff = +Math.abs(numQtyVal);
   } else {
-    // DECREASE, WASTAGE, DAMAGE, SUPPLIER_RETURN
     newExpectedStock = prevStock - Math.abs(numQtyVal);
     calcDiff = -Math.abs(numQtyVal);
   }
@@ -498,28 +470,11 @@ export default function InventoryPage() {
   // ── Adjust submit with Idempotency Guard ────────────────────────────────────
   const { isSubmitting: isSubmittingAdjust, handleSubmit: executeAdjust } = useIdempotentSubmit({
     onSubmit: async (_: any, idempotencyKey: string) => {
-      if (!aProdId) {
-        showToast('❌ Select a product');
-        return;
-      }
-      if (aQtyVal === '' || isNaN(Number(aQtyVal))) {
-        showToast('❌ Enter a valid quantity');
-        return;
-      }
-      if (Number(aQtyVal) < 0) {
-        showToast('❌ Quantity cannot be negative');
-        return;
-      }
-      if (isStockInvalid) {
-        showToast('❌ Operation would result in negative stock!');
-        return;
-      }
+      if (!aProdId) return showToast('❌ Select a product');
+      if (aQtyVal === '' || isNaN(numQtyVal) || numQtyVal < 0) return showToast('❌ Enter a valid quantity');
+      if (isStockInvalid) return showToast('❌ Resulting stock cannot be negative');
 
-      if (['DECREASE', 'WASTAGE', 'DAMAGE', 'SUPPLIER_RETURN'].includes(aType) && numQtyVal > prevStock) {
-        showToast(`❌ Cannot deduct ${numQtyVal} from current stock (${prevStock.toFixed(2)})`);
-        return;
-      }
-
+      const inv = masterProductsList.find(i => i.productId === aProdId);
       const res = await apiFetch('/api/inventory/adjust', {
         method: 'POST',
         headers: {
@@ -528,10 +483,10 @@ export default function InventoryPage() {
         },
         body: JSON.stringify({
           productId: aProdId,
-          adjustedQty: Number(aQtyVal),
-          adjustmentType: aType,
+          type: aType,
+          quantity: numQtyVal,
           reason: aReason,
-          remarks: aRemarks
+          remarks: aRemarks || undefined,
         }),
       });
       const data = await res.json();
@@ -540,8 +495,7 @@ export default function InventoryPage() {
         invalidateCache('/api/pricelist');
         invalidateCache('/api/reports');
         window.dispatchEvent(new Event('app-revalidate'));
-        const { refNo, delta, newQty } = data.data;
-        showToast(`✅ Stock updated — ${refNo} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)} → New Stock: ${newQty.toFixed(2)})`);
+        showToast(`✅ Stock adjusted: ${data.data?.productName} → ${data.data?.newStock} ${inv?.defaultUnit ?? 'KG'}`);
         setAProdId(''); setAProdSearch(''); setAQtyVal(''); setARemarks(''); setASysQty(0);
         await load(true); setView('list');
       } else {
@@ -551,106 +505,170 @@ export default function InventoryPage() {
     onError: (err: any) => {
       showToast(`❌ ${err.message || 'Network error'}`);
     },
-    getFingerprint: () => `${aProdId}-${aQtyVal}-${aType}-${aReason}`,
+    getFingerprint: () => `${aProdId}-${aType}-${numQtyVal}-${aReason}`,
   });
 
   const handleAdjust = (e: React.FormEvent) => executeAdjust(e);
 
-  // ── Derived ─────────────────────────────────────────────────────────────────
-  const filtered = inventory.filter(i =>
-    !search ||
-    i.product?.name.toLowerCase().includes(search.toLowerCase()) ||
-    (i.product?.urduName ?? '').includes(search)
-  );
+  const handleReconcile = async () => {
+    setSaving(true);
+    showToast('⏳ Reconciling stock ledger...');
+    try {
+      const res = await apiFetch('/api/inventory/reconcile', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        invalidateCache('/api/inventory');
+        invalidateCache('/api/pricelist');
+        invalidateCache('/api/reports');
+        window.dispatchEvent(new Event('app-revalidate'));
+        showToast(`✅ Reconciled ${data.data?.reconciledCount ?? 0} products from immutable ledger`);
+        await load(true);
+      } else {
+        showToast('❌ ' + (data.error ?? 'Reconciliation failed'));
+      }
+    } catch {
+      showToast('❌ Reconciliation failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openAdjustForProduct = (item: InventoryItem) => {
+    setAProdId(item.productId);
+    setAProdSearch(item.product?.name ?? '');
+    setASysQty(item.qty);
+    setAQtyVal(item.qty);
+    setAType('SET');
+    setAReason(REASON_PRESETS.SET[0]);
+    setView('adjust');
+  };
+
+  // ── Filtered list ───────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    if (!search.trim()) return inventory;
+    const q = search.toLowerCase();
+    return inventory.filter(i =>
+      i.product?.name?.toLowerCase().includes(q) ||
+      i.product?.urduName?.toLowerCase().includes(q) ||
+      i.product?.category?.toLowerCase().includes(q)
+    );
+  }, [inventory, search]);
+
+  const typeLabels: Record<string, string> = {
+    PURCHASE: '🛒 Purchase',
+    SALE: '🧾 Sale',
+    WASTAGE: '🗑 Wastage',
+    ADJUSTMENT: '⚙ Adjustment',
+    TRANSFER_OUT: '📤 Transfer',
+    OPENING: '🔓 Opening',
+  };
 
   const typeColors: Record<string, string> = {
-    PURCHASE: '#1F3D2B',
-    SALE: '#2B5C8A',
-    WASTAGE: '#8A2B2B',
-    ADJUSTMENT: '#7C5C1F',
-    TRANSFER_IN: '#2B5C8A',
-    TRANSFER_OUT: '#8A4A1F',
-    OPENING: '#3A3A6B',
-  };
-  const typeLabels: Record<string, string> = {
-    PURCHASE: '📦 Purchase', SALE: '🧾 Sale', WASTAGE: '🗑 Wastage',
-    ADJUSTMENT: '⚙ Adjustment', TRANSFER_IN: '↓ Transfer In',
-    TRANSFER_OUT: '↑ Transfer Out', OPENING: '🔓 Opening',
+    PURCHASE: '#15803D',
+    SALE: '#0284C7',
+    WASTAGE: '#DC2626',
+    ADJUSTMENT: '#D97706',
+    TRANSFER_OUT: '#7C3AED',
+    OPENING: '#475569',
   };
 
   return (
     <DashboardLayout>
-      {/* Toast */}
       {toast && (
-        <div style={{ position: 'fixed', top: 70, right: 24, zIndex: 9999, padding: '10px 16px', background: toast.startsWith('❌') ? '#A83E3E' : '#1F3D2B', color: '#fff', borderRadius: 8, fontWeight: 600, fontSize: 13, boxShadow: '0 4px 20px rgba(0,0,0,.2)' }}>
+        <div style={{ position: 'fixed', top: 70, right: 24, zIndex: 9999, padding: '10px 18px', background: toast.startsWith('❌') ? '#991B1B' : '#14532D', color: '#fff', borderRadius: 8, fontWeight: 700, fontSize: 13, boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
           {toast}
         </div>
       )}
 
-      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-      <div className="va-panel" style={{ padding: '16px 20px' }}>
+      {/* ─── TOP HEADER & NAVIGATION PANEL ───────────────────────────────────── */}
+      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '16px 20px', marginBottom: 16, boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, verticalAlign: 'middle' }}>
-              <Icon path={mdiArchive} size={1} color="var(--primary)" />
-              <h2 style={{ margin: 0 }}>Inventory Hub</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#166534' }}>
+              <Icon path={mdiArchive} size={1.2} />
             </div>
-            <p style={{ color: 'var(--muted)', fontSize: 13, margin: '4px 0 0 0' }}>
-              Single Source of Truth — Live Stock, Buy Prices, Price History, Adjustments &amp; Wastage
-            </p>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
+                Inventory Hub
+              </h2>
+              <p style={{ color: '#64748B', fontSize: 12, margin: '2px 0 0 0' }}>
+                Live stock from purchases, sales, adjustments &amp; wastage
+              </p>
+            </div>
           </div>
-          {view === 'list' && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+
+          {view === 'list' ? (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               {isAdmin && (
                 <button
                   className="va-btn secondary small"
                   onClick={() => openPriceAdjustModal()}
-                  style={{ fontWeight: 700, borderColor: 'var(--forest)', color: 'var(--forest)' }}
+                  style={{ fontWeight: 700, borderColor: '#166534', color: '#166534', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                 >
-                  <Icon path={mdiTagOutline} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Adjust Buy Rate
+                  <Icon path={mdiTagOutline} size={0.65} />
+                  <span>Buy Rate</span>
                 </button>
               )}
-              <button className="va-btn secondary small" onClick={() => { setView('priceHistory'); loadPriceHistory(); }} style={{ fontWeight: 700 }}>
-                <Icon path={mdiHistory} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Buy Price History
+              <button
+                className="va-btn secondary small"
+                onClick={() => { setView('priceHistory'); loadPriceHistory(); }}
+                style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                <Icon path={mdiHistory} size={0.65} />
+                <span>Price History</span>
               </button>
-              <button className="va-btn secondary small" onClick={() => { setView('movements'); loadMovements(); }} style={{ fontWeight: 700 }}>
+              <button
+                className="va-btn secondary small"
+                onClick={() => { setView('movements'); loadMovements(); }}
+                style={{ fontWeight: 700 }}
+              >
                 📋 Movements
               </button>
-              <button className="va-btn secondary small" onClick={() => { setAProdId(''); setAProdSearch(''); setAQtyVal(''); setARemarks(''); setASysQty(0); setView('adjust'); load(true); }} style={{ fontWeight: 700 }}>
-                <Icon path={mdiTune} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Adjust Stock
+              <button
+                className="va-btn secondary small"
+                onClick={() => { setAProdId(''); setAProdSearch(''); setAQtyVal(''); setARemarks(''); setASysQty(0); setView('adjust'); load(true); }}
+                style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                <Icon path={mdiTune} size={0.65} />
+                <span>Adjust Stock</span>
               </button>
-              <button className="va-btn" onClick={() => { setWProdId(''); setWProdSearch(''); setWQty(0); setWRemarks(''); setView('wastage'); load(true); }}>
-                <Icon path={mdiDeleteOutline} size={0.7} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Record Wastage
+              <button
+                className="va-btn"
+                onClick={() => { setWProdId(''); setWProdSearch(''); setWQty(0); setWRemarks(''); setView('wastage'); load(true); }}
+                style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4, background: '#DC2626' }}
+              >
+                <Icon path={mdiDeleteOutline} size={0.65} />
+                <span>Wastage</span>
               </button>
             </div>
-          )}
-          {view !== 'list' && (
-            <button className="va-btn secondary small" onClick={() => { setAComboboxOpen(false); setWComboboxOpen(false); setView('list'); }}>← Back to Stock Hub</button>
+          ) : (
+            <button
+              className="va-btn secondary small"
+              onClick={() => { setAComboboxOpen(false); setWComboboxOpen(false); setView('list'); }}
+              style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            >
+              <Icon path={mdiArrowLeft} size={0.65} />
+              <span>Back to Stock Hub</span>
+            </button>
           )}
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* MODAL: ADMIN BUY PRICE ADJUSTMENT                                      */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ─── MODAL: ADMIN BUY PRICE ADJUSTMENT ────────────────────────────────── */}
       {priceModalOpen && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)',
-          zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
-        }}>
-          <div className="va-panel" style={{ width: '100%', maxWidth: 520, margin: 0, background: '#ffffff', borderRadius: 16, boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>
-            <div className="va-panel-head" style={{ borderBottom: '1px solid #E2E8F0', paddingBottom: 12, marginBottom: 16 }}>
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#0F172A' }}>
-                <Icon path={mdiTagOutline} size={0.9} color="var(--forest)" />
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 500, background: '#ffffff', borderRadius: 14, boxShadow: '0 20px 40px rgba(0,0,0,0.3)', padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #E2E8F0', paddingBottom: 12, marginBottom: 16 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#0F172A', fontSize: 17, fontWeight: 800 }}>
+                <Icon path={mdiTagOutline} size={0.85} color="#166534" />
                 Adjust Buy Rate (Buy Price)
               </h3>
               <button className="va-btn secondary small" onClick={() => setPriceModalOpen(false)}>✕</button>
             </div>
 
             <form onSubmit={handleBuyPriceSubmit}>
-              <div className="va-field" style={{ position: 'relative', marginBottom: 14 }}>
-                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6, color: '#0F172A' }}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
                   Product * (Search English or Urdu name)
                 </label>
                 <div style={{ position: 'relative' }}>
@@ -659,22 +677,12 @@ export default function InventoryPage() {
                     placeholder="🔍 Search product..."
                     value={pProdSearch}
                     onFocus={() => setPComboboxOpen(true)}
-                    onChange={e => {
-                      setPProdSearch(e.target.value);
-                      setPComboboxOpen(true);
-                    }}
-                    style={{
-                      width: '100%', padding: '10px 12px', border: '1px solid var(--line)',
-                      borderRadius: 8, background: '#ffffff', color: '#0F172A', fontSize: 14, fontWeight: 600
-                    }}
+                    onChange={e => { setPProdSearch(e.target.value); setPComboboxOpen(true); }}
+                    style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, background: '#F8FAFC', color: '#0F172A', fontSize: 13, fontWeight: 600 }}
                   />
 
                   {pComboboxOpen && (
-                    <div style={{
-                      position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: 220,
-                      overflowY: 'auto', background: '#ffffff', border: '1px solid #CBD5E1',
-                      borderRadius: 8, boxShadow: '0 10px 25px rgba(0,0,0,0.18)', zIndex: 10001, marginTop: 4
-                    }}>
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', background: '#ffffff', border: '1px solid #CBD5E1', borderRadius: 8, boxShadow: '0 10px 25px rgba(0,0,0,0.18)', zIndex: 10001, marginTop: 4 }}>
                       {masterProductsList.filter(p => !pProdSearch || p.name.toLowerCase().includes(pProdSearch.toLowerCase()) || (p.urduName ?? '').includes(pProdSearch)).map(p => (
                         <div
                           key={p.productId}
@@ -684,16 +692,11 @@ export default function InventoryPage() {
                             setPNewPrice(p.currentBuyPrice > 0 ? p.currentBuyPrice : '');
                             setPComboboxOpen(false);
                           }}
-                          style={{
-                            padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            cursor: 'pointer', borderBottom: '1px solid #F1F5F9'
-                          }}
-                          onMouseEnter={e => (e.currentTarget.style.background = '#F0FDF4')}
-                          onMouseLeave={e => (e.currentTarget.style.background = '#ffffff')}
+                          style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span style={{ fontSize: 18 }}>{getProductEmoji(p.name)}</span>
-                            <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>{p.name} {p.urduName ? `/ ${p.urduName}` : ''}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <ProductVisual name={p.name} emoji={p.emoji} imageUrl={p.imageUrl} size={22} />
+                            <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 13 }}>{p.name} {p.urduName ? `/ ${p.urduName}` : ''}</span>
                           </div>
                           <span style={{ fontSize: 12, fontWeight: 700, color: '#166534', fontFamily: 'monospace' }}>
                             Current: Rs {p.currentBuyPrice.toFixed(2)}
@@ -705,31 +708,8 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              {pProdId && (() => {
-                const prod = masterProductsList.find(p => p.productId === pProdId);
-                const currRate = prod?.currentBuyPrice ?? 0;
-                const prevRate = prod?.previousBuyPrice ?? 0;
-                const newRateNum = Number(pNewPrice || 0);
-                const diff = newRateNum - currRate;
-
-                return (
-                  <div style={{ padding: '12px 14px', background: '#F8FAFC', borderRadius: 10, border: '1px solid #E2E8F0', marginBottom: 14 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748B', marginBottom: 6 }}>
-                      <span>Current Buy Rate: <strong style={{ color: '#0F172A' }}>Rs {currRate.toFixed(2)} / {prod?.unit}</strong></span>
-                      <span>Previous Rate: <strong style={{ color: '#0F172A' }}>{prevRate > 0 ? `Rs ${prevRate.toFixed(2)}` : '—'}</strong></span>
-                    </div>
-
-                    {newRateNum > 0 && (
-                      <div style={{ fontSize: 13, fontWeight: 700, color: diff > 0 ? '#DC2626' : diff < 0 ? '#166534' : '#64748B' }}>
-                        Rate Change: Rs {currRate.toFixed(2)} → Rs {newRateNum.toFixed(2)} ({diff >= 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)})
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              <div className="va-field" style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6, color: '#0F172A' }}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
                   New Buy Rate (Rs / Unit) *
                 </label>
                 <input
@@ -737,12 +717,12 @@ export default function InventoryPage() {
                   value={pNewPrice}
                   onChange={e => setPNewPrice(e.target.value === '' ? '' : +e.target.value)}
                   placeholder="0.00"
-                  style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 8, background: '#ffffff', color: '#0F172A', fontSize: 16, fontWeight: 800, fontFamily: 'monospace' }}
+                  style={{ width: '100%', padding: '10px 12px', border: '1px solid #CBD5E1', borderRadius: 8, background: '#ffffff', color: '#0F172A', fontSize: 15, fontWeight: 800, fontFamily: 'monospace' }}
                 />
               </div>
 
-              <div className="va-field" style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6, color: '#0F172A' }}>
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
                   Adjustment Reason / Note
                 </label>
                 <input
@@ -750,13 +730,13 @@ export default function InventoryPage() {
                   value={pReason}
                   onChange={e => setPReason(e.target.value)}
                   placeholder="Admin buy rate update..."
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: '#ffffff', color: '#0F172A', fontSize: 13 }}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: 8, background: '#ffffff', color: '#0F172A', fontSize: 13 }}
                 />
               </div>
 
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button type="button" className="va-btn secondary" onClick={() => setPriceModalOpen(false)}>Cancel</button>
-                <button type="submit" className="va-btn" disabled={saving || !pProdId || pNewPrice === ''}>
+                <button type="submit" className="va-btn" disabled={saving || !pProdId || pNewPrice === ''} style={{ fontWeight: 800 }}>
                   {saving ? 'Updating…' : '✓ Save Buy Rate'}
                 </button>
               </div>
@@ -765,181 +745,140 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* VIEW: DASHBOARD + CURRENT STOCK HUB                                   */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ─── VIEW 1: CENTRAL STOCK HUB LIST ─────────────────────────────────── */}
       {view === 'list' && (
         <>
           {/* KPI Cards */}
           {summary && (
-            <div className="va-cards">
-              <div className="va-card accent">
-                <div className="label">Total Products</div>
-                <div className="value">{summary.totalProducts}</div>
-                <div className="foot">active catalog items</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+              <div style={{ background: '#FFFFFF', padding: '12px 14px', borderRadius: 10, border: '1px solid #E2E8F0', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+                <div style={{ fontSize: 11, color: '#64748B', fontWeight: 800, textTransform: 'uppercase' }}>Total Products</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#0F172A', marginTop: 2 }}>{summary.totalProducts}</div>
+                <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>Catalog items</div>
               </div>
-              <div className="va-card">
-                <div className="label">Total Available Qty</div>
-                <div className="value" style={{ color: 'var(--primary)' }}>{summary.totalAvailableQty.toFixed(1)}</div>
-                <div className="foot">units available for sale</div>
+              <div style={{ background: '#FFFFFF', padding: '12px 14px', borderRadius: 10, border: '1px solid #E2E8F0', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+                <div style={{ fontSize: 11, color: '#0369A1', fontWeight: 800, textTransform: 'uppercase' }}>Available Qty</div>
+                <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: '#0284C7', marginTop: 2 }}>{summary.totalAvailableQty.toFixed(1)}</div>
+                <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>Units in stock</div>
               </div>
-              <div className="va-card">
-                <div className="label">Stock Value</div>
-                <div className="value" style={{ color: 'var(--forest)' }}>{fmtMoney(summary.totalValue)}</div>
-                <div className="foot">at current buy price</div>
+              <div style={{ background: '#F0FDF4', padding: '12px 14px', borderRadius: 10, border: '1px solid #BBF7D0' }}>
+                <div style={{ fontSize: 11, color: '#166534', fontWeight: 800, textTransform: 'uppercase' }}>Stock Value</div>
+                <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: '#15803D', marginTop: 2 }}>{fmtMoney(summary.totalValue)}</div>
+                <div style={{ fontSize: 10, color: '#16A34A', marginTop: 2 }}>At buy price</div>
               </div>
-              <div className="va-card">
-                <div className="label">Low Stock Alert</div>
-                <div className="value" style={{ color: summary.lowStockCount > 0 ? 'var(--mustard)' : 'var(--ok)' }}>{summary.lowStockCount}</div>
-                <div className="foot">items need restocking</div>
+              <div style={{ background: '#FFFFFF', padding: '12px 14px', borderRadius: 10, border: '1px solid #E2E8F0', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+                <div style={{ fontSize: 11, color: '#15803D', fontWeight: 800, textTransform: 'uppercase' }}>Today In</div>
+                <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: '#16A34A', marginTop: 2 }}>+{summary.todayStockIn.toFixed(1)}</div>
+                <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>Purchased</div>
               </div>
-              <div className="va-card">
-                <div className="label">Out of Stock</div>
-                <div className="value" style={{ color: summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--ok)' }}>{summary.outOfStockCount}</div>
-                <div className="foot">zero quantity items</div>
-              </div>
-              <div className="va-card">
-                <div className="label">Today Stock In</div>
-                <div className="value" style={{ color: 'var(--ok)' }}>+{summary.todayStockIn.toFixed(1)}</div>
-                <div className="foot">purchased today</div>
-              </div>
-              <div className="va-card">
-                <div className="label">Today Stock Out</div>
-                <div className="value" style={{ color: 'var(--clay)' }}>-{summary.todayStockOut.toFixed(1)}</div>
-                <div className="foot">sold today</div>
+              <div style={{ background: '#FFFFFF', padding: '12px 14px', borderRadius: 10, border: '1px solid #E2E8F0', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+                <div style={{ fontSize: 11, color: '#991B1B', fontWeight: 800, textTransform: 'uppercase' }}>Today Out</div>
+                <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: '#DC2626', marginTop: 2 }}>-{summary.todayStockOut.toFixed(1)}</div>
+                <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>Sold</div>
               </div>
             </div>
           )}
 
-          {/* Low Stock Alert Banner */}
-          {(summary?.lowStockCount ?? 0) + (summary?.outOfStockCount ?? 0) > 0 && (
-            <div className="va-panel" style={{ borderLeft: '4px solid var(--danger)', padding: '12px 16px' }}>
-              <div style={{ fontWeight: 700, color: 'var(--danger)', fontSize: 13, marginBottom: 8 }}>⚠ Stock Alert</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {inventory.filter(i => i.stockStatus !== 'OK').map(i => (
-                  <span key={i.id} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                    padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-                    background: i.stockStatus === 'OUT_OF_STOCK' ? '#F5E1DE' : '#FEF3D4',
-                    color: i.stockStatus === 'OUT_OF_STOCK' ? 'var(--danger)' : 'var(--mustard)',
-                    border: `1px solid currentColor`,
-                  }}>
-                    {i.stockStatus === 'OUT_OF_STOCK' ? '❌' : '⚠'} {i.product?.name} · Available: {fmtQty(i.availableQty, i.product?.defaultUnit)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Search + Central Stock Hub Table */}
-          <div className="va-panel">
-            <div className="va-panel-head">
-              <h3>Central Stock Hub (Single Source of Truth)</h3>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* Search & Stock Panel */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+                <Icon path={mdiMagnify} size={0.8} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
                 <input
                   value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="🔍 Search product…"
-                  style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, width: 220 }}
+                  placeholder="Search product (English or Urdu)…"
+                  style={{ width: '100%', padding: '8px 12px 8px 32px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, background: '#F8FAFC' }}
                 />
-                <button className="va-btn secondary small" onClick={() => load()}>↻ Refresh</button>
-                <button className="va-btn secondary small" onClick={handleReconcile} disabled={saving} style={{ fontWeight: 700 }}>⚡ Reconcile Stock</button>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="va-btn secondary small" onClick={() => load()} style={{ fontWeight: 700 }}>↻ Refresh</button>
+                <button className="va-btn secondary small" onClick={handleReconcile} disabled={saving} style={{ fontWeight: 700 }}>⚡ Reconcile</button>
               </div>
             </div>
 
-            {loading && inventory.length === 0 ? <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={7} /></div>
-            : filtered.length === 0 ? (
-              <div className="va-empty">
-                <div className="big">No inventory stock found</div>
-                <div>Record purchases to automatically populate stock hub</div>
+            {loading && inventory.length === 0 ? (
+              <div style={{ padding: 20 }}><SkeletonTable rows={6} cols={7} /></div>
+            ) : filtered.length === 0 ? (
+              <div className="va-empty" style={{ padding: 40, textAlign: 'center' }}>
+                <div className="big" style={{ fontSize: 17, fontWeight: 800, color: '#0F172A' }}>No inventory stock found</div>
+                <div style={{ color: '#64748B', fontSize: 13, marginTop: 4 }}>Record purchases to automatically populate stock hub</div>
               </div>
             ) : (
               <>
-                {/* Desktop View Table */}
+                {/* ── Desktop Table ── */}
                 <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table className="va-table" style={{ minWidth: 850 }}>
+                  <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', textAlign: 'left' }}>
                     <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Product Name</th>
-                        <th>Urdu Name</th>
-                        <th>Unit</th>
-                        <th style={{ textAlign: 'right' }}>Total Stock</th>
-                        <th style={{ textAlign: 'right', color: 'var(--primary)' }}>Available Qty</th>
-                        <th style={{ textAlign: 'right', color: 'var(--forest)', fontWeight: 700 }}>Average Buy Cost</th>
-                        <th style={{ textAlign: 'right' }}>Latest Purchase Price</th>
-                        <th style={{ textAlign: 'right', fontWeight: 700 }}>Inventory Value</th>
-                        <th style={{ textAlign: 'center' }}>Status</th>
-                        <th style={{ textAlign: 'center' }}>Actions</th>
+                      <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 800 }}>
+                        <th style={{ padding: '12px 14px' }}>#</th>
+                        <th style={{ padding: '12px 14px' }}>Product</th>
+                        <th style={{ padding: '12px 14px' }}>Urdu Name</th>
+                        <th style={{ padding: '12px 14px' }}>Unit</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>Total Stock</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>Available</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>Average Cost</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>Latest Buy</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>Stock Value</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'center' }}>Status</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'center' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.map((i, idx) => {
                         const sc = i.stockStatus === 'OUT_OF_STOCK'
-                          ? { bg: '#FFF5F5', badge: 'var(--danger)', label: 'Out of Stock' }
+                          ? { bg: '#FEF2F2', badge: '#991B1B', label: 'Out of Stock' }
                           : i.stockStatus === 'LOW'
-                          ? { bg: '#FFFBF0', badge: '#B87333', label: 'Low Stock' }
-                          : { bg: undefined, badge: 'var(--ok)', label: 'Available' };
+                          ? { bg: '#FFFBEB', badge: '#B45309', label: 'Low Stock' }
+                          : { bg: '#FFFFFF', badge: '#15803D', label: 'Available' };
 
                         const latestRate = i.currentBuyPrice > 0 ? i.currentBuyPrice : (i.latestPurchasePrice ?? i.avgCost);
                         const avgCostVal = i.avgCost > 0 ? i.avgCost : latestRate;
-                        const priceDiff = latestRate - (i.previousBuyPrice > 0 ? i.previousBuyPrice : avgCostVal);
 
                         return (
-                          <tr key={i.id} style={{ background: sc.bg }}>
-                            <td className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>{idx + 1}</td>
-                            <td style={{ fontWeight: 700 }}>
+                          <tr key={i.id} style={{ borderBottom: '1px solid #F1F5F9', background: sc.bg }}>
+                            <td className="mono" style={{ color: '#94A3B8', fontSize: 11, padding: '10px 14px' }}>{idx + 1}</td>
+                            <td style={{ padding: '10px 14px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <ProductVisual
-                                  name={i.product?.name ?? ''}
-                                  emoji={(i.product as any)?.emoji}
-                                  imageUrl={(i.product as any)?.imageUrl}
-                                  size={24}
-                                />
+                                <ProductVisual name={i.product?.name ?? ''} emoji={(i.product as any)?.emoji} imageUrl={(i.product as any)?.imageUrl} size={24} />
                                 <div>
-                                  <div>{i.product?.name}</div>
+                                  <div style={{ fontWeight: 800, color: '#0F172A', fontSize: 13 }}>{i.product?.name}</div>
                                   {i.lastPurchaseDate && (
-                                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
-                                      Last buy: {new Date(i.lastPurchaseDate).toLocaleDateString('en-GB')} ({i.lastPurchaseQty ?? 0} {i.product?.defaultUnit})
+                                    <div style={{ fontSize: 10, color: '#64748B' }}>
+                                      Last: {new Date(i.lastPurchaseDate).toLocaleDateString('en-GB')} ({i.lastPurchaseQty ?? 0} {i.product?.defaultUnit})
                                     </div>
                                   )}
                                 </div>
                               </div>
                             </td>
-                            <td style={{ fontSize: 14, color: 'var(--muted)', fontFamily: 'serif' }}>{i.product?.urduName ?? '—'}</td>
-                            <td style={{ color: 'var(--muted)', fontSize: 12 }}>{i.product?.defaultUnit ?? 'KG'}</td>
-                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: i.qty <= 0 ? 'var(--danger)' : undefined }}>
+                            <td style={{ padding: '10px 14px', fontSize: 13, color: '#64748B', fontFamily: 'serif' }}>{i.product?.urduName ?? '—'}</td>
+                            <td style={{ padding: '10px 14px', color: '#64748B', fontSize: 12 }}>{i.product?.defaultUnit ?? 'KG'}</td>
+                            <td className="mono" style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: i.qty <= 0 ? '#DC2626' : '#0F172A' }}>
                               {i.qty.toFixed(2)}
                             </td>
-                            <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--primary)' }}>
+                            <td className="mono" style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#0284C7' }}>
                               {i.availableQty.toFixed(2)}
                             </td>
-                            <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
+                            <td className="mono" style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>
                               Rs {avgCostVal.toFixed(2)}
                             </td>
-                            <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                            <td className="mono" style={{ padding: '10px 14px', textAlign: 'right', color: '#64748B' }}>
                               {latestRate > 0 ? `Rs ${latestRate.toFixed(2)}` : '—'}
-                              {i.previousBuyPrice > 0 && priceDiff !== 0 && (
-                                <span style={{ fontSize: 10, marginLeft: 4, color: priceDiff > 0 ? 'var(--danger)' : 'var(--ok)' }}>
-                                  ({priceDiff > 0 ? `+${priceDiff.toFixed(1)}` : priceDiff.toFixed(1)})
-                                </span>
-                              )}
                             </td>
-                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--forest)' }}>{fmtMoney(i.totalValue)}</td>
-                            <td style={{ textAlign: 'center' }}>
-                              <span style={{
-                                display: 'inline-block', fontSize: 11, fontWeight: 700,
-                                padding: '3px 9px', borderRadius: 10,
-                                background: sc.badge + '22', color: sc.badge,
-                                border: `1px solid ${sc.badge}44`,
-                              }}>{sc.label}</span>
+                            <td className="mono" style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#15803D' }}>
+                              {fmtMoney(i.totalValue)}
                             </td>
-                            <td style={{ textAlign: 'center' }}>
+                            <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                              <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: sc.badge + '22', color: sc.badge }}>
+                                {sc.label}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                               <div style={{ display: 'inline-flex', gap: 4 }}>
                                 <button className="va-btn secondary small" onClick={() => openAdjustForProduct(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700 }}>
                                   ⚙ Adjust
                                 </button>
                                 {isAdmin && (
-                                  <button className="va-btn secondary small" onClick={() => openPriceAdjustModal(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700, color: 'var(--forest)' }} title="Adjust Buy Price">
+                                  <button className="va-btn secondary small" onClick={() => openPriceAdjustModal(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700, color: '#166534' }}>
                                     🏷️ Rate
                                   </button>
                                 )}
@@ -949,24 +888,11 @@ export default function InventoryPage() {
                         );
                       })}
                     </tbody>
-                    <tfoot>
-                      <tr style={{ background: '#1F3D2B', color: '#fff', fontWeight: 700 }}>
-                        <td colSpan={5} style={{ color: '#fff', fontWeight: 700 }}>Total Inventory Value ({filtered.length} products)</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#90CAF9', fontWeight: 800 }}>
-                          {filtered.reduce((s, i) => s + i.availableQty, 0).toFixed(1)}
-                        </td>
-                        <td colSpan={2}></td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#6FD89A', fontWeight: 800, fontSize: 15 }}>
-                          {fmtMoney(filtered.reduce((s, i) => s + i.totalValue, 0))}
-                        </td>
-                        <td colSpan={2}></td>
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
 
-                {/* Mobile View Cards */}
-                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%', marginTop: '14px' }}>
+                {/* ── Mobile View Cards ── */}
+                <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px' }}>
                   {filtered.map(i => {
                     const sc = i.stockStatus === 'OUT_OF_STOCK'
                       ? { badge: 'red' as const, label: 'Out of Stock' }
@@ -975,39 +901,51 @@ export default function InventoryPage() {
                       : { badge: 'green' as const, label: 'Available' };
                     const latestRate = i.currentBuyPrice > 0 ? i.currentBuyPrice : (i.latestPurchasePrice ?? i.avgCost);
                     const avgCostVal = i.avgCost > 0 ? i.avgCost : latestRate;
+
                     return (
                       <MobileCard
                         key={i.id}
                         title={i.product?.name ?? 'Product'}
                         headerBadge={i.product?.urduName || (i.product?.defaultUnit ?? 'KG')}
+                        footer={
+                          <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                            <button
+                              type="button"
+                              className="va-btn secondary small"
+                              style={{ flex: 1, fontWeight: 800, padding: '8px' }}
+                              onClick={() => openAdjustForProduct(i)}
+                            >
+                              ⚙ Adjust Stock
+                            </button>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                className="va-btn secondary small"
+                                style={{ flex: 1, fontWeight: 800, padding: '8px', color: '#166534' }}
+                                onClick={() => openPriceAdjustModal(i)}
+                              >
+                                🏷️ Buy Rate
+                              </button>
+                            )}
+                          </div>
+                        }
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>
-                          <ProductVisual
-                            name={i.product?.name ?? ''}
-                            emoji={(i.product as any)?.emoji}
-                            imageUrl={(i.product as any)?.imageUrl}
-                            size={28}
-                          />
-                          <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{i.product?.name}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 8, borderBottom: '1px solid #F1F5F9' }}>
+                          <ProductVisual name={i.product?.name ?? ''} emoji={(i.product as any)?.emoji} imageUrl={(i.product as any)?.imageUrl} size={28} />
+                          <div>
+                            <span style={{ fontWeight: 800, color: '#0F172A', fontSize: 14 }}>{i.product?.name}</span>
+                            {i.product?.urduName && <div style={{ fontSize: 12, color: '#64748B', fontFamily: 'serif' }}>{i.product.urduName}</div>}
+                          </div>
                         </div>
+
+                        <MobileCardRow label="Available Qty" value={`${i.availableQty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} valueColor="#0284C7" isMono />
                         <MobileCardRow label="Total Stock" value={`${i.qty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} isMono />
-                        <MobileCardRow label="Available Qty" value={`${i.availableQty.toFixed(2)} ${i.product?.defaultUnit ?? 'KG'}`} valueColor="var(--primary)" isMono />
-                        <MobileCardRow label="Average Buy Cost" value={`Rs ${avgCostVal.toFixed(2)} / ${i.product?.defaultUnit ?? 'KG'}`} valueColor="var(--forest)" isMono />
+                        <MobileCardRow label="Average Buy Cost" value={`Rs ${avgCostVal.toFixed(2)} / ${i.product?.defaultUnit ?? 'KG'}`} valueColor="#166534" isMono />
                         <MobileCardRow label="Latest Purchase Price" value={latestRate > 0 ? `Rs ${latestRate.toFixed(2)}` : '—'} isMono />
-                        <MobileCardRow label="Inventory Value" value={fmtMoney(i.totalValue)} valueColor="#166534" isMono />
+                        <MobileCardRow label="Inventory Value" value={fmtMoney(i.totalValue)} valueColor="#15803D" isMono />
                         <MobileCardRow label="Status">
                           <MobileCardBadge variant={sc.badge}>{sc.label}</MobileCardBadge>
                         </MobileCardRow>
-                        <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
-                          <button className="va-btn secondary small" style={{ flex: 1, fontWeight: 700 }} onClick={() => openAdjustForProduct(i)}>
-                            ⚙ Adjust Stock
-                          </button>
-                          {isAdmin && (
-                            <button className="va-btn secondary small" style={{ flex: 1, fontWeight: 700, color: 'var(--forest)' }} onClick={() => openPriceAdjustModal(i)}>
-                              🏷️ Buy Rate
-                            </button>
-                          )}
-                        </div>
                       </MobileCard>
                     );
                   })}
@@ -1018,720 +956,570 @@ export default function InventoryPage() {
         </>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* VIEW: PURCHASE BUY PRICE HISTORY                                      */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {view === 'priceHistory' && (
-        <div className="va-panel">
-          <div className="va-panel-head">
-            <h3><Icon path={mdiHistory} size={0.8} style={{ verticalAlign: 'middle', marginRight: 6 }} /> Purchase Buy Price History</h3>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <select value={histProdId} onChange={e => { setHistProdId(e.target.value); loadPriceHistory(e.target.value); }} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--line)', fontSize: 13, background: '#ffffff', color: '#0F172A' }}>
-                <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>All Products</option>
-                {masterProductsList.map(p => <option key={p.productId} value={p.productId} style={{ background: '#ffffff', color: '#0F172A' }}>{getProductEmoji(p.name)} {p.name} {p.urduName ? `/ ${p.urduName}` : ''}</option>)}
-              </select>
-              <button className="va-btn secondary small" onClick={() => loadPriceHistory(histProdId)}>↻ Refresh</button>
-            </div>
-          </div>
-
-          {histLoad ? <div className="va-loading">Loading price history…</div>
-          : priceHistory.length === 0 ? (
-            <div className="va-empty">
-              <div className="big">No purchase price history recorded</div>
-              <div>Historical buy prices will accumulate automatically as purchases or manual adjustments are recorded</div>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="va-table">
-                <thead>
-                  <tr>
-                    <th>Date &amp; Time</th>
-                    <th>Product Name</th>
-                    <th>Supplier / Record</th>
-                    <th style={{ textAlign: 'right' }}>Buy Price (Rs)</th>
-                    <th style={{ textAlign: 'right' }}>Purchase / Stock Qty</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {priceHistory.map(entry => (
-                    <tr key={entry.id}>
-                      <td style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtDateTime(entry.date)}</td>
-                      <td style={{ fontWeight: 700 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <ProductVisual
-                            name={entry.product?.name ?? ''}
-                            emoji={entry.product?.emoji}
-                            imageUrl={entry.product?.imageUrl}
-                            size={22}
-                          />
-                          <div>
-                            <div>{entry.product?.name ?? '—'}</div>
-                            {entry.product?.urduName && <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'serif' }}>{entry.product.urduName}</div>}
-                          </div>
-                        </div>
-                      </td>
-                      <td>{entry.supplier?.name ?? 'Mandi / Direct / Admin Update'}</td>
-                      <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
-                        Rs {entry.buyPrice.toFixed(2)}
-                      </td>
-                      <td className="mono" style={{ textAlign: 'right' }}>
-                        {entry.qty.toFixed(2)} {entry.product?.defaultUnit ?? 'KG'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* VIEW: RECORD WASTAGE                                                   */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {view === 'wastage' && (
-        <div className="va-panel" style={{ maxWidth: 640 }}>
-          <div className="va-panel-head"><h3>🗑 Record Stock Wastage</h3></div>
-          <form onSubmit={handleWastage}>
-            <div className="va-form-row">
-              {/* Searchable Product Combobox */}
-              <div className="va-field" style={{ position: 'relative' }}>
-                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Product * (Search English or Urdu name)</label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type="text"
-                    placeholder="🔍 Search product (e.g. Potato, آلو, Onion)..."
-                    value={wProdSearch}
-                    onFocus={() => setWComboboxOpen(true)}
-                    onChange={e => {
-                      setWProdSearch(e.target.value);
-                      setWComboboxOpen(true);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      border: '1px solid var(--line)',
-                      borderRadius: 8,
-                      background: '#ffffff',
-                      color: '#0F172A',
-                      fontSize: 14,
-                      fontWeight: 600,
-                    }}
-                  />
-
-                  {wComboboxOpen && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '100%',
-                        left: 0,
-                        right: 0,
-                        maxHeight: 250,
-                        overflowY: 'auto',
-                        background: '#ffffff',
-                        border: '1px solid #CBD5E1',
-                        borderRadius: 8,
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
-                        zIndex: 1000,
-                        marginTop: 4,
-                      }}
-                    >
-                      {matchingWastageProducts.length === 0 ? (
-                        <div style={{ padding: '12px 16px', color: '#64748B', fontSize: 13, textAlign: 'center' }}>
-                          No products match "{wProdSearch}"
-                        </div>
-                      ) : (
-                        matchingWastageProducts.map(p => {
-                          const isSelected = p.productId === wProdId;
-
-                          return (
-                            <div
-                              key={p.productId}
-                              onClick={() => {
-                                setWProdId(p.productId);
-                                setWProdSearch(p.name);
-                                setWUnit(p.unit);
-                                setWComboboxOpen(false);
-                              }}
-                              style={{
-                                padding: '10px 14px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                cursor: 'pointer',
-                                background: isSelected ? '#E2F0D9' : '#ffffff',
-                                borderBottom: '1px solid #F1F5F9',
-                                transition: 'background 0.15s ease',
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.background = '#F0FDF4')}
-                              onMouseLeave={e => (e.currentTarget.style.background = isSelected ? '#E2F0D9' : '#ffffff')}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <ProductVisual name={p.name} emoji={p.emoji} imageUrl={p.imageUrl} size={22} />
-                                <div>
-                                  <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>{p.name}</span>
-                                  {p.urduName && (
-                                    <span style={{ marginLeft: 8, color: '#475569', fontSize: 14, fontFamily: 'serif' }}>
-                                      / {p.urduName}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div style={{
-                                fontSize: 12,
-                                fontWeight: 700,
-                                fontFamily: 'monospace',
-                                padding: '3px 8px',
-                                borderRadius: 6,
-                                background: p.qty > 0 ? '#DCFCE7' : '#F1F5F9',
-                                color: p.qty > 0 ? '#166534' : '#64748B',
-                              }}>
-                                Stock: {p.qty.toFixed(2)} {p.unit}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <select
-                  value={wProdId}
-                  onChange={e => {
-                    const selId = e.target.value;
-                    setWProdId(selId);
-                    const match = masterProductsList.find(p => p.productId === selId);
-                    if (match) {
-                      setWProdSearch(match.name);
-                      setWUnit(match.unit);
-                    }
-                  }}
-                  required
-                  style={{
-                    marginTop: 6,
-                    padding: '8px 12px',
-                    border: '1px solid var(--line)',
-                    borderRadius: 8,
-                    background: '#ffffff',
-                    color: '#0F172A',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    width: '100%',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>— Or select from full list ({masterProductsList.length} products) —</option>
-                  {masterProductsList.map(p => (
-                    <option key={p.productId} value={p.productId} style={{ background: '#ffffff', color: '#0F172A', padding: '6px' }}>
-                      {getProductEmoji(p.name)} {p.name} {p.urduName ? `/ ${p.urduName}` : ''} — Stock: {p.qty.toFixed(2)} {p.unit}
-                    </option>
-                  ))}
-                </select>
-
-                {wProdId && (() => {
-                  const inv = masterProductsList.find(i => i.productId === wProdId);
-                  return inv ? <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'block' }}>Current stock: {inv.qty.toFixed(2)} {inv.unit}</span> : null;
-                })()}
-              </div>
-
-              <div className="va-field">
-                <label>Quantity Wasted *</label>
-                <input type="number" required min="0.001" step="any"
-                  value={wQty || ''} onChange={e => setWQty(e.target.value === '' ? 0 : +e.target.value)}
-                  style={{ background: '#ffffff', color: '#0F172A', fontSize: 14, fontWeight: 700, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
-                />
-                {wProdId && wQty > 0 && (() => {
-                  const inv = masterProductsList.find(i => i.productId === wProdId);
-                  if (inv && wQty > inv.qty) return (
-                    <span style={{ color: 'var(--danger)', fontSize: 11, fontWeight: 700, marginTop: 4, display: 'block' }}>
-                      ⚠ Exceeds current stock ({inv.qty.toFixed(2)})
-                    </span>
-                  );
-                  return null;
-                })()}
-              </div>
-            </div>
-
-            <div className="va-form-row" style={{ marginTop: 12 }}>
-              <div className="va-field">
-                <label>Unit</label>
-                <select value={wUnit} onChange={e => setWUnit(e.target.value)} style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 600 }}>
-                  {UNITS.map(u => <option key={u} style={{ background: '#ffffff', color: '#0F172A' }}>{u}</option>)}
-                </select>
-              </div>
-              <div className="va-field">
-                <label>Reason *</label>
-                <select value={wReason} onChange={e => setWReason(e.target.value)} style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 600 }}>
-                  {REASON_PRESETS.WASTAGE.map(r => <option key={r} value={r} style={{ background: '#ffffff', color: '#0F172A' }}>{r}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="va-form-row" style={{ marginTop: 12 }}>
-              <div className="va-field">
-                <label>Remarks / Notes</label>
-                <input value={wRemarks} onChange={e => setWRemarks(e.target.value)}
-                  placeholder="Additional details regarding wastage…"
-                  style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, borderRadius: 8, padding: '8px 12px' }}
-                />
-              </div>
-              <div className="va-field">
-                <label>Date (optional)</label>
-                <input type="datetime-local" value={wDate} onChange={e => setWDate(e.target.value)}
-                  style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, borderRadius: 8, padding: '8px 12px' }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-              <button type="submit" className="va-btn" disabled={saving}>{saving ? 'Saving…' : '✓ Record Wastage'}</button>
-              <button type="button" className="va-btn secondary" onClick={() => setView('list')}>Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* VIEW: MANUAL STOCK ADJUSTMENT (PROFESSIONAL ERP MODULE)                */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {view === 'adjust' && (
-        <div className="va-panel" style={{ maxWidth: 720 }}>
-          <div className="va-panel-head">
-            <h3>⚙ Professional ERP Manual Stock Adjustment</h3>
-          </div>
-          <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 16px' }}>
-            Single Source of Truth — Stock corrections, physical verifications, wastage, damaged items, and supplier returns. Every action updates stock and records a full audit log.
-          </p>
-
-          <form onSubmit={handleAdjust}>
-            <div className="va-form-row">
-              {/* Searchable Product Combobox */}
-              <div className="va-field" style={{ position: 'relative' }}>
-                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
-                  Product * (Search English or Urdu name)
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type="text"
-                    placeholder="🔍 Search product (e.g. Potato, آلو, Onion)..."
-                    value={aProdSearch}
-                    onFocus={() => setAComboboxOpen(true)}
-                    onChange={e => {
-                      setAProdSearch(e.target.value);
-                      setAComboboxOpen(true);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      border: '1px solid var(--line)',
-                      borderRadius: 8,
-                      background: '#ffffff',
-                      color: '#0F172A',
-                      fontSize: 14,
-                      fontWeight: 600,
-                    }}
-                  />
-
-                  {aComboboxOpen && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '100%',
-                        left: 0,
-                        right: 0,
-                        maxHeight: 250,
-                        overflowY: 'auto',
-                        background: '#ffffff',
-                        border: '1px solid #CBD5E1',
-                        borderRadius: 8,
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
-                        zIndex: 1000,
-                        marginTop: 4,
-                      }}
-                    >
-                      {matchingAdjProducts.length === 0 ? (
-                        <div style={{ padding: '12px 16px', color: '#64748B', fontSize: 13, textAlign: 'center' }}>
-                          No products match "{aProdSearch}"
-                        </div>
-                      ) : (
-                        matchingAdjProducts.map(p => {
-                          const isSelected = p.productId === aProdId;
-
-                          return (
-                            <div
-                              key={p.productId}
-                              onClick={() => {
-                                setAProdId(p.productId);
-                                setAProdSearch(p.name);
-                                setASysQty(p.qty);
-                                setAQtyVal('');
-                                setAComboboxOpen(false);
-                              }}
-                              style={{
-                                padding: '10px 14px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                cursor: 'pointer',
-                                background: isSelected ? '#E2F0D9' : '#ffffff',
-                                borderBottom: '1px solid #F1F5F9',
-                                transition: 'background 0.15s ease',
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.background = '#F0FDF4')}
-                              onMouseLeave={e => (e.currentTarget.style.background = isSelected ? '#E2F0D9' : '#ffffff')}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <ProductVisual name={p.name} emoji={p.emoji} imageUrl={p.imageUrl} size={22} />
-                                <div>
-                                  <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>{p.name}</span>
-                                  {p.urduName && (
-                                    <span style={{ marginLeft: 8, color: '#475569', fontSize: 14, fontFamily: 'serif' }}>
-                                      / {p.urduName}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div style={{
-                                fontSize: 12,
-                                fontWeight: 700,
-                                fontFamily: 'monospace',
-                                padding: '3px 8px',
-                                borderRadius: 6,
-                                background: p.qty > 0 ? '#DCFCE7' : '#F1F5F9',
-                                color: p.qty > 0 ? '#166534' : '#64748B',
-                              }}>
-                                Stock: {p.qty.toFixed(2)} {p.unit}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <select
-                  value={aProdId}
-                  onChange={e => {
-                    const selId = e.target.value;
-                    setAProdId(selId);
-                    const match = masterProductsList.find(p => p.productId === selId);
-                    if (match) {
-                      setAProdSearch(match.name);
-                      setASysQty(match.qty);
-                      setAQtyVal('');
-                    }
-                  }}
-                  required
-                  style={{
-                    marginTop: 6,
-                    padding: '8px 12px',
-                    border: '1px solid var(--line)',
-                    borderRadius: 8,
-                    background: '#ffffff',
-                    color: '#0F172A',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    width: '100%',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>— Select from full product list ({masterProductsList.length} items) —</option>
-                  {masterProductsList.map(p => (
-                    <option key={p.productId} value={p.productId} style={{ background: '#ffffff', color: '#0F172A', padding: '6px' }}>
-                      {getProductEmoji(p.name)} {p.name} {p.urduName ? `/ ${p.urduName}` : ''} — Stock: {p.qty.toFixed(2)} {p.unit}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Adjustment Mode Selection */}
-              <div className="va-field">
-                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
-                  Adjustment Operation Mode *
-                </label>
-                <select
-                  value={aType}
-                  onChange={e => {
-                    const newMode = e.target.value as any;
-                    setAType(newMode);
-                    if (REASON_PRESETS[newMode]) setAReason(REASON_PRESETS[newMode][0]);
-                  }}
-                  style={{ background: '#ffffff', color: '#0F172A', fontWeight: 600, fontSize: 13, width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
-                >
-                  {ADJUSTMENT_MODES.map(m => (
-                    <option key={m.id} value={m.id} style={{ background: '#ffffff', color: '#0F172A' }}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* ── ERP STOCK INFORMATION PANEL ──────────────────────────────── */}
-            {selectedAdjProduct && (
-              <div style={{
-                margin: '16px 0',
-                padding: '16px',
-                background: '#F8FAFC',
-                border: '1px solid #E2E8F0',
-                borderRadius: 12,
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                gap: 14,
-              }}>
-                <div>
-                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>PRODUCT</div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', marginTop: 2 }}>
-                    {getProductEmoji(selectedAdjProduct.name)} {selectedAdjProduct.name}
-                  </div>
-                  {selectedAdjProduct.urduName && (
-                    <div style={{ fontSize: 13, color: '#475569', fontFamily: 'serif' }}>{selectedAdjProduct.urduName}</div>
-                  )}
-                </div>
-
-                <div>
-                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>CURRENT STOCK</div>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: '#166534', fontFamily: 'monospace', marginTop: 2 }}>
-                    {selectedAdjProduct.qty.toFixed(2)} {selectedAdjProduct.unit}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#64748B' }}>System Record</div>
-                </div>
-
-                <div>
-                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>LATEST BUY RATE</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: '#1E3A8A', fontFamily: 'monospace', marginTop: 2 }}>
-                    {selectedAdjProduct.currentBuyPrice > 0 ? `Rs ${selectedAdjProduct.currentBuyPrice.toFixed(2)}` : '—'}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#64748B' }}>per {selectedAdjProduct.unit}</div>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      className="va-btn secondary small"
-                      onClick={() => openPriceAdjustModal(selectedAdjProduct)}
-                      style={{ fontSize: 10, padding: '2px 6px', marginTop: 4, fontWeight: 700, color: 'var(--forest)' }}
-                    >
-                      🏷️ Adjust Rate
-                    </button>
-                  )}
-                </div>
-
-                <div>
-                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>PREVIOUS BUY RATE</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: '#64748B', fontFamily: 'monospace', marginTop: 2 }}>
-                    {selectedAdjProduct.previousBuyPrice > 0 ? `Rs ${selectedAdjProduct.previousBuyPrice.toFixed(2)}` : '—'}
-                  </div>
-                  {selectedAdjProduct.previousBuyPrice > 0 && selectedAdjProduct.currentBuyPrice > 0 && (
-                    <div style={{ fontSize: 11, fontWeight: 700, color: selectedAdjProduct.currentBuyPrice > selectedAdjProduct.previousBuyPrice ? '#DC2626' : '#166534' }}>
-                      {selectedAdjProduct.currentBuyPrice > selectedAdjProduct.previousBuyPrice ? `+${(selectedAdjProduct.currentBuyPrice - selectedAdjProduct.previousBuyPrice).toFixed(1)}` : (selectedAdjProduct.currentBuyPrice - selectedAdjProduct.previousBuyPrice).toFixed(1)}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>LAST PURCHASE</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginTop: 2 }}>
-                    {selectedAdjProduct.lastPurchaseDate ? new Date(selectedAdjProduct.lastPurchaseDate).toLocaleDateString('en-GB') : 'No purchases yet'}
-                  </div>
-                  {selectedAdjProduct.lastPurchaseQty && (
-                    <div style={{ fontSize: 11, color: '#64748B' }}>{selectedAdjProduct.lastPurchaseQty} {selectedAdjProduct.unit} bought</div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── DYNAMIC LIVE CALCULATION PREVIEW CARD ─────────────────────── */}
-            {aProdId && (
-              <>
-                <div style={{
-                  display: 'flex', gap: 12, margin: '16px 0', flexWrap: 'wrap',
-                  padding: '14px', background: '#F1F5F9', borderRadius: 12, border: '1px solid #CBD5E1'
-                }}>
-                  <div style={{ flex: 1, padding: '12px 14px', background: '#ffffff', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                    <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700 }}>PREVIOUS STOCK</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: '#334155', fontFamily: 'monospace', marginTop: 2 }}>
-                      {prevStock.toFixed(2)}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#64748B' }}>{selectedAdjProduct?.unit ?? 'KG'}</div>
-                  </div>
-
-                  <div style={{ flex: 1.2, padding: '12px 14px', background: 'rgba(43,91,138,0.06)', borderRadius: 8, border: '1px solid var(--line)' }}>
-                    <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700 }}>
-                      {aType === 'SET' || aType === 'OPENING' ? 'ACTUAL PHYSICAL STOCK *'
-                        : aType === 'INCREASE' ? 'QUANTITY TO ADD (+)'
-                        : aType === 'DECREASE' ? 'QUANTITY TO DEDUCT (-)'
-                        : aType === 'WASTAGE' ? 'QUANTITY WASTED (-)'
-                        : aType === 'DAMAGE' ? 'QUANTITY DAMAGED (-)'
-                        : 'QUANTITY RETURNED (-)'}
-                    </div>
-                    <input
-                      type="number" min="0" step="any" required
-                      value={aQtyVal}
-                      onChange={e => setAQtyVal(e.target.value === '' ? '' : +e.target.value)}
-                      style={{ width: '100%', fontSize: 22, fontWeight: 800, fontFamily: 'monospace', border: 'none', background: 'transparent', color: 'var(--forest)', outline: 'none', marginTop: 2 }}
-                      placeholder="0.00"
-                    />
-                  </div>
-
-                  <div style={{ flex: 1, padding: '12px 14px', background: '#ffffff', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                    <div style={{ fontSize: 11, color: '#64748B', fontWeight: 700 }}>NEW EXPECTED STOCK</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: isStockInvalid ? '#DC2626' : '#166534', fontFamily: 'monospace', marginTop: 2 }}>
-                      {newExpectedStock.toFixed(2)}
-                    </div>
-                    <div style={{ fontSize: 11, color: isStockInvalid ? '#DC2626' : '#64748B' }}>
-                      {isStockInvalid ? '⚠ Cannot be negative' : `${calcDiff >= 0 ? '+' : ''}${calcDiff.toFixed(2)} ${selectedAdjProduct?.unit ?? 'KG'}`}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="va-form-row">
-                  <div className="va-field">
-                    <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Adjustment Reason *</label>
-                    <select
-                      value={aReason}
-                      onChange={e => setAReason(e.target.value)}
-                      style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 600, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
-                    >
-                      {(REASON_PRESETS[aType] || REASON_PRESETS.SET).map(r => (
-                        <option key={r} value={r} style={{ background: '#ffffff', color: '#0F172A' }}>{r}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="va-form-row" style={{ marginTop: 12 }}>
-                  <div className="va-field">
-                    <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Remarks / Notes (Logged in Audit Trail)</label>
-                    <input value={aRemarks} onChange={e => setARemarks(e.target.value)}
-                      placeholder="Additional details for stock movement audit log…"
-                      style={{ background: '#ffffff', color: '#0F172A', fontSize: 13, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)' }}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-              <button type="submit" className="va-btn" disabled={saving || !aProdId || aQtyVal === '' || isStockInvalid}>
-                {saving ? 'Saving ERP Update…' : '⚙ Apply Stock Adjustment'}
-              </button>
-              <button type="button" className="va-btn secondary" onClick={() => { setAComboboxOpen(false); setView('list'); }}>Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* VIEW: STOCK MOVEMENTS HISTORY                                          */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ─── VIEW 2: STOCK MOVEMENTS HISTORY (MOBILE & DESKTOP REDESIGN) ───── */}
       {view === 'movements' && (
         <>
-          {/* Movements Header */}
-          <div className="va-panel" style={{ padding: '10px 16px' }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <select value={mProdId} onChange={e => setMProdId(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, flex: 2, minWidth: 160, background: '#ffffff', color: '#0F172A' }}>
-                <option value="" style={{ background: '#ffffff', color: '#0F172A' }}>All Products</option>
-                {masterProductsList.map(p => <option key={p.productId} value={p.productId} style={{ background: '#ffffff', color: '#0F172A' }}>{getProductEmoji(p.name)} {p.name}</option>)}
-              </select>
-              <select value={mType} onChange={e => setMType(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, background: '#ffffff', color: '#0F172A' }}>
-                <option value="all" style={{ background: '#ffffff', color: '#0F172A' }}>All Movement Types</option>
-                {['PURCHASE','SALE','WASTAGE','ADJUSTMENT','TRANSFER_OUT','OPENING'].map(t => <option key={t} style={{ background: '#ffffff', color: '#0F172A' }}>{t}</option>)}
-              </select>
-              <input type="date" value={mFrom} onChange={e => setMFrom(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, background: '#ffffff', color: '#0F172A' }} />
-              <span style={{ color: 'var(--muted)', fontSize: 12 }}>to</span>
-              <input type="date" value={mTo} onChange={e => setMTo(e.target.value)}
-                style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13, background: '#ffffff', color: '#0F172A' }} />
-              <button className="va-btn secondary small" onClick={() => loadMovements()}>Apply</button>
-              <button className="va-btn secondary small" onClick={() => loadMovements()}>↻ Refresh</button>
+          {/* Filter Bar */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '14px 18px', marginBottom: 14, boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1, minWidth: 220 }}>
+                <select
+                  value={mProdId}
+                  onChange={e => setMProdId(e.target.value)}
+                  style={{ padding: '7px 10px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 12, background: '#F8FAFC', flex: 1, minWidth: 140, fontWeight: 700 }}
+                >
+                  <option value="">All Products</option>
+                  {masterProductsList.map(p => (
+                    <option key={p.productId} value={p.productId}>{p.name} {p.urduName ? `(${p.urduName})` : ''}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={mType}
+                  onChange={e => setMType(e.target.value)}
+                  style={{ padding: '7px 10px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 12, background: '#F8FAFC', fontWeight: 700 }}
+                >
+                  <option value="all">All Movement Types</option>
+                  {['PURCHASE','SALE','WASTAGE','ADJUSTMENT','TRANSFER_OUT','OPENING'].map(t => (
+                    <option key={t} value={t}>{typeLabels[t] || t}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <input
+                  type="date"
+                  value={mFrom}
+                  onChange={e => setMFrom(e.target.value)}
+                  style={{ padding: '6px 8px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 12, background: '#F8FAFC' }}
+                />
+                <span style={{ fontSize: 11, color: '#64748B' }}>to</span>
+                <input
+                  type="date"
+                  value={mTo}
+                  onChange={e => setMTo(e.target.value)}
+                  style={{ padding: '6px 8px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 12, background: '#F8FAFC' }}
+                />
+                <button className="va-btn secondary small" onClick={() => loadMovements()} style={{ fontWeight: 700 }}>Apply</button>
+                <button className="va-btn secondary small" onClick={() => loadMovements()}>↻</button>
+              </div>
             </div>
           </div>
 
-          <div className="va-panel">
-            {movLoad ? <div className="va-loading">Loading movements…</div>
-            : movements.length === 0 ? (
-              <div className="va-empty">
-                <div className="big">No stock movements found</div>
-                <div>Try adjusting the filters or date range</div>
+          {/* Movements Output */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
+            {movLoad ? (
+              <div style={{ padding: 20 }}><SkeletonTable rows={6} cols={8} /></div>
+            ) : movements.length === 0 ? (
+              <div className="va-empty" style={{ padding: '40px 20px', textAlign: 'center' }}>
+                <div style={{ fontSize: '32px', marginBottom: 6 }}>📋</div>
+                <div className="big" style={{ fontSize: 17, fontWeight: 800, color: '#0F172A' }}>No stock movements found</div>
+                <div style={{ color: '#64748B', fontSize: 13, marginTop: 4 }}>Try adjusting the product filter or date range</div>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <table className="va-table" style={{ minWidth: 800 }}>
-                  <thead>
-                    <tr>
-                      <th>Date &amp; Time</th>
-                      <th>Product</th>
-                      <th style={{ textAlign: 'center' }}>Type</th>
-                      <th style={{ textAlign: 'right' }}>Prev Stock</th>
-                      <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Stock In</th>
-                      <th style={{ textAlign: 'right', color: 'var(--danger)' }}>Stock Out</th>
-                      <th style={{ textAlign: 'right' }}>New Stock</th>
-                      <th>User</th>
-                      <th>Note</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {movements.map(m => (
-                      <tr key={m.id}>
-                        <td style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDateTime(m.date)}</td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <ProductVisual
-                              name={m.productName}
-                              emoji={m.emoji}
-                              imageUrl={m.imageUrl}
-                              size={22}
-                            />
-                            <div>
-                              <div style={{ fontWeight: 600 }}>{m.productName}</div>
-                              {m.productUrdu && <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'serif' }}>{m.productUrdu}</div>}
+              <>
+                {/* ── Desktop Movements Table ── */}
+                <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 800 }}>
+                        <th style={{ padding: '12px 14px' }}>Date &amp; Time</th>
+                        <th style={{ padding: '12px 14px' }}>Product</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'center' }}>Type</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>Prev Stock</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right', color: '#166534' }}>Stock In</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right', color: '#DC2626' }}>Stock Out</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>New Stock</th>
+                        <th style={{ padding: '12px 14px' }}>User</th>
+                        <th style={{ padding: '12px 14px' }}>Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {movements.map(m => (
+                        <tr key={m.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                          <td style={{ fontSize: 12, color: '#64748B', whiteSpace: 'nowrap', padding: '10px 14px' }}>
+                            {fmtDateTime(m.date)}
+                          </td>
+                          <td style={{ padding: '10px 14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <ProductVisual name={m.productName} emoji={m.emoji} imageUrl={m.imageUrl} size={22} />
+                              <div>
+                                <div style={{ fontWeight: 700, color: '#0F172A' }}>{m.productName}</div>
+                                {m.productUrdu && <div style={{ fontSize: 11, color: '#64748B', fontFamily: 'serif' }}>{m.productUrdu}</div>}
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '10px 14px' }}>
+                            <span style={{
+                              display: 'inline-block', fontSize: 11, fontWeight: 800,
+                              padding: '3px 8px', borderRadius: 8,
+                              background: (typeColors[m.type] ?? '#555') + '22',
+                              color: typeColors[m.type] ?? '#555',
+                              border: `1px solid ${(typeColors[m.type] ?? '#555')}44`,
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {typeLabels[m.type] ?? m.type}
+                            </span>
+                          </td>
+                          <td className="mono" style={{ textAlign: 'right', color: '#64748B', padding: '10px 14px' }}>
+                            {m.previousStock?.toFixed(2) ?? '—'}
+                          </td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: '#166534', padding: '10px 14px' }}>
+                            {m.stockIn > 0 ? `+${m.stockIn.toFixed(2)} ${m.unit}` : '—'}
+                          </td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: '#DC2626', padding: '10px 14px' }}>
+                            {m.stockOut > 0 ? `-${m.stockOut.toFixed(2)} ${m.unit}` : '—'}
+                          </td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: '#0F172A', padding: '10px 14px' }}>
+                            {m.newStock?.toFixed(2) ?? '—'}
+                          </td>
+                          <td style={{ fontSize: 12, color: '#475569', padding: '10px 14px' }}>
+                            {m.userName ?? 'System'}
+                          </td>
+                          <td style={{ fontSize: 12, color: '#64748B', maxWidth: 240, padding: '10px 14px' }}>
+                            <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                              {m.note || '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* ── Mobile Movements Cards ── */}
+                <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
+                  {movements.map(m => {
+                    const isPositive = m.stockIn > 0;
+                    const isNegative = m.stockOut > 0;
+                    const changeStr = isPositive 
+                      ? `+${m.stockIn.toFixed(2)} ${m.unit}`
+                      : isNegative 
+                      ? `-${m.stockOut.toFixed(2)} ${m.unit}`
+                      : `0.00 ${m.unit}`;
+
+                    return (
+                      <div
+                        key={m.id}
+                        style={{
+                          background: '#FFFFFF',
+                          border: '1px solid #E2E8F0',
+                          borderRadius: '12px',
+                          padding: '12px 14px',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+                        }}
+                      >
+                        {/* Header Row: Date & Type Badge */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>
+                            {fmtDateTime(m.date)}
+                          </span>
                           <span style={{
-                            display: 'inline-block', fontSize: 11, fontWeight: 700,
-                            padding: '3px 8px', borderRadius: 8,
+                            fontSize: 10,
+                            fontWeight: 800,
+                            padding: '2px 8px',
+                            borderRadius: 6,
                             background: (typeColors[m.type] ?? '#555') + '22',
                             color: typeColors[m.type] ?? '#555',
                             border: `1px solid ${(typeColors[m.type] ?? '#555')}44`,
-                            whiteSpace: 'nowrap',
-                          }}>{typeLabels[m.type] ?? m.type}</span>
-                        </td>
-                        <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
-                          {m.previousStock?.toFixed(2) ?? '—'}
-                        </td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>
-                          {m.stockIn > 0 ? `+${m.stockIn.toFixed(2)} ${m.unit}` : '—'}
-                        </td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
-                          {m.stockOut > 0 ? `-${m.stockOut.toFixed(2)} ${m.unit}` : '—'}
-                        </td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 800 }}>
-                          {m.newStock?.toFixed(2) ?? '—'}
-                        </td>
-                        <td style={{ fontSize: 12, color: 'var(--muted)' }}>
-                          {m.userName ?? 'System'}
-                        </td>
-                        <td style={{ fontSize: 12, color: 'var(--muted)', maxWidth: 260 }}>
-                          <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          }}>
+                            {typeLabels[m.type] ?? m.type}
+                          </span>
+                        </div>
+
+                        {/* Product Visual & Name */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                          <ProductVisual name={m.productName} emoji={m.emoji} imageUrl={m.imageUrl} size={26} />
+                          <div>
+                            <div style={{ fontWeight: 800, color: '#0F172A', fontSize: 14 }}>{m.productName}</div>
+                            {m.productUrdu && <div style={{ fontSize: 11, color: '#64748B', fontFamily: 'serif' }}>{m.productUrdu}</div>}
+                          </div>
+                        </div>
+
+                        {/* 3-Column Stock Stats */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: 6, background: '#F8FAFC', padding: '8px 10px', borderRadius: 8, border: '1px solid #E2E8F0', marginBottom: 8, textAlign: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 9, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Prev Stock</div>
+                            <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginTop: 2 }}>
+                              {m.previousStock?.toFixed(2) ?? '—'}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 9, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Movement</div>
+                            <div className="mono" style={{ fontSize: 13, fontWeight: 800, color: isPositive ? '#166534' : isNegative ? '#DC2626' : '#475569', marginTop: 2 }}>
+                              {changeStr}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 9, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>New Stock</div>
+                            <div className="mono" style={{ fontSize: 13, fontWeight: 800, color: '#0F172A', marginTop: 2 }}>
+                              {m.newStock?.toFixed(2) ?? '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Footer: User & Note */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: '#64748B', borderTop: '1px solid #F1F5F9', paddingTop: 6 }}>
+                          <span>👤 {m.userName || 'System'}</span>
+                          <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
                             {m.note || '—'}
                           </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ─── VIEW 3: PURCHASE BUY PRICE HISTORY ──────────────────────────────── */}
+      {view === 'priceHistory' && (
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon path={mdiHistory} size={0.8} color="#166534" />
+              <span>Purchase Buy Price History</span>
+            </h3>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select
+                value={histProdId}
+                onChange={e => { setHistProdId(e.target.value); loadPriceHistory(e.target.value); }}
+                style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 12, background: '#F8FAFC', fontWeight: 700 }}
+              >
+                <option value="">All Products</option>
+                {masterProductsList.map(p => (
+                  <option key={p.productId} value={p.productId}>{p.name} {p.urduName ? `(${p.urduName})` : ''}</option>
+                ))}
+              </select>
+              <button className="va-btn secondary small" onClick={() => loadPriceHistory(histProdId)}>↻</button>
+            </div>
+          </div>
+
+          {histLoad ? (
+            <div style={{ padding: 20 }}><SkeletonTable rows={5} cols={5} /></div>
+          ) : priceHistory.length === 0 ? (
+            <div className="va-empty" style={{ padding: 40, textAlign: 'center' }}>
+              <div className="big" style={{ fontSize: 17, fontWeight: 800, color: '#0F172A' }}>No purchase price history recorded</div>
+              <div style={{ color: '#64748B', fontSize: 13, marginTop: 4 }}>Historical buy prices accumulate automatically as purchases are recorded</div>
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table */}
+              <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 800 }}>
+                      <th style={{ padding: '12px 14px' }}>Date &amp; Time</th>
+                      <th style={{ padding: '12px 14px' }}>Product</th>
+                      <th style={{ padding: '12px 14px' }}>Supplier / Record</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'right' }}>Buy Price</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'right' }}>Purchase Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {priceHistory.map(entry => (
+                      <tr key={entry.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                        <td style={{ fontSize: 12, color: '#64748B', padding: '10px 14px' }}>{fmtDateTime(entry.date)}</td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <ProductVisual name={entry.product?.name ?? ''} emoji={entry.product?.emoji} imageUrl={entry.product?.imageUrl} size={22} />
+                            <div>
+                              <div style={{ fontWeight: 700, color: '#0F172A' }}>{entry.product?.name ?? '—'}</div>
+                              {entry.product?.urduName && <div style={{ fontSize: 11, color: '#64748B', fontFamily: 'serif' }}>{entry.product.urduName}</div>}
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ padding: '10px 14px', fontSize: 12, color: '#475569' }}>{entry.supplier?.name ?? 'Mandi / Direct / Admin Update'}</td>
+                        <td className="mono" style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>
+                          Rs {entry.buyPrice.toFixed(2)}
+                        </td>
+                        <td className="mono" style={{ padding: '10px 14px', textAlign: 'right' }}>
+                          {entry.qty.toFixed(2)} {entry.product?.defaultUnit ?? 'KG'}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <div style={{ padding: '10px 16px', color: 'var(--muted)', fontSize: 12 }}>
-                  Showing {movements.length} movements
+              </div>
+
+              {/* Mobile Price History Cards */}
+              <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
+                {priceHistory.map(entry => (
+                  <div
+                    key={entry.id}
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '12px',
+                      padding: '12px 14px',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: '#64748B' }}>{fmtDateTime(entry.date)}</span>
+                      <span style={{ fontSize: 11, color: '#475569', fontWeight: 600 }}>{entry.supplier?.name || 'Mandi Purchase'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <ProductVisual name={entry.product?.name ?? ''} emoji={entry.product?.emoji} imageUrl={entry.product?.imageUrl} size={24} />
+                        <span style={{ fontWeight: 800, color: '#0F172A', fontSize: 14 }}>{entry.product?.name}</span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: '#166534' }}>
+                          Rs {entry.buyPrice.toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#64748B' }}>
+                          {entry.qty.toFixed(2)} {entry.product?.defaultUnit ?? 'KG'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ─── VIEW 4: RECORD WASTAGE ─────────────────────────────────────────── */}
+      {view === 'wastage' && (
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', maxWidth: 640, margin: '0 auto', padding: 24, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+          <div style={{ borderBottom: '1px solid #F1F5F9', paddingBottom: 12, marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#DC2626' }}>🗑 Record Stock Wastage</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748B' }}>
+              Deduct spoiled, rotten, or unsellable inventory with automatic stock-out tracking.
+            </p>
+          </div>
+
+          <form onSubmit={handleWastage}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
+                Product * (Search English or Urdu name)
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search product (e.g. Tomato, ٹماٹر)..."
+                  value={wProdSearch}
+                  onFocus={() => setWComboboxOpen(true)}
+                  onChange={e => { setWProdSearch(e.target.value); setWComboboxOpen(true); }}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, background: '#F8FAFC', color: '#0F172A', fontSize: 13, fontWeight: 600 }}
+                />
+
+                {wComboboxOpen && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', background: '#ffffff', border: '1px solid #CBD5E1', borderRadius: 8, boxShadow: '0 10px 25px rgba(0,0,0,0.18)', zIndex: 10001, marginTop: 4 }}>
+                    {masterProductsList.filter(p => !wProdSearch || p.name.toLowerCase().includes(wProdSearch.toLowerCase()) || (p.urduName ?? '').includes(wProdSearch)).map(p => (
+                      <div
+                        key={p.productId}
+                        onClick={() => {
+                          setWProdId(p.productId);
+                          setWProdSearch(p.name);
+                          setWUnit(p.defaultUnit || 'KG');
+                          setWComboboxOpen(false);
+                        }}
+                        style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <ProductVisual name={p.name} emoji={p.emoji} imageUrl={p.imageUrl} size={22} />
+                          <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 13 }}>{p.name} {p.urduName ? `/ ${p.urduName}` : ''}</span>
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: p.qty > 0 ? '#166534' : '#DC2626' }}>
+                          Stock: {p.qty.toFixed(2)} {p.defaultUnit}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
+                  Wastage Qty *
+                </label>
+                <input
+                  type="number" step="any" min="0.01" required
+                  value={wQty || ''}
+                  onChange={e => setWQty(+e.target.value)}
+                  placeholder="0.00"
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 14, fontWeight: 800 }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
+                  Reason Preset
+                </label>
+                <select
+                  value={wReason}
+                  onChange={e => setWReason(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, background: '#F8FAFC', fontWeight: 600 }}
+                >
+                  {REASON_PRESETS.WASTAGE.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
+                Remarks / Details
+              </label>
+              <input
+                type="text"
+                value={wRemarks}
+                onChange={e => setWRemarks(e.target.value)}
+                placeholder="Optional notes..."
+                style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13 }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="va-btn"
+              disabled={isSubmittingWastage || !wProdId || wQty <= 0}
+              style={{ width: '100%', padding: '12px', borderRadius: 10, fontWeight: 800, background: '#DC2626' }}
+            >
+              {isSubmittingWastage ? 'Recording…' : '🗑 Confirm Stock Wastage'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* ─── VIEW 5: MANUAL STOCK ADJUSTMENT ────────────────────────────────── */}
+      {view === 'adjust' && (
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', maxWidth: 640, margin: '0 auto', padding: 24, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+          <div style={{ borderBottom: '1px solid #F1F5F9', paddingBottom: 12, marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0F172A' }}>⚙️ Manual Stock Adjustment</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748B' }}>
+              Perform physical inventory corrections, additions, or audit adjustments.
+            </p>
+          </div>
+
+          <form onSubmit={handleAdjust}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
+                Product * (Search English or Urdu name)
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search product..."
+                  value={aProdSearch}
+                  onFocus={() => setAComboboxOpen(true)}
+                  onChange={e => { setAProdSearch(e.target.value); setAComboboxOpen(true); }}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, background: '#F8FAFC', color: '#0F172A', fontSize: 13, fontWeight: 600 }}
+                />
+
+                {aComboboxOpen && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', background: '#ffffff', border: '1px solid #CBD5E1', borderRadius: 8, boxShadow: '0 10px 25px rgba(0,0,0,0.18)', zIndex: 10001, marginTop: 4 }}>
+                    {masterProductsList.filter(p => !aProdSearch || p.name.toLowerCase().includes(aProdSearch.toLowerCase()) || (p.urduName ?? '').includes(aProdSearch)).map(p => (
+                      <div
+                        key={p.productId}
+                        onClick={() => {
+                          setAProdId(p.productId);
+                          setAProdSearch(p.name);
+                          setASysQty(p.qty);
+                          setAQtyVal(p.qty);
+                          setAComboboxOpen(false);
+                        }}
+                        style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <ProductVisual name={p.name} emoji={p.emoji} imageUrl={p.imageUrl} size={22} />
+                          <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 13 }}>{p.name} {p.urduName ? `/ ${p.urduName}` : ''}</span>
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#0284C7' }}>
+                          Current: {p.qty.toFixed(2)} {p.defaultUnit}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
+                Adjustment Mode *
+              </label>
+              <select
+                value={aType}
+                onChange={e => {
+                  const t = e.target.value as any;
+                  setAType(t);
+                  setAReason(REASON_PRESETS[t]?.[0] || 'Manual Adjustment');
+                }}
+                style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, background: '#F8FAFC', fontWeight: 700 }}
+              >
+                {ADJUSTMENT_MODES.map(m => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
+                  {aType === 'SET' || aType === 'OPENING' ? 'New Verified Total Qty *' : 'Adjustment Qty *'}
+                </label>
+                <input
+                  type="number" step="any" min="0" required
+                  value={aQtyVal}
+                  onChange={e => setAQtyVal(e.target.value === '' ? '' : +e.target.value)}
+                  placeholder="0.00"
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 14, fontWeight: 800 }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
+                  Reason Preset
+                </label>
+                <select
+                  value={aReason}
+                  onChange={e => setAReason(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, background: '#F8FAFC', fontWeight: 600 }}
+                >
+                  {(REASON_PRESETS[aType] || ['Other']).map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {aProdId && (
+              <div style={{ background: '#F8FAFC', padding: '10px 14px', borderRadius: 8, border: '1px solid #CBD5E1', marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: '#475569' }}>
+                  Previous Stock: <strong>{prevStock.toFixed(2)}</strong> → New Expected Stock: <strong style={{ color: '#166534' }}>{newExpectedStock.toFixed(2)}</strong> (Net: {calcDiff >= 0 ? `+${calcDiff.toFixed(2)}` : calcDiff.toFixed(2)})
                 </div>
               </div>
             )}
-          </div>
-        </>
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#334155' }}>
+                Remarks
+              </label>
+              <input
+                type="text"
+                value={aRemarks}
+                onChange={e => setARemarks(e.target.value)}
+                placeholder="Optional remarks..."
+                style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13 }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="va-btn"
+              disabled={isSubmittingAdjust || !aProdId || aQtyVal === '' || isStockInvalid}
+              style={{ width: '100%', padding: '12px', borderRadius: 10, fontWeight: 800 }}
+            >
+              {isSubmittingAdjust ? 'Adjusting…' : '✓ Save Stock Adjustment'}
+            </button>
+          </form>
+        </div>
       )}
     </DashboardLayout>
   );
