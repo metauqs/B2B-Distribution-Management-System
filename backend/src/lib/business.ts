@@ -68,10 +68,12 @@ export async function generateInvoiceNo(clientId: string, branchId?: string, tx?
   // Strip 'WH-' prefix for Option 2 (e.g. 'WH-1111' -> '1111')
   const clientCode = rawCode.replace(/^WH-/i, '').trim();
 
-  // Find all existing sales for this specific client to calculate next incremental sequence
+  // Find recent sales for this specific client to calculate next incremental sequence
   const existingSales = await db.sale.findMany({
     where: { clientId },
     select: { invoiceNo: true },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
   });
 
   let maxSeq = 0;
@@ -91,9 +93,9 @@ export async function generateInvoiceNo(clientId: string, branchId?: string, tx?
     }
   }
 
-  // Default starting sequence count if no cleanly formatted invoice exists
+  // Fallback to total sales count if no pattern match found in recent sales
   if (maxSeq === 0) {
-    maxSeq = existingSales.length;
+    maxSeq = await db.sale.count({ where: { clientId } });
   }
 
   const nextSeq = maxSeq + 1;
@@ -244,13 +246,17 @@ export async function recordCustomerLedgerEntry(
   });
 
   let currentRunning = newBalance;
-  for (const sub of subsequentEntries) {
-    const rawSubBal = currentRunning + sub.debit - sub.credit;
-    currentRunning = rawSubBal < 1.0 ? 0 : Math.max(0, rawSubBal);
-    await db.customerLedger.update({
-      where: { id: sub.id },
-      data: { balance: currentRunning }
-    });
+  if (subsequentEntries.length > 0) {
+    for (const sub of subsequentEntries) {
+      const rawSubBal = currentRunning + sub.debit - sub.credit;
+      currentRunning = rawSubBal < 1.0 ? 0 : Math.max(0, rawSubBal);
+      if (Math.abs(sub.balance - currentRunning) > 0.001) {
+        await db.customerLedger.update({
+          where: { id: sub.id },
+          data: { balance: currentRunning }
+        });
+      }
+    }
   }
 
   const finalClientBal = currentRunning < 1.0 ? 0 : Math.max(0, currentRunning);

@@ -197,7 +197,10 @@ model Sale {
   @@unique([clientId, invoiceNo])
   @@index([clientId])
   @@index([branchId])
+  @@index([branchId, date])
   @@index([branchId, deletedAt])
+  @@index([branchId, deletedAt, date])
+  @@index([branchId, status, date])
   @@index([date])
   @@index([status])
   @@index([invoiceNo])
@@ -225,6 +228,8 @@ model SaleItem {
 
   @@index([saleId])
   @@index([productId])
+  @@index([saleId, productId])
+  @@index([costPrice])
   @@map("sale_items")
 }
 
@@ -251,7 +256,9 @@ model Purchase {
 
   @@index([supplierId])
   @@index([branchId])
+  @@index([branchId, date])
   @@index([branchId, deletedAt])
+  @@index([branchId, deletedAt, date])
   @@index([date])
   @@map("purchases")
 }
@@ -270,6 +277,7 @@ model PurchaseItem {
 
   @@index([purchaseId])
   @@index([productId])
+  @@index([purchaseId, productId])
   @@map("purchase_items")
 }
 
@@ -324,7 +332,9 @@ model Collection {
 
   @@index([clientId])
   @@index([branchId])
+  @@index([branchId, date])
   @@index([branchId, deletedAt])
+  @@index([branchId, deletedAt, date])
   @@index([date])
   @@index([cashAccountId])
   @@index([bankAccountId])
@@ -377,6 +387,10 @@ model Expense {
   categoryRef   ExpenseCategoryRef? @relation(fields: [categoryRefId], references: [id])
 
   @@index([branchId])
+  @@index([branchId, date])
+  @@index([branchId, deletedAt])
+  @@index([branchId, deletedAt, date])
+  @@index([branchId, category, date])
   @@index([date])
   @@index([category])
   @@index([categoryRefId])
@@ -413,6 +427,7 @@ model Wastage {
   product   Product? @relation(fields: [productId], references: [id])
 
   @@index([branchId])
+  @@index([branchId, date])
   @@index([date])
   @@index([productId])
   @@map("wastages")
@@ -459,6 +474,8 @@ model StockMovement {
 
   @@index([productId])
   @@index([branchId])
+  @@index([branchId, date])
+  @@index([productId, branchId, refType, refId])
   @@index([date])
   @@index([userId])
   @@index([productId, branchId, date])
@@ -482,6 +499,9 @@ model PurchasePriceHistory {
 
   @@index([productId])
   @@index([branchId])
+  @@index([productId, branchId, date])
+  @@index([purchaseId])
+  @@index([supplierId])
   @@index([date])
   @@map("purchase_price_histories")
 }
@@ -554,11 +574,14 @@ model Delivery {
   @@index([saleId])
   @@index([clientId])
   @@index([branchId])
+  @@index([branchId, date])
   @@index([branchId, status])
+  @@index([branchId, status, date])
   @@index([status])
   @@index([vehicleId])
   @@index([driverId])
   @@index([employeeId])
+  @@index([employeeId, date])
   @@map("deliveries")
 }
 
@@ -744,6 +767,8 @@ model AuditLog {
   @@index([userId])
   @@index([branchId])
   @@index([entity])
+  @@index([entity, entityId])
+  @@index([entityId])
   @@index([createdAt])
   @@map("audit_logs")
 }
@@ -768,6 +793,8 @@ model CustomerLedger {
   @@index([clientId])
   @@index([branchId])
   @@index([date])
+  @@index([referenceId, type])
+  @@index([clientId, type, referenceId])
   @@index([clientId, date])
   @@index([clientId, date, createdAt])
   @@map("customer_ledger")

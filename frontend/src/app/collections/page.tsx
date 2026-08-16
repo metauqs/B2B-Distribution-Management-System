@@ -104,8 +104,12 @@ export default function CollectionsPage() {
   const [dailyEmployee, setDailyEmployee] = useState<string>('all');
   const [dailyMethod,  setDailyMethod]  = useState<string>('all');
   const [dailySearch,  setDailySearch]  = useState<string>('');
-  const [dailyData,    setDailyData]    = useState<any | null>(null);
-  const [loadingDaily, setLoadingDaily] = useState<boolean>(false);
+  const [dailyData,    setDailyData]    = useState<any | null>(() => {
+    return getCachedData<any>(`/api/collections/daily-history?date=${todayInputDate()}`) || null;
+  });
+  const [loadingDaily, setLoadingDaily] = useState<boolean>(() => {
+    return !getCachedData<any>(`/api/collections/daily-history?date=${todayInputDate()}`);
+  });
   const [dailyPreviewModal, setDailyPreviewModal] = useState<any | null>(null);
 
   // ── Receipt Modal & Due Statement Modal state ──
@@ -114,24 +118,24 @@ export default function CollectionsPage() {
   const [statementInvoices, setStatementInvoices] = useState<any[]>([]);
   const [statementMode, setStatementMode] = useState<'view' | 'share'>('view');
 
-  const loadDailyHistory = useCallback(async (dateVal?: string, empVal?: string, methodVal?: string, searchVal?: string) => {
-    setLoadingDaily(true);
+  const loadDailyHistory = useCallback(async (dateVal?: string, empVal?: string, methodVal?: string, searchVal?: string, isBackground = false) => {
+    const targetDate = dateVal !== undefined ? dateVal : dailyDate;
+    const targetEmp = empVal !== undefined ? empVal : dailyEmployee;
+    const targetMethod = methodVal !== undefined ? methodVal : dailyMethod;
+    const targetSearch = searchVal !== undefined ? searchVal : dailySearch;
+
+    const params = new URLSearchParams();
+    if (targetDate) params.append('date', targetDate);
+    if (targetEmp && targetEmp !== 'all') params.append('employeeId', targetEmp);
+    if (targetMethod && targetMethod !== 'all') params.append('method', targetMethod);
+    if (targetSearch) params.append('search', targetSearch);
+
+    const key = `/api/collections/daily-history?${params.toString()}`;
+    if (!isBackground && !getCachedData(key)) setLoadingDaily(true);
     try {
-      const targetDate = dateVal !== undefined ? dateVal : dailyDate;
-      const targetEmp = empVal !== undefined ? empVal : dailyEmployee;
-      const targetMethod = methodVal !== undefined ? methodVal : dailyMethod;
-      const targetSearch = searchVal !== undefined ? searchVal : dailySearch;
-
-      const params = new URLSearchParams();
-      if (targetDate) params.append('date', targetDate);
-      if (targetEmp && targetEmp !== 'all') params.append('employeeId', targetEmp);
-      if (targetMethod && targetMethod !== 'all') params.append('method', targetMethod);
-      if (targetSearch) params.append('search', targetSearch);
-
-      const res = await apiFetch(`/api/collections/daily-history?${params.toString()}`);
-      const json = await res.json();
-      if (res.ok && json.success) {
-        setDailyData(json);
+      const data = await fetchWithCache<any>(key, { ttl: TTL_SHORT, forceRefresh: isBackground });
+      if (data) {
+        setDailyData(data);
       }
     } catch (err) {
       console.error('loadDailyHistory error:', err);

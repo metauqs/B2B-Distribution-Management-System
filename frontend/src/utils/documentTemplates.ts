@@ -15,7 +15,6 @@
  * sensible defaults so all documents stay in sync with Settings changes.
  */
 
-import html2canvas from 'html2canvas';
 import { DEFAULT_LOGO_BASE64 } from './logoBase64';
 import { PRICELIST_LOGO_BASE64 } from './pricelistLogoBase64';
 import { fmtMoney } from './formatters';
@@ -2287,6 +2286,9 @@ export async function generateTemplateImageBase64(html: string): Promise<string>
     await new Promise((r) => setTimeout(r, 400));
 
     const contentHeight = container.scrollHeight || 1123;
+
+    const html2canvasModule = await import('html2canvas');
+    const html2canvas = html2canvasModule.default || html2canvasModule;
 
     const cvs = await html2canvas(container, {
       scale: 3.5, // Force 3.5x DPI (2779px width Full HD edge-to-edge)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ProductVisual } from './ProductVisual';
+import { fetchWithCache, getCachedData, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 
 export interface PriceItem {
   productId: string;
@@ -41,7 +42,13 @@ export function ProductAutocomplete({
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [fallbackList, setFallbackList] = useState<any[]>([]);
+  const [fallbackList, setFallbackList] = useState<any[]>(() => {
+    const cachedActive = getCachedData<any>('/api/pricelist/active');
+    const items = cachedActive?.data?.items || cachedActive?.items;
+    if (items && items.length > 0) return items;
+    const cachedProducts = getCachedData<any[]>('/api/products');
+    return Array.isArray(cachedProducts) ? cachedProducts : [];
+  });
   const [loading, setLoading] = useState(false);
 
   // Normalize source list with fallback
@@ -53,29 +60,22 @@ export function ProductAutocomplete({
     ? products
     : fallbackList;
 
-  // Auto-fetch active product/price list if passed list is empty
+  // Auto-fetch active product/price list if passed list is empty (deduplicated & cached)
   useEffect(() => {
     if (rawList.length === 0 && !loading) {
       let isMounted = true;
       setLoading(true);
       (async () => {
         try {
-          const res = await fetch('/api/pricelist/active');
-          if (res.ok) {
-            const data = await res.json();
-            const fetched = data?.data?.items || data?.items || [];
-            if (isMounted && fetched.length > 0) {
-              setFallbackList(fetched);
-            }
-          }
-          if (isMounted && fallbackList.length === 0) {
-            const prodRes = await fetch('/api/products');
-            if (prodRes.ok) {
-              const prodData = await prodRes.json();
-              const pList = prodData?.data || (Array.isArray(prodData) ? prodData : []);
-              if (isMounted && pList.length > 0) {
-                setFallbackList(pList);
-              }
+          const data = await fetchWithCache<any>('/api/pricelist/active', { ttl: TTL_MEDIUM });
+          const fetched = data?.data?.items || data?.items || [];
+          if (isMounted && fetched.length > 0) {
+            setFallbackList(fetched);
+          } else {
+            const prodData = await fetchWithCache<any>('/api/products', { ttl: TTL_LONG });
+            const pList = prodData?.data || (Array.isArray(prodData) ? prodData : []);
+            if (isMounted && pList.length > 0) {
+              setFallbackList(pList);
             }
           }
         } catch (e) {
@@ -86,7 +86,7 @@ export function ProductAutocomplete({
       })();
       return () => { isMounted = false; };
     }
-  }, [rawList.length]);
+  }, [rawList.length, loading]);
 
   const q = value.trim().toLowerCase();
 

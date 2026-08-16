@@ -1,12 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { apiFetch } from '@/utils/apiFetch';
-import { invalidateCache } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_LONG, TTL_MEDIUM } from '@/utils/cacheStore';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 
 type SettingsTab = 'branch' | 'users' | 'products' | 'suppliers' | 'vehicles' | 'whatsapp';
+
+interface WaSettings {
+  companyLogo: string;
+  companyName: string;
+  defaultGreeting: string;
+  defaultFooter: string;
+  defaultBroadcastTime: string;
+  defaultImageTemplate: string;
+}
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<SettingsTab>('branch');
@@ -16,47 +25,65 @@ export default function SettingsPage() {
   const [branchSaved, setBranchSaved] = useState(false);
 
   // ─── Users ────────────────────────────────────────────────────────
-  const [users, setUsers]     = useState<any[]>([]);
+  const [users, setUsers]     = useState<any[]>(() => {
+    return getCachedData<any[]>('/api/settings/users') || [];
+  });
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'SALESMAN' });
   const [userMsg, setUserMsg] = useState('');
 
   // ─── Products ─────────────────────────────────────────────────────
-  const [products, setProducts]   = useState<any[]>([]);
+  const [products, setProducts]   = useState<any[]>(() => {
+    return getCachedData<any[]>('/api/products') || [];
+  });
   const [newProduct, setNewProduct] = useState({ name: '', urduName: '', category: 'vegetable', defaultUnit: 'KG', minStock: 10 });
   const [prodMsg, setProdMsg]     = useState('');
 
-  // ─── WhatsApp settings ────────────────────────────────────────────
-  const [waSettings, setWaSettings] = useState({
-    companyLogo: '',
-    companyName: 'HALAL VEGG SUPPLIES',
-    defaultGreeting: '',
-    defaultFooter: '',
-    defaultBroadcastTime: '09:00',
-    defaultImageTemplate: 'default'
+  // ─── WhatsApp settings ────────────────────────────────────
+  const [waSettings, setWaSettings] = useState<WaSettings>(() => {
+    const cached = getCachedData<WaSettings>('/api/broadcasts/settings');
+    return cached || {
+      companyLogo: '',
+      companyName: 'HALAL VEGG SUPPLIES',
+      defaultGreeting: '',
+      defaultFooter: '',
+      defaultBroadcastTime: '09:00',
+      defaultImageTemplate: 'default'
+    };
   });
   const [waSaved, setWaSaved] = useState(false);
 
-  useEffect(() => {
-    Promise.all([loadUsers(), loadProducts(), loadWaSettings()]);
+  const loadUsers = useCallback(async (forceRefresh = false) => {
+    try {
+      const data = await fetchWithCache<any[]>('/api/settings/users', { ttl: TTL_LONG, forceRefresh });
+      if (data) setUsers(data);
+    } catch (err) {
+      console.error('loadUsers error:', err);
+    }
   }, []);
 
-  const loadUsers = async () => {
-    const res = await apiFetch('/api/settings/users');
-    if (res.ok) { const d = await res.json(); setUsers(d.data ?? []); }
-  };
-
-  const loadProducts = async () => {
-    const res = await apiFetch('/api/products');
-    if (res.ok) { const d = await res.json(); setProducts(d.data ?? []); }
-  };
-
-  const loadWaSettings = async () => {
-    const res = await apiFetch('/api/broadcasts/settings');
-    if (res.ok) {
-      const d = await res.json();
-      if (d.data) setWaSettings(d.data);
+  const loadProducts = useCallback(async (forceRefresh = false) => {
+    try {
+      const data = await fetchWithCache<any[]>('/api/products', { ttl: TTL_LONG, forceRefresh });
+      if (data) setProducts(data);
+    } catch (err) {
+      console.error('loadProducts error:', err);
     }
-  };
+  }, []);
+
+  const loadWaSettings = useCallback(async (forceRefresh = false) => {
+    try {
+      const data = await fetchWithCache<any>('/api/broadcasts/settings', { ttl: TTL_LONG, forceRefresh });
+      if (data) setWaSettings(data);
+    } catch (err) {
+      console.error('loadWaSettings error:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUsers();
+    loadProducts();
+    loadWaSettings();
+  }, [loadUsers, loadProducts, loadWaSettings]);
 
   const saveBranch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,15 +98,25 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(waSettings)
     });
-    if (res.ok) { setWaSaved(true); setTimeout(() => setWaSaved(false), 2000); }
+    if (res.ok) {
+      invalidateCache('/api/broadcasts/settings');
+      setWaSaved(true);
+      setTimeout(() => setWaSaved(false), 2000);
+    }
   };
 
   const addUser = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await apiFetch('/api/settings/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) });
     const d = await res.json();
-    if (res.ok) { setUserMsg('✅ User added'); setNewUser({ name: '', email: '', password: '', role: 'SALESMAN' }); loadUsers(); }
-    else         setUserMsg('❌ ' + (d.error ?? 'Failed'));
+    if (res.ok) {
+      invalidateCache('/api/settings/users');
+      setUserMsg('✅ User added');
+      setNewUser({ name: '', email: '', password: '', role: 'SALESMAN' });
+      loadUsers(true);
+    } else {
+      setUserMsg('❌ ' + (d.error ?? 'Failed'));
+    }
     setTimeout(() => setUserMsg(''), 3000);
   };
 
@@ -88,13 +125,16 @@ export default function SettingsPage() {
     const res = await apiFetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newProduct) });
     const d = await res.json();
     if (res.ok) {
-      invalidateCache();
+      invalidateCache('/api/products');
+      invalidateCache('/api/inventory');
+      invalidateCache('/api/pricelist');
       window.dispatchEvent(new Event('app-revalidate'));
       setProdMsg('✅ Product added');
       setNewProduct({ name: '', urduName: '', category: 'vegetable', defaultUnit: 'KG', minStock: 10 });
-      loadProducts();
+      loadProducts(true);
+    } else {
+      setProdMsg('❌ ' + (d.error ?? 'Failed'));
     }
-    else         setProdMsg('❌ ' + (d.error ?? 'Failed'));
     setTimeout(() => setProdMsg(''), 3000);
   };
 

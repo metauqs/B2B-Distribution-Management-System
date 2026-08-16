@@ -231,14 +231,6 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Client not found' });
     }
 
-    // Authoritative Single Source of Truth Client Outstanding
-    try {
-      const authBal = await getAuthoritativeClientOutstanding(id);
-      client.currentBalance = authBal;
-    } catch (e) {
-      console.error('[GET /api/clients/:id] Balance calculation error:', e);
-    }
-
     const [sales, collections, deliveries, ledger] = await Promise.all([
       // Sales
       prisma.sale.findMany({

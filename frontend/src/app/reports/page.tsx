@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
-import { fetchWithCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import { ProductVisual } from '@/components/ui/ProductVisual';
@@ -74,7 +74,7 @@ interface ExecutiveData {
 }
 
 export default function ReportsPage() {
-  const [rState, setRState] = usePreservedState('reports_v2', {
+  const [rState, setRState] = usePreservedState('reports', {
     mainTab: 'Executive Dashboard' as MainCategory,
     salesTab: 'Invoice Profitability' as SalesSubTab,
     datePreset: 'this_month',
@@ -88,28 +88,44 @@ export default function ReportsPage() {
   const setMainTab = (tab: MainCategory) => setRState({ mainTab: tab });
   const setSalesTab = (t: SalesSubTab) => setRState({ salesTab: t });
 
-  const [loading, setLoading] = useState(true);
-  const [execData, setExecData] = useState<ExecutiveData | null>(null);
-  const [invoiceReport, setInvoiceReport] = useState<{ rows: any[]; summary: any } | null>(null);
-  const [customerReport, setCustomerReport] = useState<any[]>([]);
-  const [productReport, setProductReport] = useState<any[]>([]);
-  const [valuationReport, setValuationReport] = useState<{ rows: any[]; summary: any } | null>(null);
-  const [balanceSheet, setBalanceSheet] = useState<any>(null);
-  const [costAnalysis, setCostAnalysis] = useState<any[]>([]);
+  const [execData, setExecData] = useState<ExecutiveData | null>(() => {
+    return getCachedData<ExecutiveData>(`/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`) || null;
+  });
+  const [invoiceReport, setInvoiceReport] = useState<{ rows: any[]; summary: any } | null>(() => {
+    return getCachedData<{ rows: any[]; summary: any }>(`/api/reports/sales/invoices?from=${from}&to=${to}&search=${encodeURIComponent(searchQuery)}`) || null;
+  });
+  const [customerReport, setCustomerReport] = useState<any[]>(() => {
+    return getCachedData<any[]>(`/api/reports/sales/customers?from=${from}&to=${to}`) || [];
+  });
+  const [productReport, setProductReport] = useState<any[]>(() => {
+    return getCachedData<any[]>(`/api/reports/sales/products?from=${from}&to=${to}`) || [];
+  });
+  const [valuationReport, setValuationReport] = useState<{ rows: any[]; summary: any } | null>(() => {
+    return getCachedData<{ rows: any[]; summary: any }>(`/api/reports/inventory/valuation`) || null;
+  });
+  const [balanceSheet, setBalanceSheet] = useState<any>(() => {
+    return getCachedData<any>(`/api/reports/finance/balance-sheet`) || null;
+  });
+  const [costAnalysis, setCostAnalysis] = useState<any[]>(() => {
+    return getCachedData<any[]>(`/api/reports/purchases/cost-analysis`) || [];
+  });
+  const [loading, setLoading] = useState(() => {
+    return !getCachedData<ExecutiveData>(`/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`);
+  });
   const [selectedInvoiceModal, setSelectedInvoiceModal] = useState<any | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
 
   const loadData = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setLoading(true);
+    if (showSpinner && !execData) setLoading(true);
     try {
       const [execRes, invProfRes, custRes, prodRes, valRes, bsRes, costRes] = await Promise.all([
-        fetchWithCache<ExecutiveData>(`/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
-        fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/sales/invoices?from=${from}&to=${to}&search=${encodeURIComponent(searchQuery)}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
-        fetchWithCache<any[]>(`/api/reports/sales/customers?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
-        fetchWithCache<any[]>(`/api/reports/sales/products?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: !showSpinner }),
-        fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/inventory/valuation`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
-        fetchWithCache<any>(`/api/reports/finance/balance-sheet`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
-        fetchWithCache<any[]>(`/api/reports/purchases/cost-analysis`, { ttl: TTL_MEDIUM, forceRefresh: !showSpinner }),
+        fetchWithCache<ExecutiveData>(`/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
+        fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/sales/invoices?from=${from}&to=${to}&search=${encodeURIComponent(searchQuery)}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
+        fetchWithCache<any[]>(`/api/reports/sales/customers?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
+        fetchWithCache<any[]>(`/api/reports/sales/products?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
+        fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/inventory/valuation`, { ttl: TTL_MEDIUM, forceRefresh: showSpinner }),
+        fetchWithCache<any>(`/api/reports/finance/balance-sheet`, { ttl: TTL_MEDIUM, forceRefresh: showSpinner }),
+        fetchWithCache<any[]>(`/api/reports/purchases/cost-analysis`, { ttl: TTL_MEDIUM, forceRefresh: showSpinner }),
       ]);
 
       if (execRes) setExecData(execRes);
@@ -134,9 +150,9 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset, from, to, searchQuery]);
+  }, [datePreset, from, to, searchQuery, execData]);
 
-  useEffect(() => { loadData(true); }, [loadData]);
+  useEffect(() => { loadData(false); }, [loadData]);
 
   // Handle Date Preset Changes
   const handlePresetChange = (preset: string) => {

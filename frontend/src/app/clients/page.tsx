@@ -7,7 +7,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable, SkeletonProfile } from '@/components/ui/Skeleton';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateStatementHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
-import { DueStatementModal } from '@/components/modals/DueStatementModal';
+import dynamic from 'next/dynamic';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
@@ -42,7 +42,15 @@ import {
   mdiDelete,
   mdiRestore
 } from '@mdi/js';
-import { DeleteClientModal } from '@/components/modals/DeleteClientModal';
+
+const DueStatementModal = dynamic(
+  () => import('@/components/modals/DueStatementModal').then(m => m.DueStatementModal),
+  { ssr: false }
+);
+const DeleteClientModal = dynamic(
+  () => import('@/components/modals/DeleteClientModal').then(m => m.DeleteClientModal),
+  { ssr: false }
+);
 
 const TYPE_ICON: Record<string, string> = {
   RETAIL: mdiCart,
