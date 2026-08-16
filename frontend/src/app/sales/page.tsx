@@ -554,12 +554,31 @@ export default function SalesPage() {
         return;
       }
 
-      // Validate inventory stock availability before checkout
+      // Validate inventory stock availability before checkout (Delta-only when editing)
       for (const item of sanitizedItems) {
         const pItem = priceItems.find(p => (item.productId && p.productId === item.productId) || p.itemName.toLowerCase() === item.itemName.toLowerCase());
-        if (pItem && pItem.availableStock !== undefined) {
-          if (item.qty > pItem.availableStock) {
-            showToast(`❌ Insufficient inventory stock for ${item.itemName}. Available: ${pItem.availableStock} ${item.unit}, Requested: ${item.qty} ${item.unit}`);
+        
+        let oldQty = 0;
+        if (editingSale && editingSale.items) {
+          const oldItem = editingSale.items.find(oi =>
+            (item.productId && (oi.productId === item.productId || oi.product?.id === item.productId)) ||
+            (oi.itemName && oi.itemName.toLowerCase() === item.itemName.toLowerCase())
+          );
+          if (oldItem) {
+            oldQty = Number(oldItem.qty) - Number((oldItem as any).returnedQty || 0);
+          }
+        }
+
+        const delta = item.qty - oldQty;
+
+        // Only positive delta (additional quantity beyond what was already deducted) requires available stock check
+        if (delta > 0 && pItem && pItem.availableStock !== undefined) {
+          if (delta > pItem.availableStock) {
+            if (editingSale && oldQty > 0) {
+              showToast(`❌ Insufficient inventory stock for ${item.itemName}. Available: ${pItem.availableStock} ${item.unit}, Additional Required: ${delta} ${item.unit} (Current on invoice: ${oldQty} ${item.unit})`);
+            } else {
+              showToast(`❌ Insufficient inventory stock for ${item.itemName}. Available: ${pItem.availableStock} ${item.unit}, Requested: ${item.qty} ${item.unit}`);
+            }
             return;
           }
         }
@@ -1371,10 +1390,25 @@ export default function SalesPage() {
                           const pItem = priceItems.find(p => (item.productId && p.productId === item.productId) || p.itemName.toLowerCase() === item.itemName.trim().toLowerCase());
                           const avail = pItem?.availableStock ?? pItem?.currentStock;
                           if (avail === undefined || !item.itemName.trim()) return null;
+
+                          let oldQty = 0;
+                          if (editingSale && editingSale.items) {
+                            const oldItem = editingSale.items.find(oi =>
+                              (item.productId && (oi.productId === item.productId || oi.product?.id === item.productId)) ||
+                              (oi.itemName && oi.itemName.toLowerCase() === item.itemName.trim().toLowerCase())
+                            );
+                            if (oldItem) oldQty = Number(oldItem.qty) - Number((oldItem as any).returnedQty || 0);
+                          }
+
                           return (
-                            <div style={{ fontSize: 11, marginTop: 4, fontWeight: 700, color: avail > 0 ? '#166534' : '#DC2626', display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span>{avail > 0 ? '📦 Available Stock:' : '⚠️ Out of Stock:'}</span>
+                            <div style={{ fontSize: 11, marginTop: 4, fontWeight: 700, color: (avail > 0 || oldQty > 0) ? '#166534' : '#DC2626', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                              <span>{avail > 0 ? '📦 Available Stock:' : (oldQty > 0 ? '📦 In Warehouse:' : '⚠️ Out of Stock:')}</span>
                               <span className="mono">{avail} {item.unit}</span>
+                              {oldQty > 0 && (
+                                <span style={{ color: '#1E40AF', background: '#DBEAFE', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
+                                  ({oldQty} {item.unit} already on invoice)
+                                </span>
+                              )}
                             </div>
                           );
                         })()}
