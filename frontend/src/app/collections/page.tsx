@@ -10,7 +10,7 @@ import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM }
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
-import { mdiCashRegister } from '@mdi/js';
+import { mdiCashRegister, mdiPhone, mdiWhatsapp } from '@mdi/js';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 
 import { loadBrandConfigWithLogo, generateDailyPaymentHistoryHTML, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
@@ -53,6 +53,8 @@ interface Client {
   name: string;
   currentBalance: number;
   openingBalance: number;
+  phone?: string | null;
+  whatsapp?: string | null;
 }
 
 const BLANK_FORM = { clientId: '', saleId: '', amount: 0, date: '', method: 'CASH', reference: '', notes: '' };
@@ -295,6 +297,8 @@ export default function CollectionsPage() {
       clientId: string;
       clientNo: string;
       clientName: string;
+      phone?: string | null;
+      whatsapp?: string | null;
       authoritativeOutstanding: number;
       initialOpening: number;
       openingDue: number;
@@ -342,6 +346,8 @@ export default function CollectionsPage() {
         clientId: client.id,
         clientNo: client.clientId || 'WH-0000',
         clientName: client.name,
+        phone: (client as any).phone || (client as any).whatsapp,
+        whatsapp: (client as any).whatsapp || (client as any).phone,
         authoritativeOutstanding: authTotal,
         initialOpening,
         openingDue,
@@ -860,10 +866,12 @@ export default function CollectionsPage() {
                 </div>
               </div>
 
-              {/* ────── MOBILE VIEW (Redesigned Cards) ────── */}
-              <div className="show-mobile" style={{ flexDirection: 'column', gap: 12, width: '100%' }}>
+              {/* ────── MOBILE VIEW (Dedicated Touch Cards from 1420f4713ed5b3ccf5bedf1f3572745b96519aed) ────── */}
+              <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
                 {groupedList.map(g => {
                   const isExpanded = !!expandedClients[g.clientId];
+                  const phone = g.phone || g.whatsapp || '';
+
                   return (
                     <MobileCard
                       key={g.clientId}
@@ -872,64 +880,84 @@ export default function CollectionsPage() {
                       footer={
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%' }}>
                           <button
+                            type="button"
                             className="va-btn small"
-                            style={{ flex: 1, fontWeight: 700 }}
-                            onClick={() => toggleExpand(g.clientId)}
-                          >
-                            {isExpanded ? 'Hide Invoices' : `Invoices (${g.items.length})`}
-                          </button>
-                          <button
-                            className="va-btn small"
-                            style={{ flex: 1, fontWeight: 700 }}
+                            style={{ flex: 1, fontWeight: 800, padding: '9px 12px' }}
                             onClick={() => openRecordPaymentForClient(g.clientId)}
                           >
                             ➕ Pay
                           </button>
-                          {g.hasAuthDebt && (
-                            <button
-                              className="va-btn secondary small"
-                              style={{ flex: 1, fontWeight: 700 }}
-                              onClick={() => handleSendDueStatement(g.clientId)}
-                            >
-                              📋 Statement
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className="va-btn secondary small"
+                            style={{ flex: 1, fontWeight: 700, padding: '9px 12px' }}
+                            onClick={() => handleSendDueStatement(g.clientId)}
+                          >
+                            📋 Statement
+                          </button>
+                          <button
+                            type="button"
+                            className="va-btn secondary small"
+                            style={{ flex: 1, fontWeight: 700, padding: '9px 12px' }}
+                            onClick={() => toggleExpand(g.clientId)}
+                          >
+                            {isExpanded ? 'Hide' : `Invoices (${g.items.length})`}
+                          </button>
                         </div>
                       }
                     >
-                      <MobileCardRow label="Total Invoices" value={`${g.items.length} invoices`} />
+                      {phone && (
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                          <a
+                            href={`tel:${phone}`}
+                            style={{ flex: 1, padding: '6px 8px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, color: '#1D4ED8', textDecoration: 'none', fontWeight: 700, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                          >
+                            <Icon path={mdiPhone} size={0.55} />
+                            <span>Call</span>
+                          </a>
+                          <a
+                            href={`https://wa.me/${phone.replace(/[^0-9]/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ flex: 1, padding: '6px 8px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 6, color: '#15803D', textDecoration: 'none', fontWeight: 700, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                          >
+                            <Icon path={mdiWhatsapp} size={0.55} />
+                            <span>WhatsApp</span>
+                          </a>
+                        </div>
+                      )}
+
                       <MobileCardRow 
                         label="Total Outstanding Due" 
                         value={fmtMoney(g.authoritativeOutstanding)} 
-                        valueColor={g.hasAuthDebt ? '#991B1B' : '#166534'} 
+                        valueColor={g.hasAuthDebt ? '#DC2626' : '#166534'} 
                         isMono 
                       />
+                      <MobileCardRow label="Invoices Due" value={`${fmtMoney(g.invoiceDue)} (${g.items.length} total)`} isMono />
+                      
                       {g.hasOpeningDue ? (
                         <MobileCardRow label="Opening Due" value={`${fmtMoney(g.openingDue)} (UNPAID)`} valueColor="#B45309" isMono />
-                      ) : g.initialOpening > 0 ? (
-                        <MobileCardRow label="Opening Due" value="CLEARED (Rs 0)" valueColor="#166534" />
                       ) : (
-                        <MobileCardRow label="Opening Balance" value="Rs 0" valueColor="#166534" />
+                        <MobileCardRow label="Opening Balance" value="CLEARED (Rs 0)" valueColor="#166534" />
                       )}
 
                       {/* Expandable Invoice Cards */}
                       {isExpanded && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
                           {g.items.map(item => {
                             const isPaid = item.status === 'PAID' || item.remaining <= 0.01;
                             const isPartial = item.status === 'PARTIALLY PAID';
                             const statusVariant = isPaid ? 'green' : isPartial ? 'yellow' : 'red';
-                            const statusLabel = item.status;
 
                             return (
                               <MobileCardBox
                                 key={item.id}
                                 title={
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                    <span className="mono" style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
-                                      {item.invoiceNo}
+                                    <span className="mono" style={{ fontWeight: 800, fontSize: '12px', color: '#0F172A' }}>
+                                      #{item.invoiceNo}
                                     </span>
-                                    <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>
+                                    <span style={{ fontSize: '11px', color: '#64748B' }}>
                                       {fmtDateTime(item.date)}
                                     </span>
                                   </div>
@@ -937,18 +965,18 @@ export default function CollectionsPage() {
                                 bg="#F8FAFC"
                                 borderColor="#CBD5E1"
                               >
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '4px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '2px' }}>
                                   <MobileCardRow label="Total" value={fmtMoney(item.total)} isMono />
                                   <MobileCardRow label="Paid" value={fmtMoney(item.paid)} valueColor="#166534" isMono />
                                   <MobileCardRow 
                                     label="Remaining" 
                                     value={fmtMoney(item.remaining)} 
-                                    valueColor={item.remaining > 0 ? '#991B1B' : '#166534'} 
+                                    valueColor={item.remaining > 0 ? '#DC2626' : '#166534'} 
                                     isMono 
                                   />
                                   <MobileCardRow label="Status">
                                     <MobileCardBadge variant={statusVariant}>
-                                      {statusLabel}
+                                      {item.status}
                                     </MobileCardBadge>
                                   </MobileCardRow>
                                 </div>
@@ -957,94 +985,9 @@ export default function CollectionsPage() {
                           })}
                         </div>
                       )}
-
-                      {/* Mobile Payment History Section */}
-                      {isExpanded && (() => {
-                        const todayBDate = getTodayBusinessDateString();
-                        const allClientCols = collections
-                          .filter(c => c.clientId === g.clientId)
-                          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-                        const todayOnwardCols = allClientCols.filter(c => getTodayBusinessDateString(c.date) >= todayBDate);
-                        const showAll = !!showAllHistory[g.clientId];
-                        const clientCols = showAll ? allClientCols : todayOnwardCols;
-
-                        return (
-                          <div style={{ marginTop: 12, borderTop: '1px dashed #CBD5E1', paddingTop: 10 }}>
-                            <div style={{ fontWeight: 800, fontSize: 12, color: '#1E293B', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                              <span>💳 PAYMENT HISTORY ({clientCols.length} {showAll ? '— All' : '— Today Onward'})</span>
-                              {allClientCols.length > todayOnwardCols.length && (
-                                <button
-                                  className="va-btn secondary small"
-                                  style={{ padding: '2px 6px', fontSize: 10, fontWeight: 700 }}
-                                  onClick={() => toggleShowAllHistory(g.clientId)}
-                                >
-                                  {showAll ? 'Today Only' : `Show All (${allClientCols.length})`}
-                                </button>
-                              )}
-                            </div>
-
-                            {clientCols.length === 0 ? (
-                              <div style={{ fontSize: 11, color: '#64748B', fontStyle: 'italic', padding: '8px 10px', background: '#F8FAFC', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span>No payment receipts recorded today.</span>
-                                {allClientCols.length > 0 && !showAll && (
-                                  <button
-                                    className="va-btn secondary small"
-                                    style={{ padding: '2px 6px', fontSize: 10, fontWeight: 700 }}
-                                    onClick={() => toggleShowAllHistory(g.clientId)}
-                                  >
-                                    View Older ({allClientCols.length})
-                                  </button>
-                                )}
-                              </div>
-                            ) : (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                {clientCols.map((col, idx) => {
-                                  const empName = col.receivedByUser?.name || 'Unrecorded (Historical)';
-                                  const rawRemBal = col.remainingBalance ?? col.runningBalance ?? 0;
-                                  const remBal = Math.abs(rawRemBal) < 0.99 ? 0 : rawRemBal;
-                                  const refNo = col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`;
-
-                                  return (
-                                    <MobileCardBox key={col.id} bg="#F8FAFC" borderColor="#CBD5E1">
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                                        <span style={{ fontWeight: 800, fontSize: 11, color: '#0F172A' }}>Payment #{clientCols.length - idx}</span>
-                                        <span className="mono" style={{ fontSize: 10, background: '#E2E8F0', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{refNo}</span>
-                                      </div>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11 }}>
-                                        <MobileCardRow label="Amount Received" value={fmtMoney(col.amount)} valueColor="#166534" isMono />
-                                        <MobileCardRow label="Date & Time" value={fmtDateTime(col.date)} />
-                                        <MobileCardRow label="Method" value={col.method} />
-                                        <MobileCardRow label="Received By" value={`👤 ${empName}`} />
-                                        <MobileCardRow label="Remaining Due" value={fmtMoney(remBal)} valueColor={remBal > 0 ? '#991B1B' : '#166534'} isMono />
-                                      </div>
-                                    </MobileCardBox>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
                     </MobileCard>
                   );
                 })}
-
-                {/* Mobile Total Summary Footer */}
-                <div style={{
-                  padding: '16px',
-                  background: 'rgba(0,0,0,0.03)',
-                  borderRadius: '12px',
-                  border: '1px solid var(--line)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{ fontWeight: 700, fontSize: '14px' }}>Total Outstanding</span>
-                  <span className="mono" style={{ fontWeight: 700, color: 'var(--clay)', fontSize: '16px' }}>
-                    {fmtMoney(clients.filter(c => c.currentBalance > 0).reduce((s, c) => s + c.currentBalance, 0))}
-                  </span>
-                </div>
               </div>
             </>
           )}
@@ -1208,49 +1151,118 @@ export default function CollectionsPage() {
               </p>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table className="va-table" style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th>Ref / Receipt</th>
-                    <th>Time</th>
-                    <th>Customer</th>
-                    <th>Received By</th>
-                    <th>Method</th>
-                    <th style={{ textAlign: 'right' }}>Amount</th>
-                    <th>Status / Mode</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dailyData.transactions.map((tx: any) => (
-                    <tr key={tx.id}>
-                      <td><span className="mono" style={{ fontWeight: 700, color: 'var(--ink)' }}>{tx.reference}</span></td>
-                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>{tx.time}</td>
-                      <td>
-                        <strong>{tx.clientName}</strong>
-                        {tx.clientId && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>({tx.clientId})</span>}
-                      </td>
-                      <td style={{ fontWeight: 600 }}>👤 {tx.receivedBy}</td>
-                      <td>
+            <>
+              {/* ────── DESKTOP TABLE ────── */}
+              <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <table className="va-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th>Ref / Receipt</th>
+                      <th>Time</th>
+                      <th>Customer</th>
+                      <th>Received By</th>
+                      <th>Method</th>
+                      <th style={{ textAlign: 'right' }}>Amount</th>
+                      <th>Status / Mode</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dailyData.transactions.map((tx: any) => (
+                      <tr key={tx.id}>
+                        <td><span className="mono" style={{ fontWeight: 700, color: 'var(--ink)' }}>{tx.reference}</span></td>
+                        <td style={{ color: 'var(--muted)', fontSize: 12 }}>{tx.time}</td>
+                        <td>
+                          <strong>{tx.clientName}</strong>
+                          {tx.clientId && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>({tx.clientId})</span>}
+                        </td>
+                        <td style={{ fontWeight: 600 }}>👤 {tx.receivedBy}</td>
+                        <td>
+                          <span style={{
+                            fontSize: 11, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 4,
+                            background: tx.method === 'CASH' ? '#DCFCE7' : tx.method === 'BANK' ? '#DBEAFE' : '#FEF9C3',
+                            color: tx.method === 'CASH' ? '#166534' : tx.method === 'BANK' ? '#1E40AF' : '#854D0E',
+                          }}>
+                            {tx.method}
+                          </span>
+                        </td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: '#166534', fontSize: 14 }}>
+                          {fmtMoney(tx.amount)}
+                        </td>
+                        <td>
+                          <span className="va-badge paid" style={{ fontSize: 10, padding: '2px 6px' }}>VERIFIED</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ────── MOBILE VIEW (Dedicated Payment Cards from 1420f4713ed5b3ccf5bedf1f3572745b96519aed) ────── */}
+              <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+                {dailyData.transactions.map((tx: any) => (
+                  <div
+                    key={tx.id}
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '12px',
+                      padding: '14px',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+                    }}
+                  >
+                    {/* Top Row: Ref & Time */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span className="mono" style={{ fontWeight: 800, fontSize: '12px', color: '#0F172A', background: '#F1F5F9', padding: '3px 8px', borderRadius: '6px' }}>
+                        {tx.reference}
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>
+                        ⏰ {tx.time}
+                      </span>
+                    </div>
+
+                    {/* Customer & Amount */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '6px 0 10px' }}>
+                      <div>
+                        <div style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
+                          {tx.clientName}
+                        </div>
+                        {tx.clientId && (
+                          <div style={{ fontSize: '11px', color: '#64748B' }}>
+                            ID: {tx.clientId}
+                          </div>
+                        )}
+                      </div>
+                      <div className="mono" style={{ fontSize: '17px', fontWeight: 800, color: '#166534' }}>
+                        {fmtMoney(tx.amount)}
+                      </div>
+                    </div>
+
+                    {/* Details Pill Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #F1F5F9', paddingTop: 8, fontSize: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{
-                          fontSize: 11, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 4,
+                          fontSize: 10,
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          padding: '2px 6px',
+                          borderRadius: 4,
                           background: tx.method === 'CASH' ? '#DCFCE7' : tx.method === 'BANK' ? '#DBEAFE' : '#FEF9C3',
                           color: tx.method === 'CASH' ? '#166534' : tx.method === 'BANK' ? '#1E40AF' : '#854D0E',
                         }}>
                           {tx.method}
                         </span>
-                      </td>
-                      <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: '#166534', fontSize: 14 }}>
-                        {fmtMoney(tx.amount)}
-                      </td>
-                      <td>
-                        <span className="va-badge paid" style={{ fontSize: 10, padding: '2px 6px' }}>VERIFIED</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        <span style={{ color: '#64748B', fontSize: 11 }}>
+                          👤 {tx.receivedBy}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 8, background: '#DCFCE7', color: '#15803D' }}>
+                        ✓ VERIFIED
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
