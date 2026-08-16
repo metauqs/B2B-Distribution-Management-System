@@ -296,19 +296,23 @@ export default function CollectionsPage() {
       clientNo: string;
       clientName: string;
       authoritativeOutstanding: number;
+      initialOpening: number;
       openingDue: number;
+      hasOpeningDue: boolean;
+      hasAuthDebt: boolean;
+      hasInvoiceDue: boolean;
       invoiceDue: number;
       items: any[];
     } }, client) => {
       const clientSales = sales.filter(s => s.clientId === client.id && s.status !== 'CANCELLED');
-      const authTotal = client.currentBalance ?? 0;
-      if (clientSales.length === 0 && authTotal === 0) return acc;
+      const authTotal = Math.max(0, client.currentBalance ?? 0);
+      if (clientSales.length === 0 && authTotal < 0.99) return acc;
 
       const sortedSales = [...clientSales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       const items = sortedSales.map(sale => {
         const isCancelled = sale.status === 'CANCELLED';
-        const isPaid = !isCancelled && (sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.01));
+        const isPaid = !isCancelled && (sale.status === 'PAID' || (sale.balance !== undefined && sale.balance < 0.99));
         const isPartial = !isCancelled && !isPaid && sale.paid > 0;
         const status = isCancelled ? 'CANCELLED' : isPaid ? 'PAID' : isPartial ? 'PARTIALLY PAID' : 'UNPAID';
         const remaining = isPaid || isCancelled ? 0 : Math.max(0, sale.balance);
@@ -325,15 +329,25 @@ export default function CollectionsPage() {
         };
       });
 
+      const initialOpening = Math.max(0, client.openingBalance ?? 0);
       const invoiceDue = items.filter(i => i.status !== 'PAID').reduce((sum, i) => sum + i.remaining, 0);
-      const openingDue = Math.max(0, Math.round((authTotal - invoiceDue) * 100) / 100);
+      const openingDue = initialOpening > 0 
+        ? Math.min(initialOpening, Math.max(0, Math.round((authTotal - invoiceDue) * 100) / 100))
+        : 0;
+      const hasOpeningDue = openingDue >= 0.99;
+      const hasAuthDebt = authTotal >= 0.99;
+      const hasInvoiceDue = invoiceDue >= 0.99;
 
       acc[client.id] = {
         clientId: client.id,
         clientNo: client.clientId || 'WH-0000',
         clientName: client.name,
-        authoritativeOutstanding: Math.max(0, authTotal),
+        authoritativeOutstanding: authTotal,
+        initialOpening,
         openingDue,
+        hasOpeningDue,
+        hasAuthDebt,
+        hasInvoiceDue,
         invoiceDue,
         items
       };
@@ -341,7 +355,7 @@ export default function CollectionsPage() {
       return acc;
     }, {});
 
-    return Object.values(groupedSales).filter(g => g.items.length > 0 || g.authoritativeOutstanding > 0);
+    return Object.values(groupedSales).filter(g => g.items.length > 0 || g.hasAuthDebt);
   }, [clients, sales]);
 
   return (
@@ -467,9 +481,13 @@ export default function CollectionsPage() {
                   const prevBal = maxAllowed;
                   const remBal = Math.max(0, prevBal - amtRec);
 
+                  const initialOpening = Math.max(0, selectedC.openingBalance || 0);
                   const cSales = sales.filter(s => s.clientId === selectedC.id && s.status !== 'CANCELLED');
-                  const invoiceDue = cSales.reduce((sum, s) => sum + (s.balance ?? 0), 0);
-                  const openingDue = Math.max(0, Math.round((prevBal - invoiceDue) * 100) / 100);
+                  const invoiceDue = cSales.reduce((sum, s) => sum + (s.balance >= 0.99 ? s.balance : 0), 0);
+                  const openingDue = initialOpening > 0 
+                    ? Math.min(initialOpening, Math.max(0, Math.round((prevBal - invoiceDue) * 100) / 100))
+                    : 0;
+                  const hasOpeningDue = openingDue >= 0.99;
 
                   // Waterfall Allocation Preview
                   const allocToOpening = Math.min(amtRec, openingDue);
@@ -488,17 +506,17 @@ export default function CollectionsPage() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12 }}>
                         <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
                           <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Opening Balance Due</div>
-                          <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: openingDue > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                          <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: hasOpeningDue ? '#B45309' : '#16A34A', marginTop: 4 }}>
                             {fmtMoney(openingDue)}
                           </div>
-                          <div style={{ fontSize: 10, color: openingDue > 0 ? '#D97706' : '#16A34A', marginTop: 2, fontWeight: 700 }}>
-                            {openingDue > 0 ? '⚠️ UNPAID' : '✅ CLEARED'}
+                          <div style={{ fontSize: 10, color: hasOpeningDue ? '#D97706' : '#16A34A', marginTop: 2, fontWeight: 700 }}>
+                            {hasOpeningDue ? '⚠️ UNPAID' : '✅ CLEARED'}
                           </div>
                         </div>
 
                         <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
                           <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Invoice Outstanding</div>
-                          <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: invoiceDue > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                          <div className="mono" style={{ fontSize: 14, fontWeight: 800, color: invoiceDue >= 0.99 ? '#B45309' : '#16A34A', marginTop: 4 }}>
                             {fmtMoney(invoiceDue)}
                           </div>
                           <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 2 }}>{cSales.length} Active Invoices</div>
@@ -506,7 +524,7 @@ export default function CollectionsPage() {
 
                         <div style={{ background: '#FFF', padding: '10px 12px', borderRadius: 8, border: '1px solid #CBD5E1' }}>
                           <div style={{ fontSize: 10, color: '#1E293B', fontWeight: 700, textTransform: 'uppercase' }}>Total Outstanding</div>
-                          <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: prevBal > 0 ? '#B45309' : '#16A34A', marginTop: 4 }}>
+                          <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: prevBal >= 0.99 ? '#B45309' : '#16A34A', marginTop: 4 }}>
                             {fmtMoney(prevBal)}
                           </div>
                           <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>Maximum Allowed</div>
@@ -648,7 +666,7 @@ export default function CollectionsPage() {
                         >
                           {/* Client Identification */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', minWidth: 200 }}>
-                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: g.authoritativeOutstanding > 0 ? 'var(--clay)' : 'var(--ok)', display: 'inline-block', flexShrink: 0 }}></span>
+                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: g.hasAuthDebt ? 'var(--clay)' : 'var(--ok)', display: 'inline-block', flexShrink: 0 }}></span>
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>{g.clientName}</span>
@@ -658,11 +676,13 @@ export default function CollectionsPage() {
                               </div>
                               {/* Financial Breakdown Badges */}
                               <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 11, color: '#64748B', flexWrap: 'wrap' }}>
-                                <span>Invoices ({g.items.length}): <strong style={{ color: g.invoiceDue > 0 ? '#B45309' : '#16A34A' }}>{fmtMoney(g.invoiceDue)}</strong></span>
-                                {g.openingDue > 0 ? (
+                                <span>Invoices ({g.items.length}): <strong style={{ color: g.hasInvoiceDue ? '#B45309' : '#16A34A' }}>{fmtMoney(g.invoiceDue)}</strong></span>
+                                {g.hasOpeningDue ? (
                                   <span>• Opening Due: <strong style={{ color: '#B45309' }}>{fmtMoney(g.openingDue)}</strong> <span style={{ color: '#D97706', fontWeight: 700 }}>(UNPAID)</span></span>
+                                ) : g.initialOpening > 0 ? (
+                                  <span>• Opening Balance: <strong style={{ color: '#16A34A' }}>CLEARED (Rs 0)</strong></span>
                                 ) : (
-                                  <span>• Opening Balance: <strong style={{ color: '#16A34A' }}>CLEARED</strong></span>
+                                  <span>• Opening Balance: <strong style={{ color: '#16A34A' }}>Rs 0</strong></span>
                                 )}
                               </div>
                             </div>
@@ -672,7 +692,7 @@ export default function CollectionsPage() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flexShrink: 0 }}>
                             <div style={{ textAlign: 'right', paddingRight: 8, borderRight: '1px solid var(--line)' }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Total Outstanding</div>
-                              <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: g.authoritativeOutstanding > 0 ? 'var(--clay)' : 'var(--ok)' }}>
+                              <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: g.hasAuthDebt ? 'var(--clay)' : 'var(--ok)' }}>
                                 {fmtMoney(g.authoritativeOutstanding)}
                               </div>
                             </div>
@@ -865,7 +885,7 @@ export default function CollectionsPage() {
                           >
                             ➕ Pay
                           </button>
-                          {g.authoritativeOutstanding > 0 && (
+                          {g.hasAuthDebt && (
                             <button
                               className="va-btn secondary small"
                               style={{ flex: 1, fontWeight: 700 }}
@@ -881,13 +901,15 @@ export default function CollectionsPage() {
                       <MobileCardRow 
                         label="Total Outstanding Due" 
                         value={fmtMoney(g.authoritativeOutstanding)} 
-                        valueColor={g.authoritativeOutstanding > 0 ? '#991B1B' : '#166534'} 
+                        valueColor={g.hasAuthDebt ? '#991B1B' : '#166534'} 
                         isMono 
                       />
-                      {g.openingDue > 0 ? (
+                      {g.hasOpeningDue ? (
                         <MobileCardRow label="Opening Due" value={`${fmtMoney(g.openingDue)} (UNPAID)`} valueColor="#B45309" isMono />
-                      ) : (
+                      ) : g.initialOpening > 0 ? (
                         <MobileCardRow label="Opening Due" value="CLEARED (Rs 0)" valueColor="#166534" />
+                      ) : (
+                        <MobileCardRow label="Opening Balance" value="Rs 0" valueColor="#166534" />
                       )}
 
                       {/* Expandable Invoice Cards */}

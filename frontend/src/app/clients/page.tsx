@@ -682,12 +682,12 @@ export default function ClientsPage() {
                             </select>
                           </td>
                           <td className="mono" style={{ textAlign: 'right' }}>{c.creditLimit > 0 ? fmtMoney(c.creditLimit) : '—'}</td>
-                          <td className="mono" style={{ textAlign: 'right', color: c.currentBalance > 0 ? 'var(--clay)' : c.currentBalance < 0 ? 'var(--ok)' : undefined, fontWeight: 700 }}>
+                          <td className="mono" style={{ textAlign: 'right', color: c.currentBalance >= 0.99 ? 'var(--clay)' : c.currentBalance <= -0.99 ? 'var(--ok)' : undefined, fontWeight: 700 }}>
                             {fmtMoney(Math.abs(c.currentBalance))}
-                            {c.currentBalance < 0 && <span style={{ fontSize: 10 }}> CR</span>}
+                            {c.currentBalance <= -0.99 && <span style={{ fontSize: 10 }}> CR</span>}
                             {c.openingBalance > 0 && (
                               <div style={{ fontSize: 10, fontWeight: 600, marginTop: 2 }}>
-                                {c.openingBalanceRemaining && c.openingBalanceRemaining > 0 ? (
+                                {c.openingBalanceRemaining && c.openingBalanceRemaining >= 0.99 ? (
                                   <span style={{ color: '#B45309' }}>Opening: {fmtMoney(c.openingBalanceRemaining)} (UNPAID)</span>
                                 ) : (
                                   <span style={{ color: '#16A34A' }}>Opening: CLEARED</span>
@@ -790,17 +790,17 @@ export default function ClientsPage() {
                       >
                         <MobileCardRow 
                           label="Balance Due" 
-                          value={`${fmtMoney(Math.abs(c.currentBalance))}${c.currentBalance < 0 ? ' (CR)' : ''}`} 
-                          valueColor={c.currentBalance > 0 ? '#991B1B' : '#166534'} 
+                          value={`${fmtMoney(Math.abs(c.currentBalance))}${c.currentBalance <= -0.99 ? ' (CR)' : ''}`} 
+                          valueColor={c.currentBalance >= 0.99 ? '#991B1B' : '#166534'} 
                           isMono 
                         />
                         {c.openingBalance > 0 && (
                           <MobileCardRow 
                             label="Opening Balance" 
-                            value={c.openingBalanceRemaining && c.openingBalanceRemaining > 0 
+                            value={c.openingBalanceRemaining && c.openingBalanceRemaining >= 0.99 
                               ? `${fmtMoney(c.openingBalanceRemaining)} (UNPAID)` 
                               : 'CLEARED (Rs 0)'}
-                            valueColor={c.openingBalanceRemaining && c.openingBalanceRemaining > 0 ? '#B45309' : '#16A34A'}
+                            valueColor={c.openingBalanceRemaining && c.openingBalanceRemaining >= 0.99 ? '#B45309' : '#16A34A'}
                             isMono
                           />
                         )}
@@ -945,7 +945,7 @@ export default function ClientsPage() {
                     ['Address', profile.client.address],
                     ['Delivery Location', profile.client.deliveryLocation],
                     ['Opening Balance', profile.client.openingBalance > 0 
-                      ? `${fmtMoney(profile.client.openingBalance)} — ${profile.openingBalanceRemaining && profile.openingBalanceRemaining > 0 ? `Unpaid Due: ${fmtMoney(profile.openingBalanceRemaining)}` : 'CLEARED (Rs 0)'}` 
+                      ? `${fmtMoney(profile.client.openingBalance)} — ${profile.openingBalanceRemaining && profile.openingBalanceRemaining >= 0.99 ? `Unpaid Due: ${fmtMoney(profile.openingBalanceRemaining)}` : 'CLEARED (Rs 0)'}` 
                       : 'Rs 0 (CLEARED)'],
                     ['Credit Limit', profile.client.creditLimit > 0 ? fmtMoney(profile.client.creditLimit) : 'None'],
                     ['Payment Terms', profile.client.paymentTerms === 0 ? 'Cash on Delivery' : `${profile.client.paymentTerms} Days`],

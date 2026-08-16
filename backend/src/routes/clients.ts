@@ -117,7 +117,7 @@ router.get('/', async (req: Request, res: Response) => {
       const openingBal = c.openingBalance ?? 0;
       const openingRem = openingBal > 0 ? Math.max(0, Math.round(((c.currentBalance ?? 0) - invDue) * 100) / 100) : 0;
       const openingPaid = openingBal > 0 ? Math.max(0, Math.round((openingBal - openingRem) * 100) / 100) : 0;
-      const openingStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingRem <= 0.01 ? 'CLEARED' : 'UNPAID';
+      const openingStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingRem < 0.99 ? 'CLEARED' : 'UNPAID';
 
       return {
         ...c,
@@ -313,7 +313,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const openingBal = client.openingBalance ?? 0;
     const openingBalanceRemaining = openingBal > 0 ? Math.max(0, Math.round((client.currentBalance - invoiceOutstanding) * 100) / 100) : 0;
     const openingBalancePaid = openingBal > 0 ? Math.max(0, Math.round((openingBal - openingBalanceRemaining) * 100) / 100) : 0;
-    const openingBalanceStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingBalanceRemaining <= 0.01 ? 'CLEARED' : 'UNPAID';
+    const openingBalanceStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingBalanceRemaining < 0.99 ? 'CLEARED' : 'UNPAID';
 
     return res.json({
       success: true,
