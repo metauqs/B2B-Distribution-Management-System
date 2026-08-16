@@ -712,14 +712,22 @@ export default function SalesPage() {
         employeePhone:       s.employee?.phone,
         deliveryDate:        s.deliveryDate,
         deliveryTime:        s.deliveryTime,
-        items: s.items.map(i => ({
-          itemName: i.itemName,
-          qty:      i.qty,
-          unit:     i.unit,
-          rate:     i.rate,
-          amount:   i.amount,
-          urduName: i.product?.urduName,
-        })),
+        items: s.items.map(i => {
+          const pItem = priceItems.find(p => (i.productId && p.productId === i.productId) || p.itemName.toLowerCase() === i.itemName.toLowerCase());
+          return {
+            itemName: i.itemName,
+            qty:      i.qty,
+            unit:     i.unit,
+            rate:     i.rate,
+            amount:   i.amount,
+            urduName: i.product?.urduName || pItem?.product?.urduName || (i as any).urduName || '',
+            imageUrl: i.product?.imageUrl || pItem?.product?.imageUrl || (i as any).imageUrl || null,
+            emoji:    i.product?.emoji || pItem?.product?.emoji || (i as any).emoji || null,
+            productId: i.productId || pItem?.productId || null,
+            returnedQty: (i as any).returnedQty,
+            returnReason: (i as any).returnReason,
+          };
+        }),
         previousBalance:     s.previousBalance,
         previousBalanceDate: s.previousBalanceDate,
         total:               s.total,
@@ -757,14 +765,22 @@ export default function SalesPage() {
           employeePhone:       s.employee?.phone,
           deliveryDate:        s.deliveryDate,
           deliveryTime:        s.deliveryTime,
-          items: s.items.map(i => ({
-            itemName: i.itemName,
-            qty:      i.qty,
-            unit:     i.unit,
-            rate:     i.rate,
-            amount:   i.amount,
-            urduName: i.product?.urduName,
-          })),
+          items: s.items.map(i => {
+            const pItem = priceItems.find(p => (i.productId && p.productId === i.productId) || p.itemName.toLowerCase() === i.itemName.toLowerCase());
+            return {
+              itemName: i.itemName,
+              qty:      i.qty,
+              unit:     i.unit,
+              rate:     i.rate,
+              amount:   i.amount,
+              urduName: i.product?.urduName || pItem?.product?.urduName || (i as any).urduName || '',
+              imageUrl: i.product?.imageUrl || pItem?.product?.imageUrl || (i as any).imageUrl || null,
+              emoji:    i.product?.emoji || pItem?.product?.emoji || (i as any).emoji || null,
+              productId: i.productId || pItem?.productId || null,
+              returnedQty: (i as any).returnedQty,
+              returnReason: (i as any).returnReason,
+            };
+          }),
           previousBalance:     s.previousBalance,
           previousBalanceDate: s.previousBalanceDate,
           total:               s.total,
@@ -823,14 +839,22 @@ export default function SalesPage() {
         employeePhone:       s.employee?.phone,
         deliveryDate:        s.deliveryDate,
         deliveryTime:        s.deliveryTime,
-        items: s.items.map(i => ({
-          itemName: i.itemName,
-          qty:      i.qty,
-          unit:     i.unit,
-          rate:     i.rate,
-          amount:   i.amount,
-          urduName: i.product?.urduName,
-        })),
+        items: s.items.map(i => {
+          const pItem = priceItems.find(p => (i.productId && p.productId === i.productId) || p.itemName.toLowerCase() === i.itemName.toLowerCase());
+          return {
+            itemName: i.itemName,
+            qty:      i.qty,
+            unit:     i.unit,
+            rate:     i.rate,
+            amount:   i.amount,
+            urduName: i.product?.urduName || pItem?.product?.urduName || (i as any).urduName || '',
+            imageUrl: i.product?.imageUrl || pItem?.product?.imageUrl || (i as any).imageUrl || null,
+            emoji:    i.product?.emoji || pItem?.product?.emoji || (i as any).emoji || null,
+            productId: i.productId || pItem?.productId || null,
+            returnedQty: (i as any).returnedQty,
+            returnReason: (i as any).returnReason,
+          };
+        }),
         previousBalance:     s.previousBalance,
         previousBalanceDate: s.previousBalanceDate,
         total:               s.total,
@@ -867,14 +891,22 @@ export default function SalesPage() {
           employeePhone:       s.employee?.phone,
           deliveryDate:        s.deliveryDate,
           deliveryTime:        s.deliveryTime,
-          items: s.items.map(i => ({
-            itemName: i.itemName,
-            qty:      i.qty,
-            unit:     i.unit,
-            rate:     i.rate,
-            amount:   i.amount,
-            urduName: i.product?.urduName,
-          })),
+          items: s.items.map(i => {
+            const pItem = priceItems.find(p => (i.productId && p.productId === i.productId) || p.itemName.toLowerCase() === i.itemName.toLowerCase());
+            return {
+              itemName: i.itemName,
+              qty:      i.qty,
+              unit:     i.unit,
+              rate:     i.rate,
+              amount:   i.amount,
+              urduName: i.product?.urduName || pItem?.product?.urduName || (i as any).urduName || '',
+              imageUrl: i.product?.imageUrl || pItem?.product?.imageUrl || (i as any).imageUrl || null,
+              emoji:    i.product?.emoji || pItem?.product?.emoji || (i as any).emoji || null,
+              productId: i.productId || pItem?.productId || null,
+              returnedQty: (i as any).returnedQty,
+              returnReason: (i as any).returnReason,
+            };
+          }),
           previousBalance:     s.previousBalance,
           previousBalanceDate: s.previousBalanceDate,
           total:               s.total,

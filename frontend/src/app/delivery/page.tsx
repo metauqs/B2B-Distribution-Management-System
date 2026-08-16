@@ -7,6 +7,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
+import { ProductVisual } from '@/components/ui/ProductVisual';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 
@@ -801,8 +802,11 @@ export default function DeliveryPage() {
                     {d.sale?.items && d.sale.items.length > 0 && (
                       <MobileCardBox title={`Order Items (${d.sale.items.length})`}>
                         {d.sale.items.map(item => (
-                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#15803D', fontWeight: 600, margin: '4px 0' }}>
-                            <span>• {item.itemName}</span>
+                          <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px', color: '#15803D', fontWeight: 600, margin: '4px 0' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <ProductVisual name={item.itemName} emoji={(item as any).product?.emoji} imageUrl={(item as any).product?.imageUrl} size={18} />
+                              <span>{item.itemName}</span>
+                            </div>
                             <span style={{ color: '#166534', fontWeight: 700 }}>{item.qty} {item.unit}</span>
                           </div>
                         ))}

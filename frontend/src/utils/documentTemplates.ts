@@ -636,6 +636,99 @@ function buildDocShell(b: BrandConfig, title: string, bodyHtml: string): string 
 </html>`;
 }
 
+// ─── Product Visual Asset Helper for Document Templates ──────────────────────
+
+export function getProductHtmlVisual(
+  name: string,
+  emoji?: string | null,
+  imageUrl?: string | null,
+  origin = ''
+): string {
+  // 1. Highest Priority: Uploaded Image from Product Master (imageUrl)
+  if (imageUrl && imageUrl.trim()) {
+    let finalUrl = imageUrl.trim();
+    if (!finalUrl.startsWith('data:') && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+      finalUrl = `${origin}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
+    }
+    return `<img src="${finalUrl}" alt="${name}" style="width:22px;height:22px;object-fit:cover;vertical-align:middle;border-radius:4px;margin-left:6px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:20px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji || '🥬'}</span>`;
+  }
+
+  // 2. Second Priority: Explicit Product Master Emoji
+  if (emoji && emoji.trim()) {
+    return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji.trim()}</span>`;
+  }
+
+  const n = (name || '').toLowerCase().trim();
+
+  // 3. Pre-mapped static image assets
+  if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') {
+    return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫛</span>`;
+  }
+  if (n.includes('guava') || n.includes('amrood')) {
+    return `<img src="${origin}/guava.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍏</span>`;
+  }
+  if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) {
+    return `<img src="${origin}/papaya.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍈</span>`;
+  }
+  if (n.includes('pomegranate') || n.includes('anar')) {
+    return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍎</span>`;
+  }
+  if (n.includes('turnip') || n.includes('shalgam')) {
+    return `<img src="${origin}/turnip.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
+  }
+  if (n.includes('radish') || n.includes('mooli')) {
+    return `<img src="${origin}/radish.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
+  }
+  if (n.includes('beetroot') || n.includes('chukandar')) {
+    return `<img src="${origin}/beetroot.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
+  }
+  if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) {
+    return `<img src="${origin}/plum.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍑</span>`;
+  }
+
+  // 4. Standardized Fallback Emojis
+  let fallbackEmoji = '🥬';
+  if (n.includes('beans') || n.includes('phali')) fallbackEmoji = '🫘';
+  else if (n.includes('bitter') || n.includes('karela')) fallbackEmoji = '🥒';
+  else if (n.includes('bottle') || n.includes('lauki') || n.includes('ghia') || n.includes('gourd') || n.includes('tori') || n.includes('turi') || n.includes('turai')) fallbackEmoji = '🥒';
+  else if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) fallbackEmoji = '🍆';
+  else if (n.includes('broccoli')) fallbackEmoji = '🥦';
+  else if (n.includes('cabbage') || n.includes('gobhi') || n.includes('gobi')) fallbackEmoji = '🥬';
+  else if (n.includes('capsicum') || n.includes('shimla')) fallbackEmoji = '🫑';
+  else if (n.includes('carrot') || n.includes('gajar')) fallbackEmoji = '🥕';
+  else if (n.includes('cauliflower')) fallbackEmoji = '🥦';
+  else if (n.includes('coriander') || n.includes('dhaniya')) fallbackEmoji = '🌿';
+  else if (n.includes('corn') || n.includes('makai') || n.includes('bhutta')) fallbackEmoji = '🌽';
+  else if (n.includes('cucumber') || n.includes('kheera')) fallbackEmoji = '🥒';
+  else if (n.includes('garlic') || n.includes('lehsun')) fallbackEmoji = '🧄';
+  else if (n.includes('ginger') || n.includes('adrak')) fallbackEmoji = '𫚚';
+  else if (n.includes('green chilli') || n.includes('green chili') || n.includes('hari mirch')) fallbackEmoji = '🌶️';
+  else if (n.includes('chilli') || n.includes('chili') || n.includes('mirch')) fallbackEmoji = '🌶️';
+  else if (n.includes('iceberg')) fallbackEmoji = '🥬';
+  else if (n.includes('lemon') || n.includes('limo') || n.includes('nimbu')) fallbackEmoji = '🍋';
+  else if (n.includes('lettuce')) fallbackEmoji = '🥬';
+  else if (n.includes('mint') || n.includes('pudina')) fallbackEmoji = '🌿';
+  else if (n.includes('mushroom')) fallbackEmoji = '🍄';
+  else if (n.includes('onion') || n.includes('piaz') || n.includes('pyaz')) fallbackEmoji = '🧅';
+  else if (n.includes('peas') || n.includes('matar')) fallbackEmoji = '🫛';
+  else if (n.includes('potato') || n.includes('aloo')) fallbackEmoji = '🥔';
+  else if (n.includes('pumpkin') || n.includes('kaddu')) fallbackEmoji = '🎃';
+  else if (n.includes('spinach') || n.includes('palak')) fallbackEmoji = '🥬';
+  else if (n.includes('sweet potato') || n.includes('shakarkandi')) fallbackEmoji = '🍠';
+  else if (n.includes('tomato') || n.includes('tamatar')) fallbackEmoji = '🍅';
+  else if (n.includes('apple') || n.includes('seeb')) fallbackEmoji = '🍎';
+  else if (n.includes('banana') || n.includes('kela')) fallbackEmoji = '🍌';
+  else if (n.includes('grapes') || n.includes('angoor')) fallbackEmoji = '🍇';
+  else if (n.includes('mango') || n.includes('aam')) fallbackEmoji = '🥭';
+  else if (n.includes('melon') || n.includes('kharbooza')) fallbackEmoji = '🍈';
+  else if (n.includes('orange') || n.includes('malta') || n.includes('kinnow')) fallbackEmoji = '🍊';
+  else if (n.includes('peach') || n.includes('aaroo')) fallbackEmoji = '🍑';
+  else if (n.includes('pear') || n.includes('nashpati')) fallbackEmoji = '🍐';
+  else if (n.includes('watermelon') || n.includes('tarbooz')) fallbackEmoji = '🍉';
+
+  return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${fallbackEmoji}</span>`;
+}
+
 // ─── Invoice Types ────────────────────────────────────────────────────────────
 
 export interface InvoiceItem {
@@ -647,6 +740,9 @@ export interface InvoiceItem {
   urduName?: string | null;
   returnedQty?: number;
   returnReason?: string | null;
+  imageUrl?: string | null;
+  emoji?: string | null;
+  productId?: string | null;
 }
 
 export interface InvoiceData {
@@ -730,8 +826,13 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     <tr>
       <td class="center muted" style="font-size:10px;padding:4px 6px;">${startIndex + i + 1}</td>
       <td style="font-size:10px;padding:4px 6px;">
-        <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:16px;font-weight:700;color:#000000;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</div>
-        <div style="font-size:10.5px;color:#555555;">${item.itemName}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:16px;font-weight:700;color:#000000;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</div>
+            <div style="font-size:10.5px;color:#555555;">${item.itemName}</div>
+          </div>
+          ${getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl, origin)}
+        </div>
       </td>
       <td class="center mono" style="font-size:10px;padding:4px 6px;">
         ${item.qty} ${item.unit}
@@ -787,8 +888,13 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
           <tr>
             <td class="center muted">${i + 1}</td>
             <td>
-              <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:17px;font-weight:700;color:#000000;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</div>
-              <div style="font-size:11px;color:#555555;font-weight:500;">${item.itemName}</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div style="flex:1;min-width:0;">
+                  <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:17px;font-weight:700;color:#000000;direction:rtl;line-height:1.4;">${item.urduName || item.itemName}</div>
+                  <div style="font-size:11px;color:#555555;font-weight:500;">${item.itemName}</div>
+                </div>
+                ${getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl, origin)}
+              </div>
             </td>
             <td class="center mono">
               ${item.qty}
@@ -1056,93 +1162,6 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
   const col1 = data.items.slice(0, half);
   const col2 = data.items.slice(half);
 
-  const getProductHtmlVisual = (name: string, emoji?: string | null, imageUrl?: string | null): string => {
-    // 1. Highest Priority: Uploaded Image from Product Master (imageUrl)
-    if (imageUrl && imageUrl.trim()) {
-      let finalUrl = imageUrl.trim();
-      // Normalize relative paths to include origin
-      if (!finalUrl.startsWith('data:') && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-        finalUrl = `${origin}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
-      }
-      return `<img src="${finalUrl}" alt="${name}" style="width:22px;height:22px;object-fit:cover;vertical-align:middle;border-radius:4px;margin-left:6px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:20px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji || '🥬'}</span>`;
-    }
-
-    // 2. Second Priority: Explicit Product Master Emoji
-    if (emoji && emoji.trim()) {
-      return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji.trim()}</span>`;
-    }
-
-    const n = (name || '').toLowerCase().trim();
-
-    // 3. Pre-mapped static image assets
-    if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') {
-      return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫛</span>`;
-    }
-    if (n.includes('guava') || n.includes('amrood')) {
-      return `<img src="${origin}/guava.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍏</span>`;
-    }
-    if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) {
-      return `<img src="${origin}/papaya.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍈</span>`;
-    }
-    if (n.includes('pomegranate') || n.includes('anar')) {
-      return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍎</span>`;
-    }
-    if (n.includes('turnip') || n.includes('shalgam')) {
-      return `<img src="${origin}/turnip.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
-    }
-    if (n.includes('radish') || n.includes('mooli')) {
-      return `<img src="${origin}/radish.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
-    }
-    if (n.includes('beetroot') || n.includes('chukandar')) {
-      return `<img src="${origin}/beetroot.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
-    }
-    if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) {
-      return `<img src="${origin}/plum.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍑</span>`;
-    }
-
-    // 4. Standardized Fallback Emojis
-    let fallbackEmoji = '🥬';
-    if (n.includes('beans') || n.includes('phali')) fallbackEmoji = '🫘';
-    else if (n.includes('bitter') || n.includes('karela')) fallbackEmoji = '🥒';
-    else if (n.includes('bottle') || n.includes('lauki') || n.includes('ghia') || n.includes('gourd')) fallbackEmoji = '🥒';
-    else if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) fallbackEmoji = '🍆';
-    else if (n.includes('broccoli')) fallbackEmoji = '🥦';
-    else if (n.includes('cabbage') || n.includes('gobhi') || n.includes('gobi')) fallbackEmoji = '🥬';
-    else if (n.includes('capsicum') || n.includes('shimla')) fallbackEmoji = '🫑';
-    else if (n.includes('carrot') || n.includes('gajar')) fallbackEmoji = '🥕';
-    else if (n.includes('cauliflower')) fallbackEmoji = '🥦';
-    else if (n.includes('coriander') || n.includes('dhaniya')) fallbackEmoji = '🌿';
-    else if (n.includes('corn') || n.includes('makai') || n.includes('bhutta')) fallbackEmoji = '🌽';
-    else if (n.includes('cucumber') || n.includes('kheera')) fallbackEmoji = '🥒';
-    else if (n.includes('garlic') || n.includes('lehsun')) fallbackEmoji = '🧄';
-    else if (n.includes('ginger') || n.includes('adrak')) fallbackEmoji = '𫚚';
-    else if (n.includes('green chilli') || n.includes('green chili') || n.includes('hari mirch')) fallbackEmoji = '🌶️';
-    else if (n.includes('chilli') || n.includes('chili') || n.includes('mirch')) fallbackEmoji = '🌶️';
-    else if (n.includes('iceberg')) fallbackEmoji = '🥬';
-    else if (n.includes('lemon') || n.includes('limo') || n.includes('nimbu')) fallbackEmoji = '🍋';
-    else if (n.includes('lettuce')) fallbackEmoji = '🥬';
-    else if (n.includes('mint') || n.includes('pudina')) fallbackEmoji = '🌿';
-    else if (n.includes('mushroom')) fallbackEmoji = '🍄';
-    else if (n.includes('onion') || n.includes('piaz') || n.includes('pyaz')) fallbackEmoji = '🧅';
-    else if (n.includes('peas') || n.includes('matar')) fallbackEmoji = '🫛';
-    else if (n.includes('potato') || n.includes('aloo')) fallbackEmoji = '🥔';
-    else if (n.includes('pumpkin') || n.includes('kaddu')) fallbackEmoji = '🎃';
-    else if (n.includes('spinach') || n.includes('palak')) fallbackEmoji = '🥬';
-    else if (n.includes('sweet potato') || n.includes('shakarkandi')) fallbackEmoji = '🍠';
-    else if (n.includes('tomato') || n.includes('tamatar')) fallbackEmoji = '🍅';
-    else if (n.includes('apple') || n.includes('seeb')) fallbackEmoji = '🍎';
-    else if (n.includes('banana') || n.includes('kela')) fallbackEmoji = '🍌';
-    else if (n.includes('grapes') || n.includes('angoor')) fallbackEmoji = '🍇';
-    else if (n.includes('mango') || n.includes('aam')) fallbackEmoji = '🥭';
-    else if (n.includes('melon') || n.includes('kharbooza')) fallbackEmoji = '🍈';
-    else if (n.includes('orange') || n.includes('malta') || n.includes('kinnow')) fallbackEmoji = '🍊';
-    else if (n.includes('peach') || n.includes('aaroo')) fallbackEmoji = '🍑';
-    else if (n.includes('pear') || n.includes('nashpati')) fallbackEmoji = '🍐';
-    else if (n.includes('watermelon') || n.includes('tarbooz')) fallbackEmoji = '🍉';
-
-    return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;">${fallbackEmoji}</span>`;
-  };
-
   const buildPriceRows = (items: typeof data.items, startIdx: number) =>
     items.map((item, i) => {
       const htmlVisual = getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl);
@@ -1264,6 +1283,9 @@ export interface PurchaseItem {
   rate: number;
   amount: number;
   urduName?: string | null;
+  imageUrl?: string | null;
+  emoji?: string | null;
+  productId?: string | null;
 }
 
 export interface PurchaseData {
@@ -1319,8 +1341,13 @@ export function generatePurchaseHTML(pur: PurchaseData, brand: BrandConfig, orig
     <tr>
       <td class="center muted">${i + 1}</td>
       <td>
-        <strong>${item.itemName}</strong>
-        ${item.urduName ? `<span class="urdu-inline-val">(${item.urduName})</span>` : ''}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div>
+            <strong>${item.itemName}</strong>
+            ${item.urduName ? `<span class="urdu-inline-val">(${item.urduName})</span>` : ''}
+          </div>
+          ${getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl, origin)}
+        </div>
       </td>
       <td class="center mono">${item.qty}</td>
       <td class="muted">${item.unit}</td>

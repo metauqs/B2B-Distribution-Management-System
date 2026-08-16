@@ -6,6 +6,7 @@ import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatter
 import { fetchWithCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
+import { ProductVisual } from '@/components/ui/ProductVisual';
 import Icon from '@mdi/react';
 import {
   mdiViewDashboard,
@@ -946,7 +947,24 @@ export default function ReportsPage() {
                 <tbody>
                   {selectedInvoiceModal.items?.map((item: any) => (
                     <tr key={item.id}>
-                      <td><strong>{item.itemName}</strong></td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <ProductVisual
+                            name={item.itemName}
+                            emoji={item.product?.emoji}
+                            imageUrl={item.product?.imageUrl}
+                            size={20}
+                          />
+                          <div>
+                            <strong>{item.itemName}</strong>
+                            {item.product?.urduName && (
+                              <span style={{ color: '#6B7280', fontSize: 11, marginLeft: 6 }}>
+                                ({item.product.urduName})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
                       <td className="mono">{item.qty} {item.unit}</td>
                       <td className="mono">Rs {item.rate}</td>
                       <td className="mono" style={{ color: '#991B1B' }}>Rs {item.costPrice}</td>

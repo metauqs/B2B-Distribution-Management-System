@@ -311,7 +311,7 @@ export default function InventoryPage() {
 
   // ── Combined Master Product List for Dropdowns ──────────────────────────────
   const masterProductsList = useMemo(() => {
-    const map = new Map<string, { productId: string; name: string; urduName?: string; unit: string; qty: number; currentBuyPrice: number; previousBuyPrice: number; lastPurchaseDate?: string; lastPurchaseQty?: number }>();
+    const map = new Map<string, { productId: string; name: string; urduName?: string; unit: string; qty: number; currentBuyPrice: number; previousBuyPrice: number; lastPurchaseDate?: string; lastPurchaseQty?: number; emoji?: string | null; imageUrl?: string | null }>();
 
     inventory.forEach(inv => {
       if (inv.productId) {
@@ -325,6 +325,8 @@ export default function InventoryPage() {
           previousBuyPrice: inv.previousBuyPrice ?? 0,
           lastPurchaseDate: inv.lastPurchaseDate,
           lastPurchaseQty: inv.lastPurchaseQty,
+          emoji: (inv.product as any)?.emoji,
+          imageUrl: (inv.product as any)?.imageUrl,
         });
       }
     });
@@ -339,6 +341,8 @@ export default function InventoryPage() {
           qty: 0,
           currentBuyPrice: 0,
           previousBuyPrice: 0,
+          emoji: prod.emoji,
+          imageUrl: prod.imageUrl,
         });
       }
     });
@@ -1123,7 +1127,6 @@ export default function InventoryPage() {
                         </div>
                       ) : (
                         matchingWastageProducts.map(p => {
-                          const emoji = getProductEmoji(p.name);
                           const isSelected = p.productId === wProdId;
 
                           return (
@@ -1149,7 +1152,7 @@ export default function InventoryPage() {
                               onMouseLeave={e => (e.currentTarget.style.background = isSelected ? '#E2F0D9' : '#ffffff')}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: 18 }}>{emoji}</span>
+                                <ProductVisual name={p.name} emoji={p.emoji} imageUrl={p.imageUrl} size={22} />
                                 <div>
                                   <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>{p.name}</span>
                                   {p.urduName && (
@@ -1338,7 +1341,6 @@ export default function InventoryPage() {
                         </div>
                       ) : (
                         matchingAdjProducts.map(p => {
-                          const emoji = getProductEmoji(p.name);
                           const isSelected = p.productId === aProdId;
 
                           return (
@@ -1365,7 +1367,7 @@ export default function InventoryPage() {
                               onMouseLeave={e => (e.currentTarget.style.background = isSelected ? '#E2F0D9' : '#ffffff')}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: 18 }}>{emoji}</span>
+                                <ProductVisual name={p.name} emoji={p.emoji} imageUrl={p.imageUrl} size={22} />
                                 <div>
                                   <span style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>{p.name}</span>
                                   {p.urduName && (

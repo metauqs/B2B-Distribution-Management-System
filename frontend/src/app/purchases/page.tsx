@@ -286,13 +286,20 @@ export default function PurchasesPage() {
         date: p.date,
         supplierName: p.supplier?.name ?? 'Unknown Supplier',
         supplierId: p.supplierId,
-        items: (p.items || []).map(it => ({
-          itemName: it.itemName,
-          qty: Number(it.qty),
-          unit: it.unit,
-          rate: Number(it.rate),
-          amount: Number(it.amount)
-        })),
+        items: (p.items || []).map(it => {
+          const master = products.find(prod => prod.id === it.productId || prod.name.toLowerCase() === it.itemName.toLowerCase());
+          return {
+            itemName: it.itemName,
+            qty: Number(it.qty),
+            unit: it.unit,
+            rate: Number(it.rate),
+            amount: Number(it.amount),
+            urduName: (it as any).product?.urduName || master?.urduName || (it as any).urduName || '',
+            imageUrl: (it as any).product?.imageUrl || master?.imageUrl || (it as any).imageUrl || null,
+            emoji: (it as any).product?.emoji || master?.emoji || (it as any).emoji || null,
+            productId: it.productId || master?.id || null,
+          };
+        }),
         subtotal: p.subtotal,
         transportCost: p.transportCost,
         total: p.total,
@@ -316,13 +323,20 @@ export default function PurchasesPage() {
         date: p.date,
         supplierName: p.supplier?.name ?? 'Unknown Supplier',
         supplierId: p.supplierId,
-        items: (p.items || []).map(it => ({
-          itemName: it.itemName,
-          qty: Number(it.qty),
-          unit: it.unit,
-          rate: Number(it.rate),
-          amount: Number(it.amount)
-        })),
+        items: (p.items || []).map(it => {
+          const master = products.find(prod => prod.id === it.productId || prod.name.toLowerCase() === it.itemName.toLowerCase());
+          return {
+            itemName: it.itemName,
+            qty: Number(it.qty),
+            unit: it.unit,
+            rate: Number(it.rate),
+            amount: Number(it.amount),
+            urduName: (it as any).product?.urduName || master?.urduName || (it as any).urduName || '',
+            imageUrl: (it as any).product?.imageUrl || master?.imageUrl || (it as any).imageUrl || null,
+            emoji: (it as any).product?.emoji || master?.emoji || (it as any).emoji || null,
+            productId: it.productId || master?.id || null,
+          };
+        }),
         subtotal: p.subtotal,
         transportCost: p.transportCost,
         total: p.total,
