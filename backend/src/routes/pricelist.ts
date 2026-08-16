@@ -15,7 +15,7 @@ function buildSynchronizedPriceListItems(
   if (!existingList || !existingList.items) {
     return activeProducts.map((prod) => {
       const inv = inventoryMap.get(prod.id);
-      const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : 0;
+      const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0)) : 0;
       const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
       const previousBuyPrice = inv?.previousBuyPrice ?? 0;
       const currentStock = inv?.qty ?? 0;
@@ -64,7 +64,9 @@ function buildSynchronizedPriceListItems(
   for (const prod of activeProducts) {
     const savedItem = itemsByProdId.get(prod.id) || itemsByName.get(prod.name.toLowerCase().trim());
     const inv = inventoryMap.get(prod.id);
-    const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (savedItem?.buyRate ?? 0);
+    const avgBuyCost = inv 
+      ? (inv.avgCost > 0 ? inv.avgCost : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : (savedItem?.buyRate ?? 0))) 
+      : (savedItem?.buyRate ?? 0);
     const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
     const previousBuyPrice = inv?.previousBuyPrice ?? 0;
     const currentStock = inv?.qty ?? 0;
@@ -128,7 +130,9 @@ function buildSynchronizedPriceListItems(
   for (const item of existingList.items) {
     if (!processedItemIds.has(item.id)) {
       const inv = item.productId ? inventoryMap.get(item.productId) : null;
-      const avgBuyCost = inv ? (inv.avgCost > 0 ? inv.avgCost : 0) : (item.buyRate ?? 0);
+      const avgBuyCost = inv 
+        ? (inv.avgCost > 0 ? inv.avgCost : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : (item.buyRate ?? 0))) 
+        : (item.buyRate ?? 0);
       const latestPurchasePrice = inv ? (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0) : 0;
       const previousBuyPrice = inv?.previousBuyPrice ?? 0;
       const currentStock = inv?.qty ?? 0;
@@ -478,8 +482,8 @@ router.post('/', async (req: Request, res: Response) => {
     }) : [];
     const invBuyMap = new Map<string, number>();
     inventories.forEach(inv => {
-      // Use avgCost (weighted average) as primary — 0 if stock/avgCost is 0
-      const effectiveBuyRate = inv.avgCost > 0 ? inv.avgCost : 0;
+      // Use avgCost (weighted average) as primary, fallback to currentBuyPrice if available
+      const effectiveBuyRate = inv.avgCost > 0 ? inv.avgCost : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
       invBuyMap.set(inv.productId, effectiveBuyRate);
     });
 
@@ -619,7 +623,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       }) : [];
       const invBuyMap = new Map<string, number>();
       inventories.forEach(inv => {
-        const effectiveBuyRate = inv.avgCost > 0 ? inv.avgCost : 0;
+        const effectiveBuyRate = inv.avgCost > 0 ? inv.avgCost : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
         invBuyMap.set(inv.productId, effectiveBuyRate);
       });
 

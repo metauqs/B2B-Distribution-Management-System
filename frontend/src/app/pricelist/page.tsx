@@ -1216,7 +1216,11 @@ export default function PriceListPage() {
                       ) : (
                         filteredEditItems.map((item, idx) => {
                           const realIndex = editItems.indexOf(item);
-                    const buyRate = item.avgBuyCost ?? 0;
+                    const buyRate = (item.avgBuyCost && item.avgBuyCost > 0)
+                      ? item.avgBuyCost
+                      : ((item as any).currentBuyPrice && (item as any).currentBuyPrice > 0)
+                        ? (item as any).currentBuyPrice
+                        : (item.buyRate ?? 0);
                           const availStock = item.availableStock ?? item.currentStock ?? 0;
                           const margin = item.sellRate - buyRate;
                           const marginPct = (buyRate > 0) ? (margin / buyRate) * 100 : 0;
@@ -1294,7 +1298,11 @@ export default function PriceListPage() {
                 ) : (
                   filteredEditItems.map((item, idx) => {
                     const realIndex = editItems.indexOf(item);
-                    const buyRate = item.avgBuyCost ?? 0;
+                    const buyRate = (item.avgBuyCost && item.avgBuyCost > 0)
+                      ? item.avgBuyCost
+                      : ((item as any).currentBuyPrice && (item as any).currentBuyPrice > 0)
+                        ? (item as any).currentBuyPrice
+                        : (item.buyRate ?? 0);
                     const margin = item.sellRate - buyRate;
                     const marginPct = buyRate > 0 ? (margin / buyRate) * 100 : 0;
                     const sellChanged = item.origSellRate !== undefined && item.sellRate !== item.origSellRate;
