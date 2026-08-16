@@ -109,6 +109,7 @@ type Step = 1 | 2 | 3;
 export default function SalesPage() {
   const [pState, setPState] = usePreservedState('sales', {
     view: 'list' as View,
+    detailSaleId: '',
     srchInv: '',
     filterSt: 'all',
     filterMode: 'all',
@@ -117,6 +118,9 @@ export default function SalesPage() {
 
   const view = pState.view;
   const setView = (v: View) => setPState({ view: v });
+
+  const detailSaleId = pState.detailSaleId;
+  const setDetailSaleId = (id: string) => setPState({ detailSaleId: id });
 
   const srchInv = pState.srchInv;
   const setSrchInv = (s: string) => setPState({ srchInv: s });
@@ -408,6 +412,30 @@ export default function SalesPage() {
     loadPrices(today);
     loadEmployees();
   };
+
+  // Synchronize detailSale with preserved detailSaleId or fallback to list view
+  useEffect(() => {
+    if (view === 'detail') {
+      if (detailSaleId && (!detailSale || detailSale.id !== detailSaleId)) {
+        const cached = getCachedData<Sale>(`/api/sales/${detailSaleId}`);
+        if (cached) {
+          setDetailSale(cached);
+          setDetailLoad(false);
+        } else {
+          setDetailLoad(true);
+          fetchWithCache<Sale>(`/api/sales/${detailSaleId}`, { ttl: TTL_SHORT })
+            .then(data => {
+              if (data) setDetailSale(data);
+              else setPState({ view: 'list', detailSaleId: '' });
+            })
+            .catch(() => setPState({ view: 'list', detailSaleId: '' }))
+            .finally(() => setDetailLoad(false));
+        }
+      } else if (!detailSaleId && !detailSale && !detailLoad) {
+        setPState({ view: 'list', detailSaleId: '' });
+      }
+    }
+  }, [view, detailSaleId, detailSale, detailLoad, setPState]);
 
   // Re-load clients whenever search term changes while on the new-invoice view
   useEffect(() => {
@@ -1814,7 +1842,7 @@ export default function SalesPage() {
               </div>
 
               {/* Mobile View: Standardized MobileCard */}
-              <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '16px', width: '100%' }}>
+              <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
                 <MobileCard
                   title={detailSale.client?.name ?? 'Anonymous Client'}
                   headerBadge={detailSale.client?.clientId || 'WH-0000'}
@@ -1943,7 +1971,21 @@ export default function SalesPage() {
                 </MobileCard>
               </div>
             </>
-          ) : null}
+          ) : (
+            <div className="va-empty" style={{ padding: 40, textAlign: 'center' }}>
+              <div className="big">No invoice selected</div>
+              <button
+                className="va-btn"
+                style={{ marginTop: 12 }}
+                onClick={() => {
+                  setPState({ view: 'list', detailSaleId: '' });
+                  setDetailSale(null);
+                }}
+              >
+                ← Back to Invoice List
+              </button>
+            </div>
+          )}
         </>
       )}
 

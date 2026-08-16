@@ -17,6 +17,11 @@ export function usePreservedState<T extends Record<string, any>>(pageKey: string
     const saved = getSavedPageState(pageKey);
     const base = saved && saved.state ? { ...initialState, ...saved.state } : { ...initialState };
 
+    // Ensure transient sub-views like 'detail' without explicit URL or ID don't get stuck
+    if (!urlView && (base as any).view === 'detail' && !(base as any).detailSaleId && !(base as any).profId) {
+      (base as any).view = (initialState as any).view || 'list';
+    }
+
     if (urlView && 'view' in base) (base as any).view = urlView;
     if (urlTab && 'tab' in base) (base as any).tab = urlTab;
 
