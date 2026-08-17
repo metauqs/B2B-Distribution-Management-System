@@ -356,11 +356,24 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ---
 
-## 🔒 Security Architecture
+## 🔒 Security Architecture & Secret Management
 
-- **JWT Authentication**: Secure JSON Web Token auth header verification (`Authorization: Bearer <token>`).
-- **Bcrypt Password Encryption**: User passwords hashed using `bcryptjs` with salt rounds.
-- **Input Sanitization & Schema Validation**: Endpoint requests validated via Zod schemas and Express middleware guards.
+> [!WARNING]
+> ### ⚠️ Critical Security Notice: Secret Rotation Required Before Production
+> If you have previously used default local or test credentials (such as local database passwords, default JWT secrets, or demo admin logins), **you MUST rotate all secrets immediately** prior to deploying to production.
+> 
+> 1. **Rotate `JWT_SECRET`**: Generate a fresh, cryptographically strong 64-character random string for production:
+>    ```bash
+>    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+>    ```
+> 2. **Rotate Database Credentials**: Use unique, high-entropy passwords on your managed cloud database (e.g. Neon PostgreSQL) and supply via `DATABASE_URL` in your hosting dashboard (Render / Railway / AWS). Never commit credentials to git.
+> 3. **Rotate Admin Passwords**: Update initial administrator and employee account passwords immediately after first setup via the **Employees** or **Settings** module.
+> 4. **No Client-Side Secrets**: Ensure only public configuration (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_APP_VERSION`) uses `NEXT_PUBLIC_` prefixes. All API keys, DB strings, and auth tokens remain strictly server-side.
+
+- **JWT Authentication & Stateless Tokens**: Secure JSON Web Token auth header verification (`Authorization: Bearer <token>`) with 30-minute access token lifespan and 7-day refresh tokens stored in HttpOnly, SameSite cookies.
+- **Bcrypt Password Encryption**: User passwords hashed using `bcryptjs` with standard 10 salt rounds.
+- **Strict Environment Validation**: Backend enforces mandatory `DATABASE_URL` and `JWT_SECRET` variables upon boot and halts initialization if weak or default secrets are detected in production (`NODE_ENV=production`).
+- **Global Error Sanitization**: Unhandled exceptions in production return generic error responses to prevent leaking connection strings, table structures, or stack traces.
 - **Atomic Financial Transactions**: Database modifications (`Sale`, `StockIn`, `Client Balance`) execute inside atomic `prisma.$transaction` blocks to prevent financial discrepancies.
 - **CORS Protection**: Access restricted to authorized frontend origin URLs.
 - **Role-Based Access Control (RBAC)**: Enforces access restrictions for `ADMIN`, `MANAGER`, and `DELIVERY_STAFF`.

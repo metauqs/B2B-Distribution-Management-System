@@ -24,6 +24,11 @@ dist/
 .env.production
 .env.development
 
+# Allow committing template files
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
 # Prisma
 frontend/prisma/migrations/*.sql
 !frontend/prisma/migrations/

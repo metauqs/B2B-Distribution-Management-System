@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { config } from '../config/env';
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'sabzi_ledger_jwt_secret_dev_only_change_in_production';
+const JWT_SECRET = config.jwt.secret;
 
 export interface DecodedUser {
   sub: string;
@@ -99,6 +100,6 @@ export function roleMiddleware(allowedRoles: string[]) {
 }
 
 export function signToken(payload: { sub: string; email: string; role: string; branchId: string; employeeId?: string }): string {
-  const expiry = process.env.JWT_EXPIRES_IN ?? '7d';
+  const expiry = config.jwt.expiresIn;
   return jwt.sign({ ...payload, type: 'access' }, JWT_SECRET, { expiresIn: expiry as any });
 }

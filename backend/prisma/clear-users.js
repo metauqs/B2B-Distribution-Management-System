@@ -3,7 +3,10 @@ const { PrismaPg } = require('@prisma/adapter-pg');
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config({ path: '.env' });
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://sabzi:sabzi_secret@localhost:5432/sabzi_ledger?schema=public';
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL environment variable is required.');
+}
 
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });

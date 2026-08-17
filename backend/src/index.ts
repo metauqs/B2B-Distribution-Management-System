@@ -41,8 +41,10 @@ import { requestLogger } from './middleware/requestLogger';
 import { idempotencyMiddleware } from './lib/idempotency';
 import prisma from './lib/prisma';
 
+import { config } from './config/env';
+
 const app = express();
-const port = process.env.PORT || 3001;
+const port = config.port;
 
 // CORS configuration - support cookies and cross-origin requests
 app.use(cors({
@@ -100,6 +102,20 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/employees', employeesRouter);
 app.use('/api/cash-accounts', cashAccountsRouter);
 app.use('/api/bank-accounts', bankAccountsRouter);
+
+// Global Error Sanitizer Middleware (Never leak DB connection strings, passwords, or traces in production)
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('[UNHANDLED ERROR]', err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  const isProduction = config.isProd;
+  const safeMessage = isProduction ? 'Internal Server Error' : (err?.message || 'Internal Server Error');
+  return res.status(err?.status || err?.statusCode || 500).json({
+    success: false,
+    error: safeMessage,
+  });
+});
 
 import { recalculateAllClientsOnStartup } from './lib/recalculateAllClients';
 

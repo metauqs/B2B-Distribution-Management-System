@@ -1,11 +1,13 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import prisma from '../lib/prisma';
 import { signToken, authMiddleware } from '../middleware/auth';
+import { config } from '../config/env';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET ?? 'sabzi_ledger_jwt_secret_dev_only_change_in_production';
+const JWT_SECRET = config.jwt.secret;
 
 // Helper to sign access and refresh tokens
 function signAuthTokens(payload: { sub: string; email: string; role: string; branchId: string; employeeId?: string }) {
@@ -31,15 +33,15 @@ router.post('/login', async (req: Request, res: Response) => {
       if (employeeCount === 0) {
         const branch = await prisma.branch.findFirst();
         if (branch) {
-          const adminPass = await bcrypt.hash('admin123', 10);
+          const adminPass = await bcrypt.hash(config.initialAdmin.password, 10);
           await prisma.employee.create({
             data: {
-              employeeId: '1234',
+              employeeId: config.initialAdmin.employeeId,
               password: adminPass,
-              name: 'Ahmad Raza (Owner)',
+              name: 'System Admin (Owner)',
               role: 'ADMIN',
-              phone: '03001231234',
-              whatsapp: '03001231234',
+              phone: '03000000000',
+              whatsapp: '03000000000',
               branchId: branch.id,
               isActive: true,
             }
@@ -135,7 +137,7 @@ router.post('/login', async (req: Request, res: Response) => {
           data: {
             name: matchedEmployee.name,
             email: userEmail,
-            password: matchedEmployee.password || '$2a$10$e7W5Gq3DqP3A3',
+            password: matchedEmployee.password || (await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10)),
             role: userRole,
             branchId: targetBranchId,
             isActive: true,
