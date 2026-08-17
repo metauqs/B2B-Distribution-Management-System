@@ -744,13 +744,13 @@ button.va-icon:hover { color: var(--danger); }
 .va-bill-foot { text-align: center; margin-top: 16px; font-size: 11px; color: var(--muted); }
 .va-bill-status { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
 
-/* ─── Urdu font for bills ─────────────────────────────────────────────────── */
-.va-urdu {
-  font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
+/* ─── Global Urdu Typography ───────────────────────────────────────────────── */
+.va-urdu, .urdu, [lang="ur"], .urdu-main, .urdu-th, .urdu-inline {
+  font-family: var(--font-urdu, 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', serif) !important;
   font-weight: 600;
   direction: rtl;
   unicode-bidi: isolate;
-  line-height: 1.3;
+  line-height: 1.35;
   letter-spacing: normal !important;
   text-transform: none !important;
 }

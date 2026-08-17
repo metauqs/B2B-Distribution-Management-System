@@ -370,14 +370,40 @@ function buildDocStyles(b: BrandConfig): string {
     .doc-table thead th {
       padding: 9px 11px;
       text-align: left;
-      font-size: 9.5px;
+      font-size: 11px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
       white-space: nowrap;
+      letter-spacing: normal;
+      vertical-align: middle;
     }
     .doc-table thead th.right { text-align: right; }
     .doc-table thead th.center { text-align: center; }
+    .doc-table thead th .urdu-th,
+    .doc-table thead th .urdu-label {
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', serif !important;
+      font-size: 16px;
+      font-weight: 700;
+      direction: rtl;
+      unicode-bidi: isolate;
+      letter-spacing: normal !important;
+      text-transform: none !important;
+      line-height: 1.2;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+    .doc-table thead th .eng-th,
+    .doc-table thead th .eng-label {
+      font-family: 'Lora', Georgia, serif;
+      font-size: 9.5px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.85);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      display: inline-block;
+      vertical-align: middle;
+      direction: ltr;
+    }
 
     .doc-table tbody tr:nth-child(even) { background: ${b.lightBg}; }
     .doc-table tbody tr:nth-child(odd)  { background: #FFFFFF; }
@@ -392,7 +418,7 @@ function buildDocStyles(b: BrandConfig): string {
     .doc-table tbody td.mono   { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
     .doc-table tbody td.muted  { color: #7A8C79; }
     .doc-table tbody td.urdu   {
-      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif !important;
       direction: rtl;
       unicode-bidi: isolate;
       text-align: right;
@@ -852,10 +878,10 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     <thead>
       <tr>
         <th class="center" style="font-size:9px;padding:5px 6px;">#</th>
-        <th style="font-size:9.5px;padding:5px 6px;">پروڈکٹ / آئٹم <span style="font-size:9px;font-weight:500;">(Item)</span></th>
-        <th class="center" style="font-size:9.5px;padding:5px 6px;">تعداد <span style="font-size:9px;font-weight:500;">(Qty)</span></th>
-        <th class="right" style="font-size:9.5px;padding:5px 6px;">ریٹ <span style="font-size:9px;font-weight:500;">(Rate)</span></th>
-        <th class="right" style="font-size:9.5px;padding:5px 6px;">رقم <span style="font-size:9px;font-weight:500;">(Amount)</span></th>
+        <th style="padding:5px 6px;"><span class="urdu-th" style="font-size:14px;">پروڈکٹ / آئٹم</span> <span class="eng-th" style="font-size:8.5px;">(Item)</span></th>
+        <th class="center" style="padding:5px 6px;"><span class="urdu-th" style="font-size:14px;">تعداد</span> <span class="eng-th" style="font-size:8.5px;">(Qty)</span></th>
+        <th class="right" style="padding:5px 6px;"><span class="urdu-th" style="font-size:14px;">ریٹ</span> <span class="eng-th" style="font-size:8.5px;">(Rate)</span></th>
+        <th class="right" style="padding:5px 6px;"><span class="urdu-th" style="font-size:14px;">رقم</span> <span class="eng-th" style="font-size:8.5px;">(Amount)</span></th>
       </tr>
     </thead>
   `;
@@ -880,12 +906,12 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     <table class="doc-table">
       <thead>
         <tr>
-          <th class="center">#</th>
-          <th>پروڈکٹ / آئٹم <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Item)</span></th>
-          <th class="center">تعداد <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Qty)</span></th>
-          <th>پیمائش <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Unit)</span></th>
-          <th class="right">ریٹ <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Rate Rs)</span></th>
-          <th class="right">کل رقم <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Amount Rs)</span></th>
+          <th class="center" style="width:36px;">#</th>
+          <th><span class="urdu-th">پروڈکٹ / آئٹم</span> <span class="eng-th">(Item)</span></th>
+          <th class="center" style="width:75px;"><span class="urdu-th">تعداد</span> <span class="eng-th">(Qty)</span></th>
+          <th style="width:65px;"><span class="urdu-th">پیمائش</span> <span class="eng-th">(Unit)</span></th>
+          <th class="right" style="width:85px;"><span class="urdu-th">ریٹ</span> <span class="eng-th">(Rate Rs)</span></th>
+          <th class="right" style="width:95px;"><span class="urdu-th">کل رقم</span> <span class="eng-th">(Amount Rs)</span></th>
         </tr>
       </thead>
       <tbody>
@@ -1112,11 +1138,11 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
     <table class="doc-table">
       <thead>
         <tr>
-          <th>تاریخ <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Date)</span></th>
-          <th>تفصیل <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Description)</span></th>
-          <th class="right">بل / واجب <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Debit Rs)</span></th>
-          <th class="right">وصولی / ادا <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Credit Rs)</span></th>
-          <th class="right">بقایا جات <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Balance Rs)</span></th>
+          <th><span class="urdu-th">تاریخ</span> <span class="eng-th">(Date)</span></th>
+          <th><span class="urdu-th">تفصیل</span> <span class="eng-th">(Description)</span></th>
+          <th class="right"><span class="urdu-th">بل / واجب</span> <span class="eng-th">(Debit Rs)</span></th>
+          <th class="right"><span class="urdu-th">وصولی / ادا</span> <span class="eng-th">(Credit Rs)</span></th>
+          <th class="right"><span class="urdu-th">بقایا جات</span> <span class="eng-th">(Balance Rs)</span></th>
         </tr>
       </thead>
       <tbody>
@@ -1529,12 +1555,12 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
     <table class="doc-table">
       <thead>
         <tr>
-          <th class="center">#</th>
-          <th>انواﺋس نمبر <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Invoice No)</span></th>
-          <th>تاریخ <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Date)</span></th>
-          <th class="right">کل رقم <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Total Rs)</span></th>
-          <th class="right">وصولی / ادائیگی <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Paid Rs)</span></th>
-          <th class="right">بقیہ واجب الادا <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Remaining Due)</span></th>
+          <th class="center" style="width:36px;">#</th>
+          <th><span class="urdu-th">انواﺋس نمبر</span> <span class="eng-th">(Invoice No)</span></th>
+          <th><span class="urdu-th">تاریخ</span> <span class="eng-th">(Date)</span></th>
+          <th class="right"><span class="urdu-th">کل رقم</span> <span class="eng-th">(Total Rs)</span></th>
+          <th class="right"><span class="urdu-th">وصولی / ادائیگی</span> <span class="eng-th">(Paid Rs)</span></th>
+          <th class="right"><span class="urdu-th">بقیہ واجب الادا</span> <span class="eng-th">(Remaining Due)</span></th>
         </tr>
       </thead>
       <tbody>
@@ -1687,10 +1713,10 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
         <table class="doc-table">
           <thead>
             <tr>
-              <th>انواﺋس نمبر <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Invoice #)</span></th>
-              <th class="num">وصول شدہ رقم <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Allocated Rs)</span></th>
-              <th class="num">بقیہ انواﺋس واجب <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Remaining Due)</span></th>
-              <th style="text-align:center;">حالت <span style="font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.85);">(Status)</span></th>
+              <th><span class="urdu-th">انواﺋس نمبر</span> <span class="eng-th">(Invoice #)</span></th>
+              <th class="num"><span class="urdu-th">وصول شدہ رقم</span> <span class="eng-th">(Allocated Rs)</span></th>
+              <th class="num"><span class="urdu-th">بقیہ انواﺋس واجب</span> <span class="eng-th">(Remaining Due)</span></th>
+              <th style="text-align:center;"><span class="urdu-th">حالت</span> <span class="eng-th">(Status)</span></th>
             </tr>
           </thead>
           <tbody>
