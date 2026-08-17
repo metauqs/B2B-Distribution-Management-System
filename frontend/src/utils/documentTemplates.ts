@@ -105,11 +105,17 @@ export async function loadBrandConfigWithLogo(origin = typeof window !== 'undefi
  */
 function buildDocStyles(b: BrandConfig): string {
   return `
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap');
+    @font-face {
+      font-family: 'Lora';
+      src: url('/fonts/Lora-Variable.woff2') format('woff2');
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
 
     @font-face {
       font-family: 'Jameel Khushkhat L';
-      src: url('https://dashboard.urdufonts.com/storage/fonts/previews/GEdzNGZsOebPn6FOhNwfFKcy7j6TAV3vrHm2M5Jf.woff2') format('woff2');
+      src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
       font-weight: normal;
       font-style: normal;
       font-display: swap;
@@ -118,7 +124,7 @@ function buildDocStyles(b: BrandConfig): string {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      font-family: 'Inter', 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Segoe UI', system-ui, sans-serif;
+      font-family: 'Lora', 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', Georgia, serif;
       font-size: 13px;
       color: #1A1A1A;
       background: #FFFFFF;
@@ -258,7 +264,7 @@ function buildDocStyles(b: BrandConfig): string {
       margin-bottom: 2px;
     }
     .doc-info-sub-eng {
-      font-family: 'Inter', sans-serif;
+      font-family: 'Lora', Georgia, serif;
       font-size: 10.5px;
       font-weight: 600;
       color: #6B7C6A;
@@ -298,7 +304,7 @@ function buildDocStyles(b: BrandConfig): string {
     }
     .eng-sub {
       display: block;
-      font-family: 'Inter', sans-serif;
+      font-family: 'Lora', Georgia, serif;
       font-size: 10.5px;
       color: #64748B;
       font-weight: 500;
@@ -540,7 +546,7 @@ function buildDocStyles(b: BrandConfig): string {
       border-radius: 10px;
       text-decoration: none;
       text-align: center;
-      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      font-family: 'Lora', Georgia, serif;
       border: none;
     }
 
@@ -1173,7 +1179,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
             <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px;">
               <div style="display:flex;flex-direction:column;align-items:flex-start;">
                 <span style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:26px;font-weight:800;color:#FFFFFF;direction:rtl;line-height:1.2;">${item.urduName || item.itemName}</span>
-                <span style="font-size:11px;color:#A3C9B3;font-weight:500;font-family:'Inter',sans-serif;margin-top:1px;">${item.itemName}</span>
+                <span style="font-size:11px;color:#A3C9B3;font-weight:500;font-family:'Lora',Georgia,serif;margin-top:1px;">${item.itemName}</span>
               </div>
               ${htmlVisual}
             </div>
@@ -1841,7 +1847,7 @@ export function generateDailyPaymentHistoryHTML(data: DailyPaymentHistoryDocData
   `).join('');
 
   const table = `
-    <table style="width:100%; border-collapse:collapse; margin-top:10px; font-family:system-ui, sans-serif;">
+    <table style="width:100%; border-collapse:collapse; margin-top:10px; font-family:'Lora', Georgia, serif;">
       <thead>
         <tr style="background:${brand.primaryColor}; color:#FFFFFF; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">
           <th style="padding:8px; text-align:center; border-top-left-radius:6px;">#</th>
@@ -1894,7 +1900,7 @@ export function openPrintWindow(): Window | null {
     // Show a loading indicator immediately so the user sees something
     w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
       <style>
-        body { font-family: system-ui, sans-serif; display: flex; align-items: center;
+        body { font-family: 'Lora', Georgia, serif; display: flex; align-items: center;
                justify-content: center; height: 100vh; margin: 0;
                background: #F4F8F0; color: #1A3C28; }
         .loading { text-align: center; }
@@ -1945,7 +1951,7 @@ export function openDownloadWindow(): Window | null {
   if (w) {
     w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
       <style>
-        body { font-family: system-ui, sans-serif; display: flex; align-items: center;
+        body { font-family: 'Lora', Georgia, serif; display: flex; align-items: center;
                justify-content: center; height: 100vh; margin: 0;
                background: #F4F8F0; color: #1A3C28; }
         .loading { text-align: center; }
@@ -1977,7 +1983,7 @@ export function writeAndDownload(w: Window, html: string, filename?: string): vo
     `<div style="
       position:fixed;bottom:0;left:0;right:0;z-index:99999;
       background:#1A3C28;color:#fff;padding:10px 20px;
-      font-family:system-ui,sans-serif;font-size:12px;font-weight:600;
+      font-family:'Lora', Georgia, serif;font-size:12px;font-weight:600;
       display:flex;align-items:center;justify-content:space-between;gap:16px;
       box-shadow:0 -2px 12px rgba(0,0,0,.15);
     " class="no-print">

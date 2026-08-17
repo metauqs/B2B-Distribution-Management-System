@@ -118,7 +118,7 @@ export default function LoginPage() {
       alignItems: 'center',
       justifyContent: 'center',
       padding: '24px 16px',
-      fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      fontFamily: "var(--font-lora, 'Lora', Georgia, serif)",
       position: 'relative',
       overflow: 'hidden',
     }}>

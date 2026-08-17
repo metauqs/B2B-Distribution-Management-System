@@ -37,19 +37,25 @@ export function BillModal({ sale, client, onClose, onDelete }: BillModalProps) {
     const w = window.open('', '_blank', 'width=520,height=820');
     if (!w) return;
     w.document.write(`<!DOCTYPE html><html><head>
-      <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;700&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap" rel="stylesheet">
       <style>
         @font-face {
+          font-family: 'Lora';
+          src: url('/fonts/Lora-Variable.woff2') format('woff2');
+          font-weight: 400 700;
+          font-style: normal;
+          font-display: swap;
+        }
+        @font-face {
           font-family: 'Jameel Khushkhat L';
-          src: url('https://dashboard.urdufonts.com/storage/fonts/previews/GEdzNGZsOebPn6FOhNwfFKcy7j6TAV3vrHm2M5Jf.woff2') format('woff2');
+          src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
           font-weight: normal;
           font-style: normal;
           font-display: swap;
         }
         *{box-sizing:border-box;margin:0;padding:0;}
-        body{font-family:'IBM Plex Sans',sans-serif;background:#fff;}
+        body{font-family:'Lora',Georgia,serif;background:#fff;}
         .va-bill-head{text-align:center;background:#1F3D2B;padding:20px 22px 16px;}
-        .va-bill-head .biz{font-family:'Fraunces',serif;font-size:23px;font-weight:700;color:#fff;}
+        .va-bill-head .biz{font-family:'Lora',Georgia,serif;font-size:23px;font-weight:700;color:#fff;}
         .va-bill-head .biz-meta{font-size:11px;color:rgba(255,255,255,.75);margin-top:4px;}
         .va-bill-billno{background:#C99A2E;color:#1F3D2B;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:700;padding:8px 14px;}
         .va-bill-body{padding:20px 24px 0;}
@@ -62,7 +68,7 @@ export function BillModal({ sale, client, onClose, onDelete }: BillModalProps) {
         td{padding:8px 4px;border-bottom:1px solid #EDEFE6;vertical-align:middle;}td.item-col{text-align:right;font-size:16px;}
         .va-urdu{font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic','Segoe UI',sans-serif;font-weight:600;direction:rtl;unicode-bidi:isolate;line-height:1.3;letter-spacing:normal!important;text-transform:none!important;}
         .va-bill-total{display:flex;justify-content:space-between;align-items:center;border-top:2px dashed #DCE0D2;padding-top:12px;margin-top:4px;}
-        .va-bill-total .lbl{font-size:12px;color:#7A7C6E;text-transform:uppercase;letter-spacing:.05em;}.va-bill-total .amt{font-family:'Fraunces',serif;font-size:24px;font-weight:700;color:#1F3D2B;}
+        .va-bill-total .lbl{font-size:12px;color:#7A7C6E;text-transform:uppercase;letter-spacing:.05em;}.va-bill-total .amt{font-family:'Lora',Georgia,serif;font-size:24px;font-weight:700;color:#1F3D2B;}
         .bakaya{display:flex;justify-content:space-between;align-items:center;border-radius:6px;padding:10px 12px;margin-top:10px;}
         .bakaya.has-due{background:#FBEAEA;border:1px solid #E9C6C6;}.bakaya:not(.has-due){background:#EDEFE6;border:1px solid #DCE0D2;}
         .bakaya .lbl{font-size:12px;color:#7A7C6E;text-transform:uppercase;letter-spacing:.05em;}.bakaya .urdu-tag{font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-weight:600;font-size:13px;text-transform:none!important;letter-spacing:normal!important;color:#1F3D2B;margin-right:6px;direction:rtl;display:inline-block;}

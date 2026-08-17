@@ -1,6 +1,22 @@
 @import "tailwindcss";
 
 @font-face {
+  font-family: 'Lora';
+  src: url('/fonts/Lora-Variable.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Lora';
+  src: url('/fonts/Lora-Italic-Variable.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'Jameel Khushkhat L';
   src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
   font-weight: normal;
@@ -10,7 +26,10 @@
 
 /* ─── Design Tokens ───────────────────────────────────────────────────────── */
 :root {
-  --font-urdu: var(--font-urdu, 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', serif);
+  --font-lora:  var(--font-lora, 'Lora', Georgia, 'Times New Roman', serif);
+  --font-sans:  var(--font-lora, 'Lora', Georgia, 'Times New Roman', serif);
+  --font-serif: var(--font-lora, 'Lora', Georgia, 'Times New Roman', serif);
+  --font-urdu:  var(--font-urdu, 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', serif);
   --cream:     #FAF6EC;
   --paper:     #FFFDF8;
   --forest:    #1F3D2B;
@@ -29,21 +48,21 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; padding: 0; }
 body {
-  font-family: var(--font-sans, 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   background: var(--cream);
   color: var(--ink);
 }
 
 /* ─── App Shell ───────────────────────────────────────────────────────────── */
 .va-app {
-  font-family: var(--font-sans, 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   background: var(--cream);
   color: var(--ink);
   min-height: 100vh;
   display: flex;
 }
 .va-app h1, .va-app h2, .va-app h3 {
-  font-family: var(--font-serif, 'Fraunces', Georgia, serif);
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   font-weight: 700;
   color: var(--forest);
   margin: 0;
@@ -186,7 +205,7 @@ body {
   font-weight: 600;
 }
 .va-card .value {
-  font-family: 'Fraunces', serif;
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   font-size: 26px;
   font-weight: 700;
   color: var(--forest);
@@ -331,7 +350,7 @@ button.va-icon:hover { color: var(--danger); }
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 5px;
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   font-size: 13px;
   background: var(--cream);
   color: var(--ink);
@@ -542,7 +561,7 @@ button.va-icon:hover { color: var(--danger); }
 /* ─── Empty state ─────────────────────────────────────────────────────────── */
 .va-empty { text-align: center; padding: 40px 20px; color: var(--muted); }
 .va-empty .big {
-  font-family: 'Fraunces', serif;
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   font-size: 16px;
   color: var(--forest);
   margin-bottom: 4px;
@@ -605,7 +624,7 @@ button.va-icon:hover { color: var(--danger); }
   padding: 20px 22px 16px 22px;
 }
 .va-bill-head .biz {
-  font-family: 'Fraunces', serif;
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   font-size: 23px;
   font-weight: 700;
   color: #fff;
@@ -678,7 +697,7 @@ button.va-icon:hover { color: var(--danger); }
   letter-spacing: 0.05em;
 }
 .va-bill-total .amt {
-  font-family: 'Fraunces', serif;
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   font-size: 24px;
   font-weight: 700;
   color: var(--forest);
@@ -740,7 +759,7 @@ button.va-icon:hover { color: var(--danger); }
 .va-confirm-modal { max-width: 340px; }
 .va-confirm-body { padding: 24px 20px 18px 20px; }
 .va-confirm-title {
-  font-family: 'Fraunces', serif;
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   font-weight: 700;
   color: var(--forest);
   font-size: 16px;
@@ -753,7 +772,7 @@ button.va-icon:hover { color: var(--danger); }
   padding: 60px;
   text-align: center;
   color: var(--muted);
-  font-family: 'Fraunces', serif;
+  font-family: var(--font-lora, 'Lora', Georgia, serif);
   font-size: 15px;
 }
 
