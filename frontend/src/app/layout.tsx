@@ -1,6 +1,28 @@
 import type { Metadata } from 'next';
+import { IBM_Plex_Sans, Fraunces, IBM_Plex_Mono } from 'next/font/google';
 import './globals.css';
 import { StoreProvider } from '@/store/providers/StoreProvider';
+
+const ibmPlexSans = IBM_Plex_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-sans',
+  display: 'swap',
+});
+
+const fraunces = Fraunces({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  variable: '--font-serif',
+  display: 'swap',
+});
+
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-mono',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'HALAL VEGG SUPPLIES',
@@ -18,7 +40,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={`${ibmPlexSans.variable} ${fraunces.variable} ${ibmPlexMono.variable}`} suppressHydrationWarning>
       <body suppressHydrationWarning>
         <StoreProvider>{children}</StoreProvider>
       </body>

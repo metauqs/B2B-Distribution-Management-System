@@ -264,6 +264,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <div key={idx} style={{ display: 'flex', flexDirection: 'column' }}>
                 <Link
                   href={href}
+                  prefetch={true}
                   onClick={onClose}
                   className={`va-nav-btn${active ? ' active' : ''}`}
                   style={categoryButtonStyle(active)}
@@ -336,6 +337,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                           }} />
                           <Link
                             href={sub.href}
+                            prefetch={true}
                             onClick={onClose}
                             className={`va-nav-btn${isActive(sub.href) ? ' active' : ''}`}
                             style={{
@@ -381,6 +383,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <div key={idx} style={{ position: 'relative', display: 'flex', justifyContent: 'center', width: '100%' }}>
                 <Link
                   href={href}
+                  prefetch={true}
                   onClick={onClose}
                   className={`va-nav-btn${active ? ' active' : ''}`}
                   style={{
@@ -502,6 +505,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             }} />
                             <Link
                               href={sub.href}
+                              prefetch={true}
                               onClick={onClose}
                               className={`va-nav-btn${isActive(sub.href) ? ' active' : ''}`}
                               style={{

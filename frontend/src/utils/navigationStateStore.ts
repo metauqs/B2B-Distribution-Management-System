@@ -62,14 +62,16 @@ export function getSavedPageState(pageKey: string): PageState | null {
 }
 
 /**
- * Restore window scroll position for a page key
+ * Restore window scroll position for a page key with smooth, non-blocking frame scheduling
  */
 export function restoreScrollPosition(pageKey: string, delayMs: number = 60) {
   if (typeof window === 'undefined') return;
   const entry = pageStateMap.get(pageKey);
   if (entry && entry.scrollPosition > 0) {
     setTimeout(() => {
-      window.scrollTo({ top: entry.scrollPosition, behavior: 'instant' as ScrollBehavior });
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: entry.scrollPosition, behavior: 'instant' as ScrollBehavior });
+      });
     }, delayMs);
   }
 }

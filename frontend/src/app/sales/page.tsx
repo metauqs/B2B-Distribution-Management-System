@@ -2007,7 +2007,7 @@ export default function SalesPage() {
         }}>
           {/* Header with Logo & Big INVOICE Title */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', marginBottom: '8px' }}>
-            <img src="/logo.png" alt="Halal Vegg Supplies" style={{ height: '70px', width: 'auto', objectFit: 'contain' }} />
+            <img src="/logo.png" alt="Halal Vegg Supplies" width="175" height="70" loading="lazy" decoding="async" style={{ height: '70px', width: 'auto', objectFit: 'contain' }} />
             <div style={{ fontSize: '36px', fontWeight: '900', color: '#183B25', marginTop: '6px', letterSpacing: '0.04em' }}>INVOICE</div>
           </div>
 

@@ -9,10 +9,11 @@ const nextConfig: NextConfig = {
     root: projectRoot,
   },
   experimental: {
-    optimizePackageImports: ['lucide-react', '@solar-icons/react'],
+    optimizePackageImports: ['@mdi/js', '@mdi/react', 'lucide-react', '@solar-icons/react'],
   },
   images: {
     formats: ['image/avif', 'image/webp'],
+    minimumCacheTTL: 86400,
   },
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:3001';

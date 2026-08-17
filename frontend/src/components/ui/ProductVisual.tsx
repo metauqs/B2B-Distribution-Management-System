@@ -82,11 +82,12 @@ interface ProductVisualProps {
   emoji?: string | null;
   imageUrl?: string | null;
   size?: number;
+  loading?: 'lazy' | 'eager';
   style?: React.CSSProperties;
   className?: string;
 }
 
-export function ProductVisual({ name, emoji, imageUrl, size = 22, style, className }: ProductVisualProps) {
+export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'lazy', style, className }: ProductVisualProps) {
   const [imgError, setImgError] = useState(false);
 
   // Reset imgError whenever the imageUrl prop changes
@@ -106,10 +107,15 @@ export function ProductVisual({ name, emoji, imageUrl, size = 22, style, classNa
       <img
         src={finalUrl}
         alt={name}
+        width={size}
+        height={size}
+        loading={loading}
+        decoding="async"
         onError={() => setImgError(true)}
         style={{
           width: size,
           height: size,
+          aspectRatio: '1 / 1',
           objectFit: 'cover',
           borderRadius: size > 30 ? 6 : 4,
           display: 'inline-block',
@@ -148,10 +154,15 @@ export function ProductVisual({ name, emoji, imageUrl, size = 22, style, classNa
       <img
         src={visual.value}
         alt={name}
+        width={size}
+        height={size}
+        loading={loading}
+        decoding="async"
         onError={() => setImgError(true)}
         style={{
           width: size,
           height: size,
+          aspectRatio: '1 / 1',
           objectFit: 'cover',
           borderRadius: size > 30 ? 6 : 4,
           display: 'inline-block',
