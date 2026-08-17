@@ -853,39 +853,41 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
 
   // ── 2-Column Info Cards (Delivery on Left, Billed To on Right) ──
   const infoGrid = `
-    <div class="doc-info-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; direction: rtl;">
-      <!-- Right Card: Billed To -->
-      <div style="background: #F8F9FA; border: 1px solid #E9ECEF; border-radius: 8px; padding: 12px 16px; text-align: right;">
-        <div style="font-size: 11px; color: #444444; font-weight: 700; display: flex; justify-content: flex-end; gap: 4px; align-items: baseline;">
-          <span style="font-family: 'Lora', Georgia, serif; color: #6B7C6A; font-size: 10px;">(BILLED TO)</span>
-          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; color: #1A1A1A;">کلائنٹ</span>
-        </div>
-        <div style="font-size: 15.5px; font-weight: 800; color: #1A1A1A; margin-top: 4px; font-family: 'Lora', Georgia, serif;">
-          ${inv.clientName} <span style="font-size: 12px; font-weight: 600; color: #6B7C6A; font-family: 'IBM Plex Mono', monospace;">(${inv.clientId || '—'})</span>
-        </div>
-        ${inv.clientType ? `<div style="font-size: 10.5px; color: #7A8C79; text-transform: uppercase; font-weight: 700; margin-top: 2px; letter-spacing: 0.04em;">${inv.clientType}</div>` : ''}
-        ${clientPhone ? `<div style="font-size: 12px; font-weight: 700; color: #1A1A1A; margin-top: 6px; direction: ltr; text-align: right;">📞 ${clientPhone}</div>` : ''}
-      </div>
-
+    <div class="doc-info-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; direction: ltr;">
       <!-- Left Card: Delivery -->
-      <div style="background: #F8F9FA; border: 1px solid #E9ECEF; border-radius: 8px; padding: 12px 16px; text-align: right;">
-        <div style="font-size: 11px; color: #444444; font-weight: 700; display: flex; justify-content: flex-end; gap: 4px; align-items: baseline;">
-          <span style="font-family: 'Lora', Georgia, serif; color: #6B7C6A; font-size: 10px;">(DELIVERY)</span>
-          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; color: #1A1A1A;">ترسیل</span>
+      <div style="background: #F8FAF8; border: 1px solid #DCE3DB; border-radius: 8px; padding: 14px 18px; text-align: left; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="text-align: right; margin-bottom: 6px;">
+          <span style="font-family: 'Lora', Georgia, serif; color: #555555; font-size: 11px; font-weight: 600;">(DELIVERY)</span>
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 700; color: #1A1A1A; margin-left: 4px; direction: rtl; unicode-bidi: isolate;">ترسیل</span>
         </div>
-        <div style="font-size: 12px; font-weight: 700; color: #1A1A1A; margin-top: 4px;">
+        <div style="font-size: 12.5px; font-weight: 700; color: #1A1A1A; margin-bottom: 3px;">
           👷 ${inv.employeeName || 'Rizwan'} ${inv.employeePhone ? `(${inv.employeePhone})` : '(03061110041)'}
         </div>
-        <div style="font-size: 11.5px; font-weight: 600; color: #444444; margin-top: 2px;">
+        <div style="font-size: 12px; font-weight: 600; color: #333333; margin-bottom: 8px;">
           📅 ${inv.deliveryDate ? new Date(inv.deliveryDate).toLocaleDateString('en-GB') : today}${inv.deliveryTime ? ` · ${inv.deliveryTime}` : ' · 09:00 AM'}
         </div>
-        <div style="font-size: 10.5px; color: #6B7C6A; font-weight: 700; margin-top: 6px; display: flex; justify-content: flex-end; gap: 4px; align-items: baseline;">
-          <span style="font-family: 'Lora', Georgia, serif; color: #6B7C6A; font-size: 10px;">(PAYMENT MODE)</span>
-          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 14px; color: #1A1A1A;">ادائیگی طریقہ</span>
+        <div style="font-size: 11px; color: #555555; font-weight: 600; margin-bottom: 2px;">
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; color: #1A1A1A; font-weight: 700; direction: rtl; unicode-bidi: isolate;">ادائیگی طریقہ</span>
+          <span style="font-family: 'Lora', Georgia, serif; font-size: 10px; margin-left: 2px;">(PAYMENT MODE)</span>
         </div>
-        <div style="font-size: 12.5px; font-weight: 800; color: ${brand.primaryColor}; margin-top: 1px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em;">
+        <div style="font-size: 13.5px; font-weight: 800; color: #1A1A1A; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em;">
           ${inv.paymentMode}
         </div>
+      </div>
+
+      <!-- Right Card: Billed To -->
+      <div style="background: #F8FAF8; border: 1px solid #DCE3DB; border-radius: 8px; padding: 14px 18px; text-align: right; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="text-align: right; margin-bottom: 6px;">
+          <span style="font-family: 'Lora', Georgia, serif; color: #555555; font-size: 11px; font-weight: 600;">(BILLED TO)</span>
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 700; color: #1A1A1A; margin-left: 4px; direction: rtl; unicode-bidi: isolate;">کلائنٹ</span>
+        </div>
+        <div style="font-size: 16px; font-weight: 800; color: #1A1A1A; margin-bottom: 3px; font-family: 'Lora', Georgia, serif;">
+          ${inv.clientName} <span style="font-size: 12px; font-weight: 600; color: #6B7C6A; font-family: 'IBM Plex Mono', monospace;">(${inv.clientId || '—'})</span>
+        </div>
+        <div style="font-size: 11px; color: #7A8C79; text-transform: uppercase; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.04em;">
+          ${inv.clientType || 'RESTAURANT'}
+        </div>
+        ${clientPhone ? `<div style="font-size: 12.5px; font-weight: 700; color: #1A1A1A; direction: ltr; text-align: right; margin-top: 2px;">📞 ${clientPhone}</div>` : ''}
       </div>
     </div>
   `;
