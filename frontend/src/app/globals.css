@@ -1,15 +1,8 @@
 @import "tailwindcss";
 
-@font-face {
-  font-family: 'Jameel Khushkhat L';
-  src: url('https://dashboard.urdufonts.com/storage/fonts/previews/GEdzNGZsOebPn6FOhNwfFKcy7j6TAV3vrHm2M5Jf.woff2') format('woff2');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
-}
-
 /* ─── Design Tokens ───────────────────────────────────────────────────────── */
 :root {
+  --font-urdu: var(--font-urdu, 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif);
   --cream:     #FAF6EC;
   --paper:     #FFFDF8;
   --forest:    #1F3D2B;

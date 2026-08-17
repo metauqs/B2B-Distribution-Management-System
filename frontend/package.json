@@ -46,5 +46,14 @@
   },
   "optionalDependencies": {
     "lightningcss-darwin-arm64": "^1.33.0"
-  }
+  },
+  "browserslist": [
+    "defaults and fully supports es6-module",
+    "last 2 Chrome versions",
+    "last 2 Firefox versions",
+    "last 2 Safari versions",
+    "last 2 Edge versions",
+    "not IE <= 11",
+    "not dead"
+  ]
 }

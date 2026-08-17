@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { IBM_Plex_Sans, Fraunces, IBM_Plex_Mono } from 'next/font/google';
+import { IBM_Plex_Sans, Fraunces, IBM_Plex_Mono, Noto_Nastaliq_Urdu } from 'next/font/google';
 import './globals.css';
 import { StoreProvider } from '@/store/providers/StoreProvider';
 
@@ -24,6 +24,13 @@ const ibmPlexMono = IBM_Plex_Mono({
   display: 'swap',
 });
 
+const notoNastaliqUrdu = Noto_Nastaliq_Urdu({
+  subsets: ['arabic'],
+  weight: ['400', '600', '700'],
+  variable: '--font-urdu',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
   title: 'HALAL VEGG SUPPLIES',
   description: 'Vegetable supply ledger for sales, purchases, clients, inventory, and collections',
@@ -40,7 +47,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${ibmPlexSans.variable} ${fraunces.variable} ${ibmPlexMono.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${ibmPlexSans.variable} ${fraunces.variable} ${ibmPlexMono.variable} ${notoNastaliqUrdu.variable}`} suppressHydrationWarning>
       <body suppressHydrationWarning>
         <StoreProvider>{children}</StoreProvider>
       </body>
