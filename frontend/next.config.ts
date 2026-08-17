@@ -9,7 +9,16 @@ const nextConfig: NextConfig = {
     root: projectRoot,
   },
   experimental: {
-    optimizePackageImports: ['@mdi/js', '@mdi/react', 'lucide-react', '@solar-icons/react'],
+    optimizePackageImports: [
+      '@mdi/js',
+      '@mdi/react',
+      'lucide-react',
+      '@solar-icons/react',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-select',
+      '@radix-ui/react-toast',
+    ],
   },
   images: {
     formats: ['image/avif', 'image/webp'],

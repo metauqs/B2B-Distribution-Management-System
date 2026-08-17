@@ -29,6 +29,7 @@ const jameelKhushkhat = localFont({
   src: '../../public/fonts/jameel-khushkhat.woff2',
   variable: '--font-urdu',
   display: 'swap',
+  preload: false,
 });
 
 export const metadata: Metadata = {
