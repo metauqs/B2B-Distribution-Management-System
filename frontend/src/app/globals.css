@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Jameel Khushkhat L';
+  src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ─── Design Tokens ───────────────────────────────────────────────────────── */
 :root {
-  --font-urdu: var(--font-urdu, 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif);
+  --font-urdu: var(--font-urdu, 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', serif);
   --cream:     #FAF6EC;
   --paper:     #FFFDF8;
   --forest:    #1F3D2B;
