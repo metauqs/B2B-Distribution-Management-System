@@ -900,27 +900,27 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
         <tr style="background: ${brand.primaryColor}; color: #FFFFFF;">
           <th class="center" style="width: 32px; font-size: 11px; padding: 9px 6px; border-top-right-radius: 6px;">#</th>
           <th style="text-align: right; padding: 9px 10px; font-size: 11px;">
-            <span class="urdu-th" style="font-size: 15px; margin-left: 4px;">پروڈکٹ / آئٹم</span>
-            <span class="eng-th" style="font-size: 9px;">(ITEM)</span>
+            <span class="urdu-th" style="font-size: 15px; margin-left: 2px;">پروڈکٹ / آئٹم</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(ITEM)</bdi>
           </th>
           <th class="center" style="width: 45px; padding: 9px 6px; font-size: 11px;">
             <span class="urdu-th" style="font-size: 14px;">آئیکن</span>
           </th>
           <th class="center" style="width: 65px; padding: 9px 6px; font-size: 11px;">
             <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">مقدار</span>
-            <span class="eng-th" style="font-size: 9px;">(QTY)</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(QTY)</bdi>
           </th>
           <th class="center" style="width: 65px; padding: 9px 6px; font-size: 11px;">
             <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">یونٹ</span>
-            <span class="eng-th" style="font-size: 9px;">(UNIT)</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(UNIT)</bdi>
           </th>
           <th class="center" style="width: 80px; padding: 9px 6px; font-size: 11px;">
             <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">ریٹ</span>
-            <span class="eng-th" style="font-size: 9px;">(RATE RS)</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(RATE RS)</bdi>
           </th>
           <th class="center" style="width: 100px; padding: 9px 8px; font-size: 11px; border-top-left-radius: 6px;">
             <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">رقم</span>
-            <span class="eng-th" style="font-size: 9px;">(AMOUNT RS)</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(AMOUNT RS)</bdi>
           </th>
         </tr>
       </thead>
@@ -929,9 +929,8 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
           <tr style="background: ${i % 2 === 1 ? '#F9FAF9' : '#FFFFFF'}; border-bottom: 1px solid #ECECEC;">
             <td class="center muted" style="padding: 9px 6px; font-size: 11.5px; font-weight: 600; color: #64748B;">${i + 1}</td>
             <td style="padding: 9px 10px; text-align: right;">
-              <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 17px; font-weight: 700; color: #000000; direction: rtl; line-height: 1.25;">
-                ${item.urduName || item.itemName}
-                <span style="font-family: 'Lora', Georgia, serif; font-size: 11px; font-weight: 600; color: #555555; direction: ltr; margin-right: 4px;">(${item.itemName})</span>
+              <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 17px; font-weight: 700; color: #000000; direction: rtl; text-align: right; line-height: 1.25;">
+                ${item.urduName || item.itemName}<bdi dir="ltr" style="font-family: 'Lora', Georgia, serif; font-size: 11px; font-weight: 600; color: #555555; unicode-bidi: isolate; display: inline-block; margin-right: 4px;">(${item.itemName})</bdi>
               </div>
             </td>
             <td class="center" style="padding: 9px 6px; vertical-align: middle;">
