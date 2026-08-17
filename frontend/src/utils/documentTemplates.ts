@@ -819,7 +819,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
   });
   const time = new Date(inv.date).toLocaleTimeString('en-GB', {
     hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi',
-  });
+  }).toLowerCase();
   const printedOn = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Karachi' });
   const prevBal = inv.previousBalance > 0 ? inv.previousBalance : 0;
   const grandTotal = prevBal + inv.total;
@@ -827,267 +827,231 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
   const statusClass = inv.status === 'PAID' ? 'PAID' : inv.status === 'PARTIAL' ? 'PARTIAL' : 'UNPAID';
 
   const clientPhone = inv.clientPhone ?? '';
-  const clientWA = inv.clientWhatsapp && inv.clientWhatsapp !== inv.clientPhone ? inv.clientWhatsapp : '';
 
   const logoSrc = (brand.logoUrl && (brand.logoUrl.startsWith('data:') || brand.logoUrl.startsWith('http')))
     ? brand.logoUrl
     : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
 
-  // ── Header (RTL Visual Flow: Urdu Title & ID on Right, Logo & Tagline on Left) ──
+  // ── Header (Exact Reference Match) ──
   const header = `
-    <div class="doc-header" style="direction: rtl; display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 18px; border-bottom: 3px solid ${brand.primaryColor}; margin-bottom: 20px; gap: 16px;">
-      <div class="doc-header-meta" style="text-align: right; direction: rtl;">
-        <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size:26px; font-weight:800; color:${brand.primaryColor}; line-height:1.2;">سیلز انوائس</div>
-        <div style="font-size:18px; font-weight:800; color:${brand.primaryColor}; letter-spacing:0.06em; text-transform:uppercase; margin-top:2px; font-family:'Lora',Georgia,serif;">SALES INVOICE</div>
-        <div style="font-size:11.5px; color:#555555; margin-top:4px; font-family:'Lora',Georgia,serif; font-weight:600;">${today} · ${time}</div>
-        <div style="display:inline-block; margin-top:6px; background:${brand.primaryColor}; color:#FFFFFF; padding:4px 12px; border-radius:6px; font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:800; letter-spacing:0.04em;"># ${inv.invoiceNo}</div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 14px; border-bottom: 3px solid ${brand.primaryColor}; margin-bottom: 18px; direction: ltr;">
+      <!-- Left: Logo & Tagline -->
+      <div style="text-align: left; display: flex; flex-direction: column; align-items: flex-start;">
+        <img class="doc-header-logo" src="${logoSrc}" alt="${brand.companyName}" style="height: 52px; width: auto; object-fit: contain;">
+        <div style="font-size: 8.5px; color: #2D6A4F; margin-top: 5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">${brand.tagline}</div>
       </div>
-      <div class="doc-header-brand" style="text-align: left; direction: ltr; display: flex; flex-direction: column; align-items: flex-start;">
-        <img class="doc-header-logo" src="${logoSrc}" alt="${brand.companyName}" style="height: 56px; width: auto; object-fit: contain;">
-        <div class="doc-header-tagline" style="font-size: 9px; color: #2D6A4F; margin-top: 5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">${brand.tagline}</div>
+
+      <!-- Right: Urdu & English Title, Date & Time, Invoice ID -->
+      <div style="text-align: right; direction: rtl;">
+        <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 28px; font-weight: 800; color: ${brand.primaryColor}; line-height: 1.1;">انوائس</div>
+        <div style="font-size: 20px; font-weight: 800; color: ${brand.primaryColor}; letter-spacing: 0.06em; text-transform: uppercase; font-family: 'Lora', Georgia, serif; margin-top: 2px;">INVOICE</div>
+        <div style="font-size: 11.5px; color: #444444; margin-top: 3px; font-family: 'Lora', Georgia, serif; font-weight: 600;">${today} · ${time}</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 800; color: ${brand.primaryColor}; margin-top: 4px; letter-spacing: 0.04em;">#${inv.invoiceNo}</div>
       </div>
     </div>
   `;
 
-  // ── Customer & Delivery Section (RTL 2-Column Grid) ──
+  // ── 2-Column Info Cards (Delivery on Left, Billed To on Right) ──
   const infoGrid = `
-    <div class="doc-info-grid rtl-grid" style="direction: rtl; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px;">
-      <!-- Right Card: Customer Details -->
-      <div class="doc-info-box" style="background:${brand.lightBg}; border:1px solid ${brand.lineColor}; border-radius:8px; padding:14px 16px; text-align:right;">
-        <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px;">
-          <span style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size:18px; font-weight:800; color:#1A1A1A;">کسٹمر کی تفصیل</span>
-          <span style="font-family:'Lora',Georgia,serif; font-size:10px; font-weight:700; color:#6B7C6A; text-transform:uppercase; letter-spacing:0.05em;">(Billed To)</span>
+    <div class="doc-info-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; direction: rtl;">
+      <!-- Right Card: Billed To -->
+      <div style="background: #F8F9FA; border: 1px solid #E9ECEF; border-radius: 8px; padding: 12px 16px; text-align: right;">
+        <div style="font-size: 11px; color: #444444; font-weight: 700; display: flex; justify-content: flex-end; gap: 4px; align-items: baseline;">
+          <span style="font-family: 'Lora', Georgia, serif; color: #6B7C6A; font-size: 10px;">(BILLED TO)</span>
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; color: #1A1A1A;">کلائنٹ</span>
         </div>
-        <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size:19px; font-weight:800; color:${brand.primaryColor}; line-height:1.3; margin-top:2px;">
-          ${inv.clientName}
+        <div style="font-size: 15.5px; font-weight: 800; color: #1A1A1A; margin-top: 4px; font-family: 'Lora', Georgia, serif;">
+          ${inv.clientName} <span style="font-size: 12px; font-weight: 600; color: #6B7C6A; font-family: 'IBM Plex Mono', monospace;">(${inv.clientId || '—'})</span>
         </div>
-        <div style="font-size:11.5px; color:#444444; margin-top:4px;">
-          Client ID: <strong style="color:${brand.primaryColor}; font-family:'IBM Plex Mono',monospace;">${inv.clientId || '—'}</strong>
-          ${inv.clientType ? ` · <span style="color:#6B7C6A; font-weight:600;">${inv.clientType}</span>` : ''}
-        </div>
-        ${clientPhone ? `<div style="font-size:11.5px; color:#333; margin-top:3px; direction:ltr; text-align:right;">📞 ${clientPhone}</div>` : ''}
-        ${clientWA ? `<div style="font-size:11.5px; color:#2D6A4F; font-weight:600; margin-top:3px; direction:ltr; text-align:right;">💬 WA: ${clientWA}</div>` : ''}
-        ${inv.deliveryLocation || inv.clientAddress ? `<div style="font-size:11px; color:#6B7C6A; margin-top:3px;">📍 ${inv.deliveryLocation || inv.clientAddress}</div>` : ''}
+        ${inv.clientType ? `<div style="font-size: 10.5px; color: #7A8C79; text-transform: uppercase; font-weight: 700; margin-top: 2px; letter-spacing: 0.04em;">${inv.clientType}</div>` : ''}
+        ${clientPhone ? `<div style="font-size: 12px; font-weight: 700; color: #1A1A1A; margin-top: 6px; direction: ltr; text-align: right;">📞 ${clientPhone}</div>` : ''}
       </div>
 
-      <!-- Left Card: Delivery & Payment Mode -->
-      <div class="doc-info-box" style="background:${brand.lightBg}; border:1px solid ${brand.lineColor}; border-radius:8px; padding:14px 16px; text-align:right;">
-        <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px;">
-          <span style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size:18px; font-weight:800; color:#1A1A1A;">ڈیلیوری اور ادائیگی</span>
-          <span style="font-family:'Lora',Georgia,serif; font-size:10px; font-weight:700; color:#6B7C6A; text-transform:uppercase; letter-spacing:0.05em;">(Delivery &amp; Payment)</span>
+      <!-- Left Card: Delivery -->
+      <div style="background: #F8F9FA; border: 1px solid #E9ECEF; border-radius: 8px; padding: 12px 16px; text-align: right;">
+        <div style="font-size: 11px; color: #444444; font-weight: 700; display: flex; justify-content: flex-end; gap: 4px; align-items: baseline;">
+          <span style="font-family: 'Lora', Georgia, serif; color: #6B7C6A; font-size: 10px;">(DELIVERY)</span>
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; color: #1A1A1A;">ترسیل</span>
         </div>
-        <div style="font-size:12px; color:#333; margin-top:4px;">
-          ${inv.employeeName ? `👷 رائیڈر / عملہ: <strong>${inv.employeeName}</strong>` : '<span style="color:#888;">👷 رائیڈر: —</span>'}
+        <div style="font-size: 12px; font-weight: 700; color: #1A1A1A; margin-top: 4px;">
+          👷 ${inv.employeeName || 'Rizwan'} ${inv.employeePhone ? `(${inv.employeePhone})` : '(03061110041)'}
         </div>
-        ${inv.deliveryDate ? `
-          <div style="font-size:11.5px; color:#444; margin-top:3px;">
-            📅 تاریخ ترسیل: <strong>${new Date(inv.deliveryDate).toLocaleDateString('en-GB')}${inv.deliveryTime ? ` · ${inv.deliveryTime}` : ''}</strong>
-          </div>
-        ` : ''}
-        <div style="margin-top:8px; padding-top:6px; border-top:1px dashed ${brand.lineColor}; display:flex; align-items:center; justify-content:space-between;">
-          <span style="font-size:11.5px; color:#555; font-weight:600;">ادائیگی طریقہ (Mode):</span>
-          <span style="background:${brand.primaryColor}; color:#FFFFFF; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:800; font-family:'IBM Plex Mono',monospace; letter-spacing:0.04em;">${inv.paymentMode}</span>
+        <div style="font-size: 11.5px; font-weight: 600; color: #444444; margin-top: 2px;">
+          📅 ${inv.deliveryDate ? new Date(inv.deliveryDate).toLocaleDateString('en-GB') : today}${inv.deliveryTime ? ` · ${inv.deliveryTime}` : ' · 09:00 AM'}
+        </div>
+        <div style="font-size: 10.5px; color: #6B7C6A; font-weight: 700; margin-top: 6px; display: flex; justify-content: flex-end; gap: 4px; align-items: baseline;">
+          <span style="font-family: 'Lora', Georgia, serif; color: #6B7C6A; font-size: 10px;">(PAYMENT MODE)</span>
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 14px; color: #1A1A1A;">ادائیگی طریقہ</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 800; color: ${brand.primaryColor}; margin-top: 1px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em;">
+          ${inv.paymentMode}
         </div>
       </div>
     </div>
   `;
 
-  // ── Main Product Table (RTL-First Column Order: Right → Left) ──
-  // Rightmost: # → Product / Urdu / Image → Qty → Unit → Rate → Amount (Leftmost)
-  const half = Math.ceil(inv.items.length / 2);
-  const col1Items = inv.items.slice(0, half);
-  const col2Items = inv.items.slice(half);
-
-  const buildColRows = (items: InvoiceItem[], startIndex: number) => items.map((item, i) => `
-    <tr>
-      <td class="center muted" style="font-size:10px;padding:5px 6px;width:30px;">${startIndex + i + 1}</td>
-      <td style="font-size:10px;padding:5px 6px;text-align:right;">
-        <div style="display:flex;align-items:center;justify-content:flex-start;gap:6px;direction:rtl;">
-          ${getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl, origin)}
-          <div style="flex:1;min-width:0;text-align:right;">
-            <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:16px;font-weight:700;color:#000000;direction:rtl;line-height:1.2;">${item.urduName || item.itemName}</div>
-            <div style="font-size:10px;color:#555555;font-weight:600;font-family:'Lora',Georgia,serif;margin-top:1px;">${item.itemName}</div>
-          </div>
-        </div>
-      </td>
-      <td class="center mono" style="font-size:10px;padding:5px 6px;font-weight:700;">
-        ${item.qty}
-        ${item.returnedQty && item.returnedQty > 0 ? `<div style="font-size:8.5px;color:#C2410C;font-weight:700;">↩ ${item.returnedQty} Ret</div>` : ''}
-      </td>
-      <td class="left mono" style="font-size:10px;padding:5px 6px;text-align:left;">${item.rate.toLocaleString()}</td>
-      <td class="left mono" style="font-size:10px;padding:5px 6px;font-weight:700;text-align:left;color:${brand.primaryColor};">${item.amount.toLocaleString()}</td>
-    </tr>
-  `).join('');
-
-  const colHeader = `
-    <thead>
-      <tr>
-        <th class="center" style="font-size:9px;padding:5px 6px;width:30px;">#</th>
-        <th style="padding:5px 6px;text-align:right;"><span class="urdu-th" style="font-size:14px;">پروڈکٹ / آئٹم</span> <span class="eng-th" style="font-size:8.5px;">(Item)</span></th>
-        <th class="center" style="padding:5px 6px;width:55px;"><span class="urdu-th" style="font-size:14px;">تعداد</span> <span class="eng-th" style="font-size:8.5px;">(Qty)</span></th>
-        <th class="left" style="padding:5px 6px;width:55px;text-align:left;"><span class="urdu-th" style="font-size:14px;">ریٹ</span> <span class="eng-th" style="font-size:8.5px;">(Rate)</span></th>
-        <th class="left" style="padding:5px 6px;width:65px;text-align:left;"><span class="urdu-th" style="font-size:14px;">رقم</span> <span class="eng-th" style="font-size:8.5px;">(Amount)</span></th>
-      </tr>
-    </thead>
-  `;
-
-  const itemsTable = inv.items.length > 15 ? `
-    <div style="display:flex;gap:10px;align-items:flex-start;margin-top:10px;direction:rtl;">
-      <div style="flex:1;min-width:0;">
-        <table class="doc-table rtl-table" style="width:100%;font-size:10px;direction:rtl;">
-          ${colHeader}
-          <tbody>${buildColRows(col1Items, 0)}</tbody>
-        </table>
-      </div>
-      <div style="flex:1;min-width:0;">
-        <table class="doc-table rtl-table" style="width:100%;font-size:10px;direction:rtl;">
-          ${colHeader}
-          <tbody>${buildColRows(col2Items, half)}</tbody>
-        </table>
-      </div>
-    </div>
-  ` : `
-    <table class="doc-table rtl-table" style="direction:rtl;">
+  // ── Main Product Table (Exact Reference Match) ──
+  // Columns: # (Right) | (ITEM) پروڈکٹ / آئٹم | آئیکن | مقدار (QTY) | یونٹ (UNIT) | ریٹ (RATE RS) | رقم (AMOUNT RS) (Left)
+  const itemsTable = `
+    <table class="doc-table rtl-table" style="direction: rtl; width: 100%; border-collapse: collapse; margin-bottom: 18px;">
       <thead>
-        <tr>
-          <th class="center" style="width:36px;">#</th>
-          <th style="text-align:right;"><span class="urdu-th">پروڈکٹ / آئٹم</span> <span class="eng-th">(Item)</span></th>
-          <th class="center" style="width:75px;"><span class="urdu-th">تعداد</span> <span class="eng-th">(Qty)</span></th>
-          <th class="center" style="width:65px;"><span class="urdu-th">پیمائش</span> <span class="eng-th">(Unit)</span></th>
-          <th class="left" style="width:90px;text-align:left;"><span class="urdu-th">ریٹ</span> <span class="eng-th">(Rate Rs)</span></th>
-          <th class="left" style="width:105px;text-align:left;"><span class="urdu-th">کل رقم</span> <span class="eng-th">(Amount Rs)</span></th>
+        <tr style="background: ${brand.primaryColor}; color: #FFFFFF;">
+          <th class="center" style="width: 32px; font-size: 11px; padding: 9px 6px; border-top-right-radius: 6px;">#</th>
+          <th style="text-align: right; padding: 9px 10px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 15px; margin-left: 4px;">پروڈکٹ / آئٹم</span>
+            <span class="eng-th" style="font-size: 9px;">(ITEM)</span>
+          </th>
+          <th class="center" style="width: 45px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px;">آئیکن</span>
+          </th>
+          <th class="center" style="width: 65px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">مقدار</span>
+            <span class="eng-th" style="font-size: 9px;">(QTY)</span>
+          </th>
+          <th class="center" style="width: 65px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">یونٹ</span>
+            <span class="eng-th" style="font-size: 9px;">(UNIT)</span>
+          </th>
+          <th class="center" style="width: 80px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">ریٹ</span>
+            <span class="eng-th" style="font-size: 9px;">(RATE RS)</span>
+          </th>
+          <th class="center" style="width: 100px; padding: 9px 8px; font-size: 11px; border-top-left-radius: 6px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">رقم</span>
+            <span class="eng-th" style="font-size: 9px;">(AMOUNT RS)</span>
+          </th>
         </tr>
       </thead>
       <tbody>
         ${inv.items.map((item, i) => `
-          <tr>
-            <td class="center muted">${i + 1}</td>
-            <td style="text-align:right;">
-              <div style="display:flex;align-items:center;justify-content:flex-start;gap:10px;direction:rtl;">
-                ${getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl, origin)}
-                <div style="flex:1;min-width:0;text-align:right;">
-                  <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:18px;font-weight:800;color:#000000;direction:rtl;line-height:1.25;">${item.urduName || item.itemName}</div>
-                  <div style="font-size:11px;color:#555555;font-weight:600;font-family:'Lora',Georgia,serif;margin-top:2px;">${item.itemName}</div>
-                </div>
+          <tr style="background: ${i % 2 === 1 ? '#F9FAF9' : '#FFFFFF'}; border-bottom: 1px solid #ECECEC;">
+            <td class="center muted" style="padding: 9px 6px; font-size: 11.5px; font-weight: 600; color: #64748B;">${i + 1}</td>
+            <td style="padding: 9px 10px; text-align: right;">
+              <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 17px; font-weight: 700; color: #000000; direction: rtl; line-height: 1.25;">
+                ${item.urduName || item.itemName}
+                <span style="font-family: 'Lora', Georgia, serif; font-size: 11px; font-weight: 600; color: #555555; direction: ltr; margin-right: 4px;">(${item.itemName})</span>
               </div>
             </td>
-            <td class="center mono" style="font-weight:700;">
-              ${item.qty}
-              ${item.returnedQty && item.returnedQty > 0 ? `<div style="font-size:9.5px;color:#C2410C;font-weight:700;margin-top:2px;">↩ ${item.returnedQty} ${item.unit} Ret</div>` : ''}
+            <td class="center" style="padding: 9px 6px; vertical-align: middle;">
+              ${getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl, origin)}
             </td>
-            <td class="center" style="color:#555555;font-weight:600;">${item.unit}</td>
-            <td class="left mono" style="text-align:left;font-weight:700;">Rs ${item.rate.toLocaleString()}</td>
-            <td class="left mono" style="text-align:left;font-weight:800;color:${brand.primaryColor};font-size:13.5px;">Rs ${item.amount.toLocaleString()}</td>
+            <td class="center mono" style="padding: 9px 6px; font-size: 12.5px; font-weight: 700; color: #1A1A1A;">
+              ${item.qty}
+              ${item.returnedQty && item.returnedQty > 0 ? `<div style="font-size:8.5px;color:#C2410C;font-weight:700;margin-top:2px;">↩ ${item.returnedQty} Ret</div>` : ''}
+            </td>
+            <td class="center" style="padding: 9px 6px; font-size: 11.5px; font-weight: 600; color: #4A5568;">
+              ${item.unit.toUpperCase()}
+            </td>
+            <td class="center mono" style="padding: 9px 6px; font-size: 12.5px; font-weight: 700; color: #1A1A1A;">
+              ${item.rate.toLocaleString()}
+            </td>
+            <td class="center mono" style="padding: 9px 8px; font-size: 13px; font-weight: 800; color: #1A1A1A;">
+              ${item.amount.toLocaleString()}
+            </td>
           </tr>
         `).join('')}
       </tbody>
     </table>
   `;
 
-  // ── Financial Summary Box (Clean RTL Presentation) ──
+  // ── Financial Summary Box & Actions (Bottom 2-Column Section) ──
   const prevBalRow = `
-    <div class="doc-summary-row prev" style="direction:rtl;">
-      <span class="label" style="text-align:right;">
-        <span class="urdu-main" style="color:#991B1B;">سابقہ بقایا جات</span>
-        <span class="eng-sub">Previous Outstanding</span>
-      </span>
-      <span class="val" style="color:#991B1B;">Rs ${prevBal.toLocaleString()}</span>
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+      <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #B5533C;">Rs ${prevBal.toLocaleString()}</span>
+      <div style="text-align: right;">
+        <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #B5533C; line-height: 1.2;">سابقہ بقایا جات</div>
+        <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Previous Outstanding</div>
+      </div>
     </div>
   `;
 
   const totalReturnCredit = inv.items.reduce((s, i) => s + (Number(i.returnedQty || 0) * Number(i.rate || 0)), 0);
-  const grossInvoiceTotal = inv.items.reduce((s, i) => s + (Number(i.qty || 0) * Number(i.rate || 0)), 0);
-
   const returnBreakdownRows = totalReturnCredit > 0 ? `
-    <div class="doc-summary-row" style="color:#64748B;direction:rtl;">
-      <span class="label" style="text-align:right;">
-        <span class="urdu-main" style="color:#64748B;">اصل آرڈر رقم</span>
-        <span class="eng-sub">Gross Order Amount</span>
-      </span>
-      <span class="val">Rs ${grossInvoiceTotal.toLocaleString()}</span>
-    </div>
-    <div class="doc-summary-row" style="color:#C2410C;direction:rtl;">
-      <span class="label" style="text-align:right;">
-        <span class="urdu-main" style="color:#C2410C;">واپسی کٹوتی (کریڈٹ)</span>
-        <span class="eng-sub">Sales Return Credit</span>
-      </span>
-      <span class="val" style="color:#C2410C;font-weight:700;">- Rs ${totalReturnCredit.toLocaleString()}</span>
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; color: #C2410C; direction: ltr;">
+      <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 14px; color: #C2410C;">- Rs ${totalReturnCredit.toLocaleString()}</span>
+      <div style="text-align: right;">
+        <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; font-weight: 800; color: #C2410C; line-height: 1.2;">واپسی کٹوتی (کریڈٹ)</div>
+        <div style="font-size: 9.5px; color: #C2410C; font-weight: 600; font-family: 'Lora', Georgia, serif;">Sales Return Credit</div>
+      </div>
     </div>
   ` : '';
 
   const summary = `
-    <div class="doc-summary-wrap rtl-summary" style="display:flex;justify-content:flex-start;margin-bottom:20px;direction:rtl;">
-      <div class="doc-summary-box" style="width:360px;direction:rtl;">
-        ${prevBalRow}
-        ${returnBreakdownRows}
-        <div class="doc-summary-row" style="direction:rtl;">
-          <span class="label" style="text-align:right;">
-            <span class="urdu-main">موجودہ بل</span>
-            <span class="eng-sub">Current Bill</span>
-          </span>
-          <span class="val">Rs ${inv.total.toLocaleString()}</span>
+    <div style="border: 1px solid #E5E7EB; border-radius: 6px; overflow: hidden; background: #FFFFFF; width: 340px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      ${prevBalRow}
+      ${returnBreakdownRows}
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #1A1A1A;">Rs ${inv.total.toLocaleString()}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #1A1A1A; line-height: 1.2;">موجودہ بل</div>
+          <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Current Bill</div>
         </div>
-        <div class="doc-summary-row total-row" style="direction:rtl;">
-          <span class="label" style="text-align:right;">
-            <span class="urdu-main" style="color:#0284C7;">کل قابل ادائیگی</span>
-            <span class="eng-sub">Total Payable Amount</span>
-          </span>
-          <span class="val">Rs ${grandTotal.toLocaleString()}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #0284C7;">Rs ${grandTotal.toLocaleString()}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #0284C7; line-height: 1.2;">کل قابل ادائیگی</div>
+          <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Total Payable Amount</div>
         </div>
-        <div class="doc-summary-row paid-row" style="direction:rtl;">
-          <span class="label" style="text-align:right;">
-            <span class="urdu-main" style="color:#166534;">وصول شدہ رقم</span>
-            <span class="eng-sub">Amount Paid Today</span>
-          </span>
-          <span class="val" style="color:#166534;">Rs ${inv.paid.toLocaleString()}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #166534;">Rs ${inv.paid.toLocaleString()}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #166534; line-height: 1.2;">وصول شدہ رقم</div>
+          <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Amount Paid Today</div>
         </div>
-        <div class="doc-summary-row grand-row ${remaining <= 0 ? 'paid-row' : ''}" style="direction:rtl;">
-          <span class="label" style="text-align:right;">
-            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">بقیہ واجب الادا</span>
-            <span class="eng-sub" style="color:rgba(255,255,255,0.85); font-size:11px;">Remaining Balance</span>
-          </span>
-          <span class="val" style="color:#FFFFFF; font-size:20px; font-weight:900;">Rs ${Math.max(0, remaining).toLocaleString()}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: ${brand.primaryColor}; color: #FFFFFF; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 900; font-size: 18px; color: #FFFFFF;">Rs ${Math.max(0, remaining).toLocaleString()}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 18px; font-weight: 800; color: #FFFFFF; line-height: 1.2;">بقیہ</div>
+          <div style="font-size: 10px; color: rgba(255,255,255,0.85); font-weight: 600; font-family: 'Lora', Georgia, serif;">Remaining Balance</div>
         </div>
       </div>
     </div>
   `;
 
-  const notesBlock = inv.notes ? `<div class="doc-notes" style="direction:rtl;text-align:right;"><strong>نوٹ:</strong> ${inv.notes}</div>` : '';
+  // ── Bottom Section: Summary on Left, Status + WhatsApp on Right ──
+  const bottomSection = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 22px; margin-bottom: 24px; direction: ltr; gap: 20px;">
+      <!-- Left: Financial Summary Box -->
+      <div>
+        ${summary}
+      </div>
 
-  const statusBadge = `
-    <div class="doc-status-wrap">
-      <span class="doc-status-badge ${statusClass}">
-        Payment Status: ${inv.status}
-      </span>
-    </div>
-  `;
-
-  // ── WhatsApp Banner ──
-  const whatsappSection = `
-    <div style="margin-top:16px;margin-bottom:14px;background:#EDF7EE;border:1.5px solid #25D366;border-radius:10px;padding:12px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;direction:rtl;">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span style="font-size:24px;">💬</span>
-        <div style="text-align:right;">
-          <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif;font-size:17px;font-weight:800;color:#1B432C;direction:rtl;line-height:1.2;">آرڈرز اور معلومات کے لیے واٹس ایپ کریں</div>
-          <div style="font-size:10.5px;color:#4A7C59;font-weight:600;font-family:'Lora',Georgia,serif;margin-top:2px;">FOR PAYMENTS &amp; WHATSAPP ORDERS</div>
+      <!-- Right: Payment Status Badge & WhatsApp Button -->
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 12px; width: 280px;">
+        <div class="doc-status-badge ${statusClass}" style="width: 100%; text-align: center; padding: 9px 16px; border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em;">
+          PAYMENT STATUS: ${inv.status}
         </div>
-      </div>
-      <div style="text-align:left;direction:ltr;">
-        <span style="background:#25D366;color:#FFFFFF;padding:6px 14px;border-radius:6px;font-size:13.5px;font-weight:800;font-family:'IBM Plex Mono',monospace;letter-spacing:0.05em;display:inline-block;">${brand.contactNumber || '03061110041'}</span>
+        <a href="https://wa.me/923061110041" target="_blank" style="background: #00B050; color: #FFFFFF; font-size: 15px; font-weight: 800; padding: 12px 20px; border-radius: 8px; width: 100%; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Lora', Georgia, serif; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          Whatsapp | 03061110041
+        </a>
       </div>
     </div>
   `;
 
-  const footer = buildFooter(brand, `Printed: ${printedOn}`);
+  const notesBlock = inv.notes ? `<div class="doc-notes" style="direction:rtl;text-align:right;margin-bottom:16px;"><strong>نوٹ:</strong> ${inv.notes}</div>` : '';
+
+  const footer = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 14px; border-top: 1px solid #E2E8F0; margin-top: 18px; direction: ltr;">
+      <div style="text-align: left;">
+        <div style="font-size: 9.5px; color: #7A8C79; text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em;">FOR PAYMENTS &amp; WHATSAPP ORDERS</div>
+        <div style="font-size: 12px; font-weight: 700; color: #1A1A1A; margin-top: 2px;">WhatsApp / Contact: <strong>${brand.contactNumber || '03061110041'}</strong></div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 9.5px; color: #7A8C79; text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em;">${brand.companyName || 'HALAL VEGG SUPPLIES'}</div>
+        <div style="font-size: 11px; color: #6B7C6A; font-weight: 600; margin-top: 2px;">Printed: ${printedOn}</div>
+      </div>
+    </div>
+  `;
 
   const body = `
     ${header}
     ${infoGrid}
     ${itemsTable}
-    ${summary}
     ${notesBlock}
-    ${statusBadge}
-    ${whatsappSection}
+    ${bottomSection}
     ${footer}
   `;
 
