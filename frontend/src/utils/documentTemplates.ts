@@ -958,21 +958,21 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
         </div>
         <div class="doc-summary-row total-row">
           <span class="label">
-            <span class="urdu-main" style="color:#0284C7;">کل قابل ادائیگی (کل واجب الادا)</span>
+            <span class="urdu-main" style="color:#0284C7;">کل قابل ادائیگی</span>
             <span class="eng-sub">Total Payable Amount</span>
           </span>
           <span class="val">Rs ${grandTotal.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row paid-row">
           <span class="label">
-            <span class="urdu-main" style="color:#166534;">وصول شدہ رقم (کل ادائیگی)</span>
+            <span class="urdu-main" style="color:#166534;">وصول شدہ رقم</span>
             <span class="eng-sub">Amount Paid Today</span>
           </span>
-          <span class="val" style="color:#166534;">- Rs ${inv.paid.toLocaleString()}</span>
+          <span class="val" style="color:#166534;">Rs ${inv.paid.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row grand-row ${remaining <= 0 ? 'paid-row' : ''}">
           <span class="label">
-            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">بقیہ واجب الادا (بقایا رقم)</span>
+            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">بقیہ واجب الادا</span>
             <span class="eng-sub" style="color:rgba(255,255,255,0.85); font-size:11px;">Remaining Balance</span>
           </span>
           <span class="val" style="color:#FFFFFF; font-size:20px; font-weight:900;">Rs ${Math.max(0, remaining).toLocaleString()}</span>
@@ -1566,14 +1566,14 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
         </div>
         <div class="doc-summary-row paid-row">
           <span class="label">
-            <span class="urdu-main" style="color:#166534;">کل ادا شدہ (وصولی)</span>
+            <span class="urdu-main" style="color:#166534;">کل ادا شدہ رقم</span>
             <span class="eng-sub">Total Paid</span>
           </span>
-          <span class="val" style="color:#166534;">- Rs ${data.totalPaid.toLocaleString()}</span>
+          <span class="val" style="color:#166534;">Rs ${data.totalPaid.toLocaleString()}</span>
         </div>
         <div class="doc-summary-row grand-row">
           <span class="label">
-            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">بقیہ واجب الادا (کل بقایا جات)</span>
+            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">بقیہ واجب الادا</span>
             <span class="eng-sub" style="color:rgba(255,255,255,0.85); font-size:11px;">Remaining Outstanding</span>
           </span>
           <span class="val" style="color:#FFFFFF; font-size:20px; font-weight:900;">Rs ${data.totalOutstanding.toLocaleString()}</span>
@@ -1733,21 +1733,21 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
         ` : ''}
         <div class="doc-summary-row total-row">
           <span class="label">
-            <span class="urdu-main" style="color:#0284C7;">کل قابل ادائیگی (کل واجب الادا)</span>
+            <span class="urdu-main" style="color:#0284C7;">کل قابل ادائیگی</span>
             <span class="eng-sub">Total Payable</span>
           </span>
           <span class="val">Rs ${fmtMoney(data.totalPayable)}</span>
         </div>
         <div class="doc-summary-row paid-row">
           <span class="label">
-            <span class="urdu-main" style="color:#166534;">وصول شدہ رقم (آج کی وصولی)</span>
+            <span class="urdu-main" style="color:#166534;">وصول شدہ رقم</span>
             <span class="eng-sub">Amount Received Today</span>
           </span>
-          <span class="val" style="color:#166534;">- Rs ${fmtMoney(data.amountReceived)}</span>
+          <span class="val" style="color:#166534;">Rs ${fmtMoney(data.amountReceived)}</span>
         </div>
         <div class="doc-summary-row grand-row">
           <span class="label">
-            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">${excessAmt > 0 ? 'ایڈوانس کریڈٹ' : 'بقیہ واجب الادا (بقایا رقم)'}</span>
+            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">${excessAmt > 0 ? 'ایڈوانس کریڈٹ' : 'بقیہ واجب الادا'}</span>
             <span class="eng-sub" style="color:rgba(255,255,255,0.85); font-size:11px;">${excessAmt > 0 ? 'Advance Credit' : 'Remaining Outstanding'}</span>
           </span>
           <span class="val" style="color:#FFFFFF; font-size:20px; font-weight:900;">${excessAmt > 0 ? `+Rs ${fmtMoney(excessAmt)}` : `Rs ${fmtMoney(data.remainingBalance)}`}</span>
