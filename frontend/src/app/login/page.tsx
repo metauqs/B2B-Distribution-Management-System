@@ -17,7 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [logoSrc, setLogoSrc] = useState<string>('/logo.png');
+  const [logoSrc] = useState<string>('/logo-transparent.png');
 
   // Verify if valid session cookie exists when opening login page
   useEffect(() => {
@@ -40,41 +40,6 @@ export default function LoginPage() {
         setError('Your session has expired or is invalid. Please log in again.');
       }
     }
-  }, []);
-
-  // Convert white background pixels of logo image directly to light green #EDF7EE
-  useEffect(() => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = '/logo.png';
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || img.width;
-        canvas.height = img.naturalHeight || img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-
-          if (r > 195 && g > 195 && b > 195) {
-            data[i + 3] = 0;
-          }
-        }
-
-        ctx.putImageData(imageData, 0, 0);
-        setLogoSrc(canvas.toDataURL('image/png'));
-      } catch (e) {
-        console.warn('Logo canvas processing fallback:', e);
-      }
-    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
