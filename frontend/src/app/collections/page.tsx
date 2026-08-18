@@ -220,9 +220,10 @@ export default function CollectionsPage() {
       const totalOutstanding = Math.max(0, selectedC?.currentBalance ?? 0);
       const targetSale = formData.saleId ? sales.find(s => s.id === formData.saleId) : null;
       const maxAllowed = targetSale ? Math.min(totalOutstanding, targetSale.balance) : totalOutstanding;
+      const roundedMax = Math.round(maxAllowed);
 
-      if (formData.amount > maxAllowed + 0.001) {
-        showToast(`❌ Payment (Rs ${formData.amount.toLocaleString()}) cannot exceed outstanding balance of Rs ${maxAllowed.toLocaleString()}`);
+      if (formData.amount > maxAllowed + 0.99 && formData.amount > roundedMax) {
+        showToast(`❌ Payment (Rs ${formData.amount.toLocaleString()}) cannot exceed outstanding balance of ${fmtMoney(maxAllowed)}`);
         return;
       }
 
@@ -418,8 +419,9 @@ export default function CollectionsPage() {
             const totalOutstanding = Math.max(0, selectedC?.currentBalance ?? 0);
             const targetSale = form.saleId ? sales.find(s => s.id === form.saleId) : null;
             const maxAllowed = targetSale ? Math.min(totalOutstanding, targetSale.balance) : totalOutstanding;
+            const roundedMax = Math.round(maxAllowed);
             const amtRec = Number(form.amount || 0);
-            const isOverpayment = form.clientId ? (amtRec > maxAllowed + 0.001) : false;
+            const isOverpayment = form.clientId ? (amtRec > maxAllowed + 0.99 && amtRec > roundedMax) : false;
             const isInvalidAmount = isNaN(amtRec) || amtRec <= 0 || !isFinite(amtRec);
 
             return (
@@ -449,10 +451,10 @@ export default function CollectionsPage() {
                       type="number"
                       required
                       min="1"
-                      max={maxAllowed > 0 ? maxAllowed : undefined}
+                      max={maxAllowed > 0 ? Math.max(maxAllowed, roundedMax) : undefined}
                       step="any"
                       value={form.amount || ''}
-                      onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))}
+                      onChange={e => setForm(p => ({ ...p, amount: e.target.value === '' ? 0 : +e.target.value }))}
                       placeholder={maxAllowed > 0 ? `Enter amount (max ${fmtMoney(maxAllowed)})` : 'Enter payment amount'}
                       style={{
                         borderColor: isOverpayment ? '#EF4444' : undefined,

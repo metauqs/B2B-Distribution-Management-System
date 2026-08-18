@@ -399,9 +399,10 @@ router.post('/', async (req: Request, res: Response) => {
       }
 
       // Financial Overpayment Check: Payment exceeds authoritative current outstanding
-      if (numAmount > roundedOutstanding + 0.001) {
+      const roundedMaxOutstanding = Math.round(roundedOutstanding);
+      if (numAmount > roundedOutstanding + 0.99 && numAmount > roundedMaxOutstanding) {
         const err: any = new Error(
-          `Payment amount (Rs ${numAmount.toLocaleString()}) cannot exceed the current outstanding balance of Rs ${roundedOutstanding.toLocaleString()}.`
+          `Payment amount (Rs ${numAmount.toLocaleString()}) cannot exceed the current outstanding balance of Rs ${roundedMaxOutstanding.toLocaleString()}.`
         );
         err.statusCode = 422;
         err.code = 'PAYMENT_EXCEEDS_OUTSTANDING';
@@ -413,9 +414,10 @@ router.post('/', async (req: Request, res: Response) => {
       let targetSale = null;
       if (saleId && String(saleId).trim()) {
         targetSale = await tx.sale.findUnique({ where: { id: String(saleId) } });
-        if (targetSale && numAmount > targetSale.balance + 0.001) {
+        const roundedSaleBalance = Math.round(targetSale?.balance || 0);
+        if (targetSale && numAmount > targetSale.balance + 0.99 && numAmount > roundedSaleBalance) {
           const err: any = new Error(
-            `Payment amount (Rs ${numAmount.toLocaleString()}) cannot exceed invoice remaining balance of Rs ${targetSale.balance.toLocaleString()}.`
+            `Payment amount (Rs ${numAmount.toLocaleString()}) cannot exceed invoice remaining balance of Rs ${roundedSaleBalance.toLocaleString()}.`
           );
           err.statusCode = 422;
           err.code = 'PAYMENT_EXCEEDS_OUTSTANDING';
