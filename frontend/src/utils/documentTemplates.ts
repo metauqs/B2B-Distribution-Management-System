@@ -861,7 +861,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
           <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 700; color: #1A1A1A; margin-left: 4px; direction: rtl; unicode-bidi: isolate;">ترسیل</span>
         </div>
         <div style="font-size: 12.5px; font-weight: 700; color: #1A1A1A; margin-bottom: 3px;">
-          👷 ${inv.employeeName || 'Rizwan'} ${inv.employeePhone ? `(${inv.employeePhone})` : '(03061110041)'}
+          👷 ${inv.employeeName || 'Rizwan'} (${brand.contactNumber || '03061110041'})
         </div>
         <div style="font-size: 12px; font-weight: 600; color: #333333; margin-bottom: 8px;">
           📅 ${inv.deliveryDate ? new Date(inv.deliveryDate).toLocaleDateString('en-GB') : today}${inv.deliveryTime ? ` · ${inv.deliveryTime}` : ' · 09:00 AM'}
