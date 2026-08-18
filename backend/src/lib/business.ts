@@ -323,9 +323,10 @@ export async function recalculateClientLedgerAndBalance(clientId: string, tx?: a
     }
 
     if (entry.type === 'PAYMENT' && entry.referenceId) {
+      const targetRem = Math.max(0, running);
       await db.collection.updateMany({
-        where: { id: entry.referenceId },
-        data: { remainingBalance: Math.max(0, running) }
+        where: { id: entry.referenceId, remainingBalance: { not: targetRem } },
+        data: { remainingBalance: targetRem }
       });
     }
   }
@@ -464,6 +465,12 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
 
   // 2. Allocate remaining collection funds to sales in chronological order
   let reconciledAllocationsCount = 0;
+  const allocationsToCreate: Array<{
+    collectionId: string;
+    saleId: string;
+    allocatedAmount: number;
+  }> = [];
+
   for (const sale of sales) {
     let saleNeeded = sale.total;
     let totalSaleAllocated = 0;
@@ -473,12 +480,10 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
       const toAlloc = Math.min(colRem, saleNeeded);
 
       if (toAlloc > 0.01) {
-        await db.collectionAllocation.create({
-          data: {
-            collectionId: col.id,
-            saleId: sale.id,
-            allocatedAmount: toAlloc
-          }
+        allocationsToCreate.push({
+          collectionId: col.id,
+          saleId: sale.id,
+          allocatedAmount: toAlloc
         });
         reconciledAllocationsCount++;
       }
@@ -496,13 +501,21 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
     const newBal = Math.max(0, sale.total - totalSaleAllocated);
     const newStatus = deriveInvoiceStatus(sale.total, totalSaleAllocated);
 
-    await db.sale.update({
-      where: { id: sale.id },
-      data: {
-        paid: totalSaleAllocated,
-        balance: newBal,
-        status: newStatus as any
-      }
+    if (Math.abs(sale.paid - totalSaleAllocated) > 0.01 || Math.abs(sale.balance - newBal) > 0.01 || sale.status !== newStatus) {
+      await db.sale.update({
+        where: { id: sale.id },
+        data: {
+          paid: totalSaleAllocated,
+          balance: newBal,
+          status: newStatus as any
+        }
+      });
+    }
+  }
+
+  if (allocationsToCreate.length > 0) {
+    await db.collectionAllocation.createMany({
+      data: allocationsToCreate
     });
   }
 

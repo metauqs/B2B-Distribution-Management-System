@@ -384,8 +384,9 @@ router.post('/', async (req: Request, res: Response) => {
 
   try {
     const result = await prisma.$transaction(async tx => {
-      // 1. Authoritative Outstanding Check: Recompute current live balance under transaction lock
-      const authoritativeOutstanding = await getAuthoritativeClientOutstanding(clientId, tx);
+      // 1. Authoritative Outstanding Check: Check client current balance under transaction lock
+      const clientObj = await tx.client.findUnique({ where: { id: clientId } });
+      const authoritativeOutstanding = clientObj?.currentBalance ?? 0;
       const roundedOutstanding = Math.max(0, Math.round((authoritativeOutstanding + Number.EPSILON) * 100) / 100);
 
       // Financial Overpayment Check: Client has no outstanding dues
@@ -434,7 +435,7 @@ router.post('/', async (req: Request, res: Response) => {
       const remainingBalance = Math.max(0, totalPayable - amountReceived);
       const excessPayment = 0;
 
-      // Determine receivedByUserId strictly from authenticated user token (No hardcoded fallback!)
+      // Determine receivedByUserId strictly from authenticated user token
       let receivedByUserId: string | undefined = undefined;
       if (userId) {
         const u = await tx.user.findUnique({ where: { id: userId } });
@@ -483,114 +484,8 @@ router.post('/', async (req: Request, res: Response) => {
         },
       });
 
-      // Payment Allocations (FIFO by default, or manual allocations if specified)
-      let unpaidSales = await tx.sale.findMany({
-        where: {
-          clientId,
-          branchId,
-          status: { in: ['PENDING', 'PARTIAL'] },
-          deletedAt: null,
-        },
-        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-      });
-
-      let remainingPayment = numAmount;
-      const allocations: Array<{
-        saleId: string;
-        invoiceNo: string;
-        date: string;
-        invoiceTotal: number;
-        previousPaid: number;
-        previousBalance: number;
-        allocatedAmount: number;
-        remainingBalance: number;
-        newStatus: string;
-      }> = [];
-
-      if (Array.isArray(manualAllocations) && manualAllocations.length > 0) {
-        // Manual Allocation Mode
-        for (const item of manualAllocations) {
-          if (remainingPayment <= 0) break;
-          const sId = String(item.saleId);
-          const requestedAlloc = Math.max(0, Number(item.amount || 0));
-          if (requestedAlloc <= 0) continue;
-
-          const sale = unpaidSales.find(s => s.id === sId) || await tx.sale.findUnique({ where: { id: sId } });
-          if (!sale) continue;
-
-          const toApply = Math.min(remainingPayment, sale.balance, requestedAlloc);
-          if (toApply <= 0) continue;
-
-          const newPaid = sale.paid + toApply;
-          const rawBal = sale.total - newPaid;
-          const newBal = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
-          const newStatus = deriveInvoiceStatus(sale.total, newPaid);
-
-          await tx.sale.update({
-            where: { id: sale.id },
-            data: { paid: newPaid, balance: newBal, status: newStatus as any }
-          });
-
-          await tx.collectionAllocation.create({
-            data: {
-              collectionId: coll.id,
-              saleId: sale.id,
-              allocatedAmount: toApply,
-            }
-          });
-
-          allocations.push({
-            saleId: sale.id,
-            invoiceNo: sale.invoiceNo,
-            date: sale.date.toISOString(),
-            invoiceTotal: sale.total,
-            previousPaid: sale.paid,
-            previousBalance: sale.balance,
-            allocatedAmount: toApply,
-            remainingBalance: newBal,
-            newStatus,
-          });
-
-          remainingPayment -= toApply;
-        }
-      } else {
-        // Automatic FIFO Allocation Mode
-        for (const sale of unpaidSales) {
-          if (remainingPayment <= 0) break;
-          const toApply = Math.min(remainingPayment, sale.balance);
-          const newPaid = sale.paid + toApply;
-          const rawBal = sale.total - newPaid;
-          const newBal = rawBal < 1.0 ? 0 : Math.max(0, rawBal);
-          const newStatus = deriveInvoiceStatus(sale.total, newPaid);
-
-          await tx.sale.update({
-            where: { id: sale.id },
-            data: { paid: newPaid, balance: newBal, status: newStatus as any }
-          });
-
-          await tx.collectionAllocation.create({
-            data: {
-              collectionId: coll.id,
-              saleId: sale.id,
-              allocatedAmount: toApply,
-            }
-          });
-
-          allocations.push({
-            saleId: sale.id,
-            invoiceNo: sale.invoiceNo,
-            date: sale.date.toISOString(),
-            invoiceTotal: sale.total,
-            previousPaid: sale.paid,
-            previousBalance: sale.balance,
-            allocatedAmount: toApply,
-            remainingBalance: newBal,
-            newStatus,
-          });
-
-          remainingPayment -= toApply;
-        }
-      }
+      // Single authoritative allocation & financial ledger synchronization
+      await reconcileClientBalancesAndAllocations(clientId, tx);
 
       await updateClientCreditRating(clientId, tx);
 
@@ -604,8 +499,22 @@ router.post('/', async (req: Request, res: Response) => {
         reference: coll.reference || undefined,
       });
 
-      // Final verification: reconcile allocations & customer ledger balance inside the transaction
-      await reconcileClientBalancesAndAllocations(clientId, tx);
+      const allocationsData = await tx.collectionAllocation.findMany({
+        where: { collectionId: coll.id },
+        include: { sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } } }
+      });
+
+      const formattedAllocations = allocationsData.map(a => ({
+        saleId: a.saleId,
+        invoiceNo: a.sale?.invoiceNo || '',
+        date: a.sale?.date ? a.sale.date.toISOString() : '',
+        invoiceTotal: a.sale?.total || 0,
+        previousPaid: (a.sale?.paid || 0) - a.allocatedAmount,
+        previousBalance: (a.sale?.balance || 0) + a.allocatedAmount,
+        allocatedAmount: a.allocatedAmount,
+        remainingBalance: a.sale?.balance || 0,
+        newStatus: a.sale?.status || 'PENDING',
+      }));
 
       return {
         collection: coll,
@@ -617,9 +526,9 @@ router.post('/', async (req: Request, res: Response) => {
           remainingBalance: ledgerRes.balance,
           excessPayment,
         },
-        allocations,
+        allocations: formattedAllocations,
       };
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 15000, timeout: 60000 });
 
     await writeAuditLog({
       userId: userId ?? undefined,
