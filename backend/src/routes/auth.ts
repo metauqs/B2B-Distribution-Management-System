@@ -16,6 +16,12 @@ function signAuthTokens(payload: { sub: string; email: string; role: string; bra
   return { accessToken, refreshToken };
 }
 
+import { authRateLimiter } from '../middleware/rateLimiter';
+
+// Apply auth rate limiter to login and refresh endpoints
+router.use('/login', authRateLimiter);
+router.use('/refresh', authRateLimiter);
+
 // POST /api/auth/login
 router.post('/login', async (req: Request, res: Response) => {
   try {
@@ -82,8 +88,12 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, error: 'Your account is inactive. Please contact administrator.' });
     }
 
-    // Password verification (if password provided)
-    if (password && typeof password === 'string' && matchedEmployee.password) {
+    // Strict password verification (Password is mandatory whenever employee has password configured)
+    if (matchedEmployee.password) {
+      if (!password || typeof password !== 'string') {
+        console.warn(`[AUTH FAILURE] Missing password for Employee ID: "${trimmedId}"`);
+        return res.status(401).json({ success: false, error: 'Password is required' });
+      }
       const isPasswordValid = await bcrypt.compare(password, matchedEmployee.password);
       if (!isPasswordValid) {
         console.warn(`[AUTH FAILURE] Incorrect password for Employee ID: "${trimmedId}"`);

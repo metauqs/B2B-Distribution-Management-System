@@ -10,15 +10,20 @@ if (!DATABASE_URL && isProd) {
   console.warn('⚠️ [CONFIG WARNING] DATABASE_URL is not set in environment variables.');
 }
 
+import crypto from 'crypto';
+
 // ─── JWT Secret Resolution ───────────────────────────────────────────────────
 const DEFAULT_JWT_SECRET = 'sabzi_ledger_jwt_secret_fallback_key_2026_production_safe';
-const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+let resolvedJwtSecret = process.env.JWT_SECRET;
 
-if (isProd && (!process.env.JWT_SECRET || process.env.JWT_SECRET === DEFAULT_JWT_SECRET)) {
-  console.warn('⚠️ [CONFIG WARNING] JWT_SECRET is not explicitly set in production. Using fallback secret. For optimal security, set a custom JWT_SECRET in your hosting dashboard.');
+if (!resolvedJwtSecret) {
+  if (isProd) {
+    resolvedJwtSecret = crypto.randomBytes(48).toString('hex');
+    console.warn('🔒 [SECURITY] No JWT_SECRET set in production. Generated a secure random ephemeral secret for this process runtime.');
+  } else {
+    resolvedJwtSecret = DEFAULT_JWT_SECRET;
+  }
 }
-
-const resolvedJwtSecret = JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 // ─── Server & CORS Configuration ─────────────────────────────────────────────

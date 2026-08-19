@@ -122,6 +122,37 @@ router.get('/active', async (req: Request, res: Response) => {
   }
 });
 
+function validateSalesInput(items: any[], discount: any, deliveryCharge: any, paid?: any): string | null {
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return 'At least one item is required';
+  }
+  for (const item of items) {
+    const qty = Number(item.qty);
+    const rate = Number(item.rate);
+    if (isNaN(qty) || !isFinite(qty) || qty <= 0) {
+      return `Invalid quantity for item "${item.itemName || item.name || 'product'}". Quantity must be greater than 0.`;
+    }
+    if (isNaN(rate) || !isFinite(rate) || rate < 0) {
+      return `Invalid rate for item "${item.itemName || item.name || 'product'}". Rate cannot be negative.`;
+    }
+  }
+  const numDiscount = Number(discount || 0);
+  if (isNaN(numDiscount) || !isFinite(numDiscount) || numDiscount < 0) {
+    return 'Discount cannot be negative';
+  }
+  const numDeliveryCharge = Number(deliveryCharge || 0);
+  if (isNaN(numDeliveryCharge) || !isFinite(numDeliveryCharge) || numDeliveryCharge < 0) {
+    return 'Delivery charge cannot be negative';
+  }
+  if (paid !== undefined) {
+    const numPaid = Number(paid || 0);
+    if (isNaN(numPaid) || !isFinite(numPaid) || numPaid < 0) {
+      return 'Paid amount cannot be negative';
+    }
+  }
+  return null;
+}
+
 // POST /api/sales — Create sale
 router.post('/', async (req: Request, res: Response) => {
   const branchId = req.headers['x-branch-id'] as string;
@@ -140,7 +171,11 @@ router.post('/', async (req: Request, res: Response) => {
   } = req.body;
 
   if (!clientId) return res.status(400).json({ success: false, error: 'Client is required' });
-  if (!items?.length) return res.status(400).json({ success: false, error: 'At least one item is required' });
+  
+  const validationError = validateSalesInput(items, discount, deliveryCharge, paid);
+  if (validationError) {
+    return res.status(400).json({ success: false, error: validationError });
+  }
 
   const client = await prisma.client.findUnique({ where: { id: clientId, deletedAt: null } });
   if (!client) return res.status(404).json({ success: false, error: 'Client not found' });
@@ -467,7 +502,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     notes, employeeId, deliveryDate, deliveryTime, reason,
   } = req.body;
 
-  if (!items?.length) return res.status(400).json({ success: false, error: 'At least one item is required' });
+  const validationError = validateSalesInput(items, discount, deliveryCharge);
+  if (validationError) {
+    return res.status(400).json({ success: false, error: validationError });
+  }
 
   const rawSubtotal = items.reduce((s: number, i: any) => s + (Number(i.qty) * Number(i.rate)), 0);
   const subtotal = Math.round(rawSubtotal);

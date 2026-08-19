@@ -47,15 +47,26 @@ router.post('/', async (req: Request, res: Response) => {
 
     if (!date) return res.status(400).json({ success: false, error: 'Purchase date is required' });
 
+    const numPaid = Number(paid || 0);
+    const numTransport = Number(transportCost || 0);
+    if (isNaN(numPaid) || !isFinite(numPaid) || numPaid < 0) {
+      return res.status(400).json({ success: false, error: 'Paid amount cannot be negative' });
+    }
+    if (isNaN(numTransport) || !isFinite(numTransport) || numTransport < 0) {
+      return res.status(400).json({ success: false, error: 'Transport cost cannot be negative' });
+    }
+
     for (const item of items) {
       if (!item.itemName && !item.name) {
         return res.status(400).json({ success: false, error: 'Product name is required for all items' });
       }
-      if (item.qty <= 0) {
-        return res.status(400).json({ success: false, error: `Quantity for ${item.itemName ?? item.name} must be greater than zero` });
+      const itemQty = Number(item.qty);
+      const itemRate = Number(item.rate);
+      if (isNaN(itemQty) || !isFinite(itemQty) || itemQty <= 0) {
+        return res.status(400).json({ success: false, error: `Quantity for ${item.itemName ?? item.name} must be a positive number` });
       }
-      if (item.rate <= 0) {
-        return res.status(400).json({ success: false, error: `Buy rate for ${item.itemName ?? item.name} must be greater than zero` });
+      if (isNaN(itemRate) || !isFinite(itemRate) || itemRate <= 0) {
+        return res.status(400).json({ success: false, error: `Buy rate for ${item.itemName ?? item.name} must be a positive number` });
       }
     }
 
@@ -207,15 +218,26 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
 
     if (!date) return res.status(400).json({ success: false, error: 'Purchase date is required' });
 
+    const numPaid = Number(paid || 0);
+    const numTransport = Number(transportCost || 0);
+    if (isNaN(numPaid) || !isFinite(numPaid) || numPaid < 0) {
+      return res.status(400).json({ success: false, error: 'Paid amount cannot be negative' });
+    }
+    if (isNaN(numTransport) || !isFinite(numTransport) || numTransport < 0) {
+      return res.status(400).json({ success: false, error: 'Transport cost cannot be negative' });
+    }
+
     for (const item of items) {
       if (!item.itemName && !item.name) {
         return res.status(400).json({ success: false, error: 'Product name is required for all items' });
       }
-      if (item.qty <= 0) {
-        return res.status(400).json({ success: false, error: `Quantity for ${item.itemName ?? item.name} must be greater than zero` });
+      const itemQty = Number(item.qty);
+      const itemRate = Number(item.rate);
+      if (isNaN(itemQty) || !isFinite(itemQty) || itemQty <= 0) {
+        return res.status(400).json({ success: false, error: `Quantity for ${item.itemName ?? item.name} must be a positive number` });
       }
-      if (item.rate <= 0) {
-        return res.status(400).json({ success: false, error: `Buy rate for ${item.itemName ?? item.name} must be greater than zero` });
+      if (isNaN(itemRate) || !isFinite(itemRate) || itemRate <= 0) {
+        return res.status(400).json({ success: false, error: `Buy rate for ${item.itemName ?? item.name} must be a positive number` });
       }
     }
 

@@ -6,6 +6,11 @@ const router = Router();
 
 // GET /api/settings/users
 router.get('/users', async (req: Request, res: Response) => {
+  const role = req.headers['x-user-role'] as string;
+  if (role !== 'OWNER' && role !== 'MANAGER' && role !== 'ADMIN') {
+    return res.status(403).json({ success: false, error: 'Forbidden: Insufficient permissions to view system users' });
+  }
+
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const users = await prisma.user.findMany({

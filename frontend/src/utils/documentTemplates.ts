@@ -19,6 +19,17 @@ import { DEFAULT_LOGO_BASE64 } from './logoBase64';
 import { PRICELIST_LOGO_BASE64 } from './pricelistLogoBase64';
 import { fmtMoney } from './formatters';
 
+// ─── HTML Entity Sanitizer (XSS Prevention) ──────────────────────────────────
+export function escapeHtml(str: string | null | undefined): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // ─── Brand Configuration ───────────────────────────────────────────────────────
 
 export interface BrandConfig {

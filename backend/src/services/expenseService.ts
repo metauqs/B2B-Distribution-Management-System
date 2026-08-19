@@ -189,9 +189,13 @@ export class ExpenseService {
 
       const validUserId = await getValidUserId(userId, tx);
 
+      if (input.amount !== undefined && (isNaN(Number(input.amount)) || !isFinite(Number(input.amount)) || Number(input.amount) <= 0)) {
+        throw new Error('Expense amount must be a positive number');
+      }
+
       // New values
       const newCategory = input.category ? (input.category.toUpperCase() as ExpenseCategory) : existing.category;
-      const newAmount = input.amount !== undefined && input.amount > 0 ? input.amount : existing.amount;
+      const newAmount = input.amount !== undefined && input.amount > 0 ? Number(input.amount) : existing.amount;
       const newDate = input.date ? new Date(input.date) : existing.date;
       const newPaidBy = input.paidBy !== undefined ? (input.paidBy.toUpperCase() as PaymentMethod) : existing.paidBy;
       const newCashAccId = newPaidBy === 'CASH' ? (input.cashAccountId !== undefined ? input.cashAccountId : existing.cashAccountId) : null;
