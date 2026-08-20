@@ -235,7 +235,18 @@ router.post('/', async (req: Request, res: Response) => {
       });
       const previousBalanceDate = lastLedger?.date ?? null;
 
-      // Validate inventory stock availability for all items with productId
+      // 1. Resolve Product IDs for all items if not explicitly provided
+      for (const item of items) {
+        if (!item.productId && (item.itemName || item.name)) {
+          const match = await tx.product.findFirst({
+            where: { name: { equals: String(item.itemName || item.name).trim(), mode: 'insensitive' } },
+            select: { id: true }
+          });
+          if (match) item.productId = match.id;
+        }
+      }
+
+      // 2. Validate inventory stock availability for all items with productId
       for (const item of items) {
         if (item.productId) {
           const inv = await tx.inventory.findUnique({
@@ -345,7 +356,7 @@ router.post('/', async (req: Request, res: Response) => {
           refId: s.id,
           refNo: invoiceNo,
           userId: validatedUserId ?? undefined,
-          date: s.date,
+          date: new Date(),
         });
       }
 

@@ -438,13 +438,13 @@ router.get('/movements', async (req: Request, res: Response) => {
         product: { select: { id: true, name: true, urduName: true, defaultUnit: true, imageUrl: true, emoji: true } },
         user: { select: { id: true, name: true } },
       },
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      orderBy: [{ createdAt: 'desc' }, { date: 'desc' }],
       take: limit,
     });
 
     const data = movements.map(m => ({
       id: m.id,
-      date: m.date,
+      date: m.createdAt || m.date,
       productId: m.productId,
       productName: m.product?.name ?? '—',
       productUrdu: m.product?.urduName ?? '',

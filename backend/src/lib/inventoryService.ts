@@ -29,7 +29,7 @@ export async function recalculateProductStock(
 
   const smList = await db.stockMovement.findMany({
     where: { productId, branchId },
-    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    orderBy: [{ createdAt: 'asc' }, { date: 'asc' }],
     select: { qty: true, type: true, refType: true, newStock: true },
   });
 
