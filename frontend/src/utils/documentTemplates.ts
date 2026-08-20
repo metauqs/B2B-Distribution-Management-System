@@ -18,6 +18,7 @@
 import { DEFAULT_LOGO_BASE64 } from './logoBase64';
 import { PRICELIST_LOGO_BASE64 } from './pricelistLogoBase64';
 import { fmtMoney } from './formatters';
+import { getProductVisual } from '../components/ui/ProductVisual';
 
 // ─── HTML Entity Sanitizer (XSS Prevention) ──────────────────────────────────
 export function escapeHtml(str: string | null | undefined): string {
@@ -671,12 +672,14 @@ function buildFooter(b: BrandConfig, printedLabel: string): string {
   `;
 }
 
-function buildDocShell(b: BrandConfig, title: string, bodyHtml: string): string {
+function buildDocShell(b: BrandConfig, title: string, bodyHtml: string, origin = ''): string {
+  const baseHref = origin || (typeof window !== 'undefined' ? window.location.origin : '');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  ${baseHref ? `<base href="${baseHref}/">` : ''}
   <title>${title} — ${b.companyName}</title>
   <style>${buildDocStyles(b)}</style>
 </head>
@@ -696,89 +699,36 @@ export function getProductHtmlVisual(
   imageUrl?: string | null,
   origin = ''
 ): string {
+  const visualFallback = getProductVisual(name || '');
+  const effectiveEmoji = (emoji && emoji.trim()) || visualFallback.fallback || '🥬';
+  const baseOrigin = origin || (typeof window !== 'undefined' ? window.location.origin : '');
+
   // 1. Highest Priority: Uploaded Image from Product Master (imageUrl)
   if (imageUrl && imageUrl.trim()) {
-    let finalUrl = imageUrl.trim();
-    if (!finalUrl.startsWith('data:') && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-      finalUrl = `${origin}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
+    let rawUrl = imageUrl.trim();
+    if (rawUrl.startsWith('/uploads/products/')) {
+      rawUrl = `/api/products/image/${rawUrl.replace('/uploads/products/', '')}`;
     }
-    return `<img src="${finalUrl}" alt="${name}" style="width:22px;height:22px;object-fit:cover;vertical-align:middle;border-radius:4px;margin-left:6px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:20px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji || '🥬'}</span>`;
+    let finalUrl = rawUrl;
+    if (!finalUrl.startsWith('data:') && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+      finalUrl = `${baseOrigin}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
+    }
+    return `<img src="${finalUrl}" alt="${name}" style="width:24px;height:24px;min-width:24px;min-height:24px;object-fit:cover;vertical-align:middle;border-radius:4px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:20px;margin-left:4px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${effectiveEmoji}</span>`;
   }
 
   // 2. Second Priority: Explicit Product Master Emoji
   if (emoji && emoji.trim()) {
-    return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji.trim()}</span>`;
+    return `<span style="font-size:22px;margin-left:4px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji.trim()}</span>`;
   }
-
-  const n = (name || '').toLowerCase().trim();
 
   // 3. Pre-mapped static image assets
-  if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') {
-    return `<img src="${origin}/ladyfinger.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫛</span>`;
-  }
-  if (n.includes('guava') || n.includes('amrood')) {
-    return `<img src="${origin}/guava.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍏</span>`;
-  }
-  if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) {
-    return `<img src="${origin}/papaya.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍈</span>`;
-  }
-  if (n.includes('pomegranate') || n.includes('anar')) {
-    return `<img src="${origin}/pomegranate.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍎</span>`;
-  }
-  if (n.includes('turnip') || n.includes('shalgam')) {
-    return `<img src="${origin}/turnip.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
-  }
-  if (n.includes('radish') || n.includes('mooli')) {
-    return `<img src="${origin}/radish.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
-  }
-  if (n.includes('beetroot') || n.includes('chukandar')) {
-    return `<img src="${origin}/beetroot.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🫜</span>`;
-  }
-  if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) {
-    return `<img src="${origin}/plum.png" alt="${name}" style="width:18px;height:18px;object-fit:cover;vertical-align:middle;border-radius:2px;margin-left:4px;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:16px;margin-left:4px;vertical-align:middle;">🍑</span>`;
+  if (visualFallback.type === 'image') {
+    const staticUrl = `${baseOrigin}${visualFallback.value.startsWith('/') ? '' : '/'}${visualFallback.value}`;
+    return `<img src="${staticUrl}" alt="${name}" style="width:22px;height:22px;min-width:22px;min-height:22px;object-fit:cover;vertical-align:middle;border-radius:3px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:18px;margin-left:4px;vertical-align:middle;">${visualFallback.fallback}</span>`;
   }
 
-  // 4. Standardized Fallback Emojis
-  let fallbackEmoji = '🥬';
-  if (n.includes('beans') || n.includes('phali')) fallbackEmoji = '🫘';
-  else if (n.includes('bitter') || n.includes('karela')) fallbackEmoji = '🥒';
-  else if (n.includes('bottle') || n.includes('lauki') || n.includes('ghia') || n.includes('gourd') || n.includes('tori') || n.includes('turi') || n.includes('turai')) fallbackEmoji = '🥒';
-  else if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) fallbackEmoji = '🍆';
-  else if (n.includes('broccoli')) fallbackEmoji = '🥦';
-  else if (n.includes('cabbage') || n.includes('gobhi') || n.includes('gobi')) fallbackEmoji = '🥬';
-  else if (n.includes('capsicum') || n.includes('shimla')) fallbackEmoji = '🫑';
-  else if (n.includes('carrot') || n.includes('gajar')) fallbackEmoji = '🥕';
-  else if (n.includes('cauliflower')) fallbackEmoji = '🥦';
-  else if (n.includes('coriander') || n.includes('dhaniya')) fallbackEmoji = '🌿';
-  else if (n.includes('corn') || n.includes('makai') || n.includes('bhutta')) fallbackEmoji = '🌽';
-  else if (n.includes('cucumber') || n.includes('kheera')) fallbackEmoji = '🥒';
-  else if (n.includes('garlic') || n.includes('lehsun')) fallbackEmoji = '🧄';
-  else if (n.includes('ginger') || n.includes('adrak')) fallbackEmoji = '𫚚';
-  else if (n.includes('green chilli') || n.includes('green chili') || n.includes('hari mirch')) fallbackEmoji = '🌶️';
-  else if (n.includes('chilli') || n.includes('chili') || n.includes('mirch')) fallbackEmoji = '🌶️';
-  else if (n.includes('iceberg')) fallbackEmoji = '🥬';
-  else if (n.includes('lemon') || n.includes('limo') || n.includes('nimbu')) fallbackEmoji = '🍋';
-  else if (n.includes('lettuce')) fallbackEmoji = '🥬';
-  else if (n.includes('mint') || n.includes('pudina')) fallbackEmoji = '🌿';
-  else if (n.includes('mushroom')) fallbackEmoji = '🍄';
-  else if (n.includes('onion') || n.includes('piaz') || n.includes('pyaz')) fallbackEmoji = '🧅';
-  else if (n.includes('peas') || n.includes('matar')) fallbackEmoji = '🫛';
-  else if (n.includes('potato') || n.includes('aloo')) fallbackEmoji = '🥔';
-  else if (n.includes('pumpkin') || n.includes('kaddu')) fallbackEmoji = '🎃';
-  else if (n.includes('spinach') || n.includes('palak')) fallbackEmoji = '🥬';
-  else if (n.includes('sweet potato') || n.includes('shakarkandi')) fallbackEmoji = '🍠';
-  else if (n.includes('tomato') || n.includes('tamatar')) fallbackEmoji = '🍅';
-  else if (n.includes('apple') || n.includes('seeb')) fallbackEmoji = '🍎';
-  else if (n.includes('banana') || n.includes('kela')) fallbackEmoji = '🍌';
-  else if (n.includes('grapes') || n.includes('angoor')) fallbackEmoji = '🍇';
-  else if (n.includes('mango') || n.includes('aam')) fallbackEmoji = '🥭';
-  else if (n.includes('melon') || n.includes('kharbooza')) fallbackEmoji = '🍈';
-  else if (n.includes('orange') || n.includes('malta') || n.includes('kinnow')) fallbackEmoji = '🍊';
-  else if (n.includes('peach') || n.includes('aaroo')) fallbackEmoji = '🍑';
-  else if (n.includes('pear') || n.includes('nashpati')) fallbackEmoji = '🍐';
-  else if (n.includes('watermelon') || n.includes('tarbooz')) fallbackEmoji = '🍉';
-
-  return `<span style="font-size:22px;margin-left:6px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${fallbackEmoji}</span>`;
+  // 4. Standardized Fallback Emoji
+  return `<span style="font-size:22px;margin-left:4px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${effectiveEmoji}</span>`;
 }
 
 // ─── Invoice Types ────────────────────────────────────────────────────────────
@@ -1067,7 +1017,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
     ${footer}
   `;
 
-  return buildDocShell(brand, `Invoice #${inv.invoiceNo}`, body);
+  return buildDocShell(brand, `Invoice #${inv.invoiceNo}`, body, origin);
 }
 
 // ─── Statement Types ──────────────────────────────────────────────────────────
@@ -1199,7 +1149,7 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
     ${footer}
   `;
 
-  return buildDocShell(brand, `Due Statement — ${stmt.clientName}`, body);
+  return buildDocShell(brand, `Due Statement — ${stmt.clientName}`, body, origin);
 }
 
 
@@ -1507,7 +1457,7 @@ export function generatePurchaseHTML(pur: PurchaseData, brand: BrandConfig, orig
     ${footer}
   `;
 
-  return buildDocShell(brand, `Purchase Voucher #${pur.voucherNo}`, body);
+  return buildDocShell(brand, `Purchase Voucher #${pur.voucherNo}`, body, origin);
 }
 
 // ─── Outstanding Dues Statement Types ──────────────────────────────────────────
@@ -1661,7 +1611,7 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
     ${footer}
   `;
 
-  return buildDocShell(brand, `Outstanding Due Statement — ${data.clientName}`, body);
+  return buildDocShell(brand, `Outstanding Due Statement — ${data.clientName}`, body, origin);
 }
 
 // ─── Collection Receipt Slip HTML Generator ─────────────────────────────────────
@@ -1837,7 +1787,7 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
     ${footer}
   `;
 
-  return buildDocShell(brand, `Payment Receipt — ${data.clientName}`, body);
+  return buildDocShell(brand, `Payment Receipt — ${data.clientName}`, body, origin);
 }
 
 export interface DailyPaymentHistoryDocData {
@@ -1948,7 +1898,7 @@ export function generateDailyPaymentHistoryHTML(data: DailyPaymentHistoryDocData
     ${footer}
   `;
 
-  return buildDocShell(brand, `Daily Payment History — ${data.businessDate}`, body);
+  return buildDocShell(brand, `Daily Payment History — ${data.businessDate}`, body, origin);
 }
 
 // ─── Print Helpers ────────────────────────────────────────────────────────────
@@ -2200,12 +2150,18 @@ export async function generateTemplateJpgBase64(html: string): Promise<string> {
   if (!html || typeof window === 'undefined') return '';
 
   const TARGET_WIDTH = 794;
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('token') || '') : '';
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   // ── Step 1: Direct High-Speed Backend JPEG Screenshot ─────────────────────
   try {
     const res = await fetch('/api/render/jpeg', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
+      credentials: 'include',
       body: JSON.stringify({ html, width: TARGET_WIDTH, quality: 88 }),
       signal: AbortSignal.timeout(15000),
     });
@@ -2227,7 +2183,8 @@ export async function generateTemplateJpgBase64(html: string): Promise<string> {
   try {
     const pngRes = await fetch('/api/render/png', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
+      credentials: 'include',
       body: JSON.stringify({ html, width: TARGET_WIDTH }),
       signal: AbortSignal.timeout(15000),
     });
@@ -2259,12 +2216,18 @@ export async function generateTemplateImageBase64(html: string): Promise<string>
   if (typeof window === 'undefined') return '';
 
   const TARGET_WIDTH = 794; // A4 standard width (renders at 3.5x scale = 2779px Full HD edge-to-edge)
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('token') || '') : '';
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   // ── Step 1: PDF → pdfjs-dist → canvas ──────────────────────────────────────
   try {
     const pdfRes = await fetch('/api/render/pdf', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
+      credentials: 'include',
       body: JSON.stringify({ html, width: TARGET_WIDTH }),
       signal: AbortSignal.timeout(30000),
     });
@@ -2300,7 +2263,8 @@ export async function generateTemplateImageBase64(html: string): Promise<string>
   try {
     const pngRes = await fetch('/api/render/png', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
+      credentials: 'include',
       body: JSON.stringify({ html, width: TARGET_WIDTH }),
       signal: AbortSignal.timeout(30000),
     });

@@ -69,6 +69,16 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
   maxAge: '1d',
 }));
 
+// Public product image serving (MUST be before authMiddleware for <img> tags in documents)
+import { serveProductImageOrFallback } from './routes/products';
+app.get('/api/products/image/:filename', (req, res) => {
+  return serveProductImageOrFallback(req.params.filename, res, false);
+});
+
+app.get('/api/products/:id/image', async (req, res) => {
+  return serveProductImageOrFallback(req.params.id, res, true);
+});
+
 // Public routes
 app.use('/api/auth', authRouter);
 

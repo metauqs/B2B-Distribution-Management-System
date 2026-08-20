@@ -1,8 +1,50 @@
 import { Router } from 'express';
 import puppeteer from 'puppeteer';
 import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
+
+// ── Local Asset Resolver for Puppeteer Headless Rendering ──────────────────────
+function resolveLocalAsset(urlStr: string): { filePath: string; contentType: string } | null {
+  try {
+    const cleanUrl = urlStr.split('?')[0].split('#')[0];
+    const filename = path.basename(cleanUrl);
+    if (!filename) return null;
+
+    const ext = path.extname(filename).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.gif': 'image/gif',
+    };
+    const contentType = mimeTypes[ext] || 'image/png';
+
+    const searchDirs = [
+      path.resolve(__dirname, '../../uploads/products'),
+      path.resolve(__dirname, '../uploads/products'),
+      path.resolve(process.cwd(), 'uploads/products'),
+      path.resolve(__dirname, '../../../frontend/public/uploads/products'),
+      path.resolve(__dirname, '../../../frontend/public'),
+      path.resolve(process.cwd(), '../frontend/public'),
+      path.resolve(process.cwd(), 'public'),
+    ];
+
+    for (const dir of searchDirs) {
+      const candidate = path.join(dir, filename);
+      if (fs.existsSync(candidate)) {
+        return { filePath: candidate, contentType };
+      }
+    }
+  } catch (err) {
+    console.warn('[resolveLocalAsset error]', err);
+  }
+  return null;
+}
 
 // ── Shared Singleton Puppeteer Browser Instance ────────────────────────────────
 let sharedBrowser: any = null;
@@ -24,6 +66,50 @@ async function getSharedBrowser() {
     });
   }
   return sharedBrowser;
+}
+
+import { getProductFallbackEmoji, generateProductSvgFallback } from './products';
+
+async function setupRenderPage(browser: any, width: number, scaleFactor = 2.5) {
+  const page = await browser.newPage();
+  const requestedWidth = Number(width) || 794;
+  await page.setViewport({ width: requestedWidth, height: 1123, deviceScaleFactor: scaleFactor });
+
+  await page.setRequestInterception(true);
+  page.on('request', (req: any) => {
+    const url = req.url();
+    const asset = resolveLocalAsset(url);
+    if (asset) {
+      try {
+        const body = fs.readFileSync(asset.filePath);
+        return req.respond({
+          status: 200,
+          contentType: asset.contentType,
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body,
+        });
+      } catch (e) {
+        console.warn(`[Puppeteer Intercept] Failed to read ${asset.filePath}:`, e);
+      }
+    }
+
+    // If it's a product image URL that was not found on disk, return crisp SVG fallback
+    if (url.includes('/api/products/image/') || url.includes('/uploads/products/')) {
+      const filename = path.basename(url.split('?')[0]);
+      const fallbackEmoji = getProductFallbackEmoji(filename);
+      const svg = generateProductSvgFallback(fallbackEmoji);
+      return req.respond({
+        status: 200,
+        contentType: 'image/svg+xml',
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: Buffer.from(svg, 'utf-8'),
+      });
+    }
+
+    req.continue();
+  });
+
+  return page;
 }
 
 // ── In-Memory Hash Cache for Rendered JPGs / PNGs ──────────────────────────────
@@ -78,9 +164,8 @@ router.post('/jpeg', async (req, res) => {
     const browserTime = Date.now() - bStart;
 
     const pageStart = Date.now();
-    page = await browser.newPage();
     const requestedWidth = Number(width) || 794;
-    await page.setViewport({ width: requestedWidth, height: 1123, deviceScaleFactor: 2.5 });
+    page = await setupRenderPage(browser, requestedWidth, 2.5);
 
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
@@ -146,9 +231,8 @@ router.post('/png', async (req, res) => {
   let page: any = null;
   try {
     const browser = await getSharedBrowser();
-    page = await browser.newPage();
     const requestedWidth = Number(width) || 794;
-    await page.setViewport({ width: requestedWidth, height: 1123, deviceScaleFactor: 2.5 });
+    page = await setupRenderPage(browser, requestedWidth, 2.5);
 
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
@@ -184,9 +268,8 @@ router.post('/pdf', async (req, res) => {
   let page: any = null;
   try {
     const browser = await getSharedBrowser();
-    page = await browser.newPage();
     const requestedWidth = Number(width) || 794;
-    await page.setViewport({ width: requestedWidth, height: 1123, deviceScaleFactor: 2 });
+    page = await setupRenderPage(browser, requestedWidth, 2.0);
 
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 

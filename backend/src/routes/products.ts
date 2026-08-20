@@ -69,7 +69,7 @@ function getUploadDirectories() {
   return [...new Set(dirs)];
 }
 
-function findImageFile(filename: string): string | null {
+export function findImageFile(filename: string): string | null {
   const safeFilename = path.basename(filename);
   for (const dir of getUploadDirectories()) {
     const candidate = path.join(dir, safeFilename);
@@ -78,48 +78,143 @@ function findImageFile(filename: string): string | null {
   return null;
 }
 
-// GET /api/products/image/:filename — Public product image serving
-router.get('/image/:filename', (req: Request, res: Response) => {
-  const { filename } = req.params;
-  const filePath = findImageFile(filename);
-  if (filePath) {
+export function getProductFallbackEmoji(name: string): string {
+  const n = (name || '').toLowerCase().trim();
+
+  // Pre-mapped images / special fruits
+  if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') return '🫛';
+  if (n.includes('guava') || n.includes('amrood')) return '🍏';
+  if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) return '🍈';
+  if (n.includes('pomegranate') || n.includes('anar')) return '🍎';
+  if (n.includes('turnip') || n.includes('shalgam')) return '🫜';
+  if (n.includes('radish') || n.includes('mooli')) return '🫜';
+  if (n.includes('beetroot') || n.includes('chukandar')) return '🫜';
+  if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) return '🍑';
+
+  // Vegetables
+  if (n.includes('beans') || n.includes('phali')) return '🫘';
+  if (n.includes('bitter') || n.includes('karela')) return '🥒';
+  if (n.includes('bottle') || n.includes('lauki') || n.includes('ghia') || n.includes('gourd') || n.includes('tori') || n.includes('turi') || n.includes('turai')) return '🥒';
+  if (n.includes('brinjal') || n.includes('baingan') || n.includes('eggplant')) return '🍆';
+  if (n.includes('broccoli')) return '🥦';
+  if (n.includes('cabbage') || n.includes('gobhi') || n.includes('gobi')) return '🥬';
+  if (n.includes('capsicum') || n.includes('shimla')) return '🫑';
+  if (n.includes('carrot') || n.includes('gajar')) return '🥕';
+  if (n.includes('cauliflower')) return '🥦';
+  if (n.includes('coriander') || n.includes('dhaniya')) return '🌿';
+  if (n.includes('corn') || n.includes('makai') || n.includes('bhutta')) return '🌽';
+  if (n.includes('cucumber') || n.includes('kheera')) return '🥒';
+  if (n.includes('garlic') || n.includes('lehsun')) return '🧄';
+  if (n.includes('ginger') || n.includes('adrak')) return '🫚';
+  if (n.includes('green chilli') || n.includes('green chili') || n.includes('hari mirch')) return '🌶️';
+  if (n.includes('chilli') || n.includes('chili') || n.includes('mirch')) return '🌶️';
+  if (n.includes('iceberg')) return '🥬';
+  if (n.includes('lemon') || n.includes('limo') || n.includes('nimbu')) return '🍋';
+  if (n.includes('lettuce')) return '🥬';
+  if (n.includes('mint') || n.includes('pudina')) return '🌿';
+  if (n.includes('mushroom')) return '🍄';
+  if (n.includes('onion') || n.includes('piaz') || n.includes('pyaz')) return '🧅';
+  if (n.includes('peas') || n.includes('matar')) return '🫛';
+  if (n.includes('potato') || n.includes('aloo')) return '🥔';
+  if (n.includes('pumpkin') || n.includes('kaddu')) return '🎃';
+  if (n.includes('spinach') || n.includes('palak')) return '🥬';
+  if (n.includes('sweet potato') || n.includes('shakarkandi')) return '🍠';
+  if (n.includes('tomato') || n.includes('tamatar')) return '🍅';
+  if (n.includes('spring onion') || n.includes('hari piaz')) return '🧅';
+  if (n.includes('arvi')) return '🥔';
+
+  // Fruits
+  if (n.includes('apple') || n.includes('seeb')) return '🍎';
+  if (n.includes('banana') || n.includes('kela')) return '🍌';
+  if (n.includes('grapes') || n.includes('angoor')) return '🍇';
+  if (n.includes('mango') || n.includes('aam')) return '🥭';
+  if (n.includes('melon') || n.includes('kharbooza')) return '🍈';
+  if (n.includes('orange') || n.includes('malta') || n.includes('kinnow')) return '🍊';
+  if (n.includes('peach') || n.includes('aaroo')) return '🍑';
+  if (n.includes('pear') || n.includes('nashpati')) return '🍐';
+  if (n.includes('watermelon') || n.includes('tarbooz')) return '🍉';
+
+  return '🥬';
+}
+
+export function generateProductSvgFallback(emoji: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#F4F8F4" stroke="#E2EFE3" stroke-width="2"/>
+  <text x="50%" y="55%" font-size="36" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif">${emoji}</text>
+</svg>`;
+}
+
+function sendSvg(res: any, svg: string) {
+  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  if (typeof res.send === 'function') {
+    return res.send(svg);
+  }
+  res.end(svg);
+}
+
+export async function serveProductImageOrFallback(filenameOrId: string, res: Response, isId = false) {
+  const safeFilename = path.basename(filenameOrId.split('?')[0]);
+  let filePath = isId ? null : findImageFile(safeFilename);
+
+  if (filePath && fs.existsSync(filePath)) {
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     return res.sendFile(filePath);
   }
-  return res.status(404).json({ success: false, error: 'Image not found' });
-});
 
-// GET /api/products/:id/image — Serve image by Product ID
-router.get('/:id/image', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // Look up product in DB to find its name/emoji
   try {
-    const product = await prisma.product.findUnique({ where: { id }, select: { imageUrl: true } });
-    if (!product || !product.imageUrl) {
-      return res.status(404).json({ success: false, error: 'No image found for product' });
+    let product: any = null;
+    if (isId) {
+      product = await prisma.product.findUnique({ where: { id: filenameOrId }, select: { name: true, emoji: true, imageUrl: true } });
+    } else {
+      product = await prisma.product.findFirst({
+        where: { imageUrl: { contains: safeFilename } },
+        select: { name: true, emoji: true, imageUrl: true },
+      });
     }
 
-    if (product.imageUrl.startsWith('data:image/')) {
+    if (product && product.imageUrl && product.imageUrl.startsWith('data:image/')) {
       const match = product.imageUrl.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/);
       if (match) {
         const mimeType = match[1];
         const buffer = Buffer.from(match[2], 'base64');
         res.setHeader('Content-Type', mimeType);
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        return res.send(buffer);
+        if (typeof (res as any).send === 'function') {
+          return (res as any).send(buffer);
+        }
+        return res.end(buffer);
       }
     }
 
-    const filename = path.basename(product.imageUrl.split('?')[0]);
-    const filePath = findImageFile(filename);
-    if (filePath) {
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      return res.sendFile(filePath);
+    if (product && product.imageUrl && !isId) {
+      const altFile = path.basename(product.imageUrl.split('?')[0]);
+      const altPath = findImageFile(altFile);
+      if (altPath && fs.existsSync(altPath)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return res.sendFile(altPath);
+      }
     }
 
-    return res.status(404).json({ success: false, error: 'Image file not found on server' });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    const emoji = (product?.emoji && product.emoji.trim()) || getProductFallbackEmoji(product?.name || safeFilename);
+    const svg = generateProductSvgFallback(emoji);
+    return sendSvg(res, svg);
+  } catch (err) {
+    const fallbackEmoji = getProductFallbackEmoji(safeFilename);
+    const svg = generateProductSvgFallback(fallbackEmoji);
+    return sendSvg(res, svg);
   }
+}
+
+// GET /api/products/image/:filename — Public product image serving (with 100% SVG fallback guarantee)
+router.get('/image/:filename', (req: Request, res: Response) => {
+  return serveProductImageOrFallback(req.params.filename, res, false);
+});
+
+// GET /api/products/:id/image — Serve image by Product ID (with 100% SVG fallback guarantee)
+router.get('/:id/image', async (req: Request, res: Response) => {
+  return serveProductImageOrFallback(req.params.id, res, true);
 });
 
 // POST /api/products
