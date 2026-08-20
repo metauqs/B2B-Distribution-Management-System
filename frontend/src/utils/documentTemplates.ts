@@ -2150,7 +2150,7 @@ export async function generateTemplateJpgBase64(html: string): Promise<string> {
   if (!html || typeof window === 'undefined') return '';
 
   const TARGET_WIDTH = 794;
-  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('token') || '') : '';
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('sabzi_token') || localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('sabzi_token') || sessionStorage.getItem('token') || '') : '';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -2216,7 +2216,7 @@ export async function generateTemplateImageBase64(html: string): Promise<string>
   if (typeof window === 'undefined') return '';
 
   const TARGET_WIDTH = 794; // A4 standard width (renders at 3.5x scale = 2779px Full HD edge-to-edge)
-  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('token') || '') : '';
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('sabzi_token') || localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('sabzi_token') || sessionStorage.getItem('token') || '') : '';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
