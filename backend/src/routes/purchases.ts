@@ -12,7 +12,7 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { limit: limitQuery } = req.query;
-    const limit = Math.min(parseInt(String(limitQuery ?? '50')), 200);
+    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 50000) : 10000;
 
     const purchases = await prisma.purchase.findMany({
       where: { ...(branchId ? { branchId } : {}), deletedAt: null },
@@ -20,8 +20,8 @@ router.get('/', async (req: Request, res: Response) => {
         supplier: { select: { id: true, name: true } },
         items: { include: { product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } } } }
       },
-      orderBy: { date: 'asc' },
-      take: limit,
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      ...(limit ? { take: limit } : {}),
     });
 
     return res.json({ success: true, data: purchases });

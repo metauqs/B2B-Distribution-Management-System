@@ -148,7 +148,7 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { clientId, employeeId, method, search, from, to, limit: limitQuery } = req.query;
-    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 500) : 100;
+    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 50000) : (clientId || from || to ? undefined : 10000);
 
     const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
     const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
@@ -193,7 +193,7 @@ router.get('/', async (req: Request, res: Response) => {
         }
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      take: limit,
+      ...(limit ? { take: limit } : {}),
     });
 
     if (collections.length === 0) {

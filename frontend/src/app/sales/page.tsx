@@ -288,7 +288,7 @@ export default function SalesPage() {
   const loadSales = useCallback(async (isBackground = false) => {
     if (!isBackground && sales.length === 0) setLoading(true);
     try {
-      const p = new URLSearchParams({ limit: '200' });
+      const p = new URLSearchParams({ limit: '1000' });
       if (debouncedSrchInv)      p.set('search', debouncedSrchInv);
       if (filterSt !== 'all')   p.set('status', filterSt);
       if (filterMode !== 'all') p.set('mode', filterMode);

@@ -56,7 +56,7 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { clientId, status, mode, search, from, to, limit: limitQuery } = req.query;
-    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 5000) : 200;
+    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 100000) : (clientId || from || to ? undefined : 10000);
 
     const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
     const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
@@ -95,8 +95,8 @@ router.get('/', async (req: Request, res: Response) => {
         items: { include: { product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } } } },
         employee: { select: { id: true, name: true, role: true, phone: true } },
       },
-      orderBy: { date: 'asc' },
-      take: limit,
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      ...(limit ? { take: limit } : {}),
     });
 
     return res.json({ success: true, data: sales });
