@@ -956,13 +956,14 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
           <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Total Payable Amount</div>
         </div>
       </div>
+      ${inv.paid > 0 ? `
       <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
         <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #166534;">Rs ${inv.paid.toLocaleString()}</span>
         <div style="text-align: right;">
           <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #166534; line-height: 1.2;">وصول شدہ رقم</div>
           <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Amount Paid Today</div>
         </div>
-      </div>
+      </div>` : ''}
       <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: ${brand.primaryColor}; color: #FFFFFF; direction: ltr;">
         <span style="font-family: 'Lora', Georgia, serif; font-weight: 900; font-size: 18px; color: #FFFFFF;">Rs ${Math.max(0, remaining).toLocaleString()}</span>
         <div style="text-align: right;">
