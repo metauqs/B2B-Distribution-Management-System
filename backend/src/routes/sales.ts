@@ -432,7 +432,7 @@ router.post('/', async (req: Request, res: Response) => {
       await recalculateClientLedgerAndBalance(clientId, tx);
 
       return s;
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 15000, timeout: 120000 });
 
     // Non-blocking credit rating update outside transaction
     updateClientCreditRating(clientId).catch(err =>
@@ -773,7 +773,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       });
 
       return updated;
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 15000, timeout: 120000 });
 
     const clientToUpdate = (updatedSale as any)?.clientId;
     if (clientToUpdate) {
@@ -904,7 +904,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       await recalculateClientLedgerAndBalance(sale.clientId, tx);
 
       return { sale: updatedSale, collection: coll };
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 15000, timeout: 120000 });
 
     await writeAuditLog({
       userId: userId ?? undefined,
@@ -993,7 +993,7 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
       }
 
       return cancelledSale;
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 15000, timeout: 120000 });
 
     await writeAuditLog({
       userId: userId ?? undefined,

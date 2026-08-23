@@ -69,7 +69,7 @@ router.get('/', async (req: Request, res: Response) => {
           where: { id: { in: salesToUpdate } },
           data: { deliveryStatus: 'OUT' },
         });
-      }, { maxWait: 10000, timeout: 30000 });
+      }, { maxWait: 15000, timeout: 120000 });
     }
 
     // Enforce role-scoped delivery filtering for DELIVERY_STAFF users
@@ -252,7 +252,7 @@ router.patch('/', async (req: Request, res: Response) => {
         }
 
         return updatedDelivery;
-      }, { timeout: 30000 });
+      }, { maxWait: 15000, timeout: 120000 });
 
       return res.json({ success: true, data: result });
     }
@@ -428,7 +428,7 @@ router.post('/return', async (req: Request, res: Response) => {
           employee: true
         }
       });
-    }, { timeout: 30000 });
+    }, { maxWait: 15000, timeout: 120000 });
 
     return res.json({ success: true, data: result });
   } catch (err: any) {

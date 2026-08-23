@@ -528,7 +528,7 @@ router.post('/', async (req: Request, res: Response) => {
         },
         allocations: formattedAllocations,
       };
-    }, { maxWait: 15000, timeout: 60000 });
+    }, { maxWait: 15000, timeout: 120000 });
 
     await writeAuditLog({
       userId: userId ?? undefined,

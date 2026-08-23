@@ -206,7 +206,7 @@ router.post('/', async (req: Request, res: Response) => {
         userId,
         date: date ? new Date(date) : new Date(),
       });
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 15000, timeout: 120000 });
 
     return res.status(201).json({ success: true, data: result });
   } catch (err: any) {
@@ -247,7 +247,7 @@ router.post('/adjust', async (req: Request, res: Response) => {
         remarks: remarks?.trim() || undefined,
         userId,
       });
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 15000, timeout: 120000 });
 
     return res.status(201).json({ success: true, data: result });
   } catch (err: any) {
