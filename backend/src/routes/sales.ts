@@ -210,6 +210,33 @@ router.post('/', async (req: Request, res: Response) => {
   const balance = Math.abs(rawBal) < 1.0 ? 0 : Math.max(0, Math.round(rawBal));
   const status = deriveInvoiceStatus(total, paidAmt);
 
+  // ── Belt-and-Suspenders Idempotency Guard ─────────────────────────────────
+  // Even if the global middleware replayed the response, this ensures the
+  // business layer never executes the invoice creation transaction twice for
+  // the same logical submission. Reads the same header the middleware uses.
+  const rawIdempKey = (req.headers['idempotency-key'] as string)?.trim();
+  if (rawIdempKey) {
+    const windowStart = new Date(Date.now() - 5 * 60 * 1000); // 5-minute window
+    const existingSale = await prisma.sale.findFirst({
+      where: {
+        clientId,
+        branchId,
+        createdAt: { gte: windowStart },
+        idempotencyKey: rawIdempKey,
+      },
+      include: {
+        items: { include: { product: true } },
+        client: { select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, address: true, deliveryLocation: true } },
+        deliveries: { include: { driver: true, vehicle: true, employee: true } },
+        employee: true,
+      },
+    });
+    if (existingSale) {
+      console.log(`[POST /api/sales] Idempotency replay: returning existing invoice ${existingSale.invoiceNo} for key ${rawIdempKey}`);
+      return res.status(200).json({ success: true, data: existingSale, replayed: true });
+    }
+  }
+
   const startTime = Date.now();
   try {
     const sale = await prisma.$transaction(async tx => {
@@ -307,6 +334,7 @@ router.post('/', async (req: Request, res: Response) => {
           employeeId: employeeId || undefined,
           deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
           deliveryTime: deliveryTime || undefined,
+          idempotencyKey: rawIdempKey || undefined,
           items: {
             create: itemsWithCost.map((i: any) => ({
               productId: i.productId || undefined,

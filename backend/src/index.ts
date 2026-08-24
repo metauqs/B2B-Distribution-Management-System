@@ -59,7 +59,6 @@ app.use(cors({
 
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
-app.use(idempotencyMiddleware);
 app.use(requestLogger);
 
 // Static uploads serving (disallow dotfiles and directory indexing)
@@ -100,6 +99,10 @@ app.get('/api/health', (req, res) => {
 
 // Protected routes (Authentication strictly required)
 app.use(authMiddleware);
+// Idempotency middleware runs after auth so req.user is populated —
+// this ensures idempotency keys are scoped per-user and per-branch,
+// preventing cross-user key collisions and stale reclaims.
+app.use(idempotencyMiddleware);
 app.use('/api/render', renderRateLimiter, renderRouter);
 app.use('/api/clients', clientsRouter);
 app.use('/api/sales', salesRouter);

@@ -179,6 +179,7 @@ model Sale {
   failureReason       String?
   branchId            String
   userId              String?
+  idempotencyKey      String?           // Stores the frontend Idempotency-Key for duplicate prevention
   createdAt           DateTime @db.Timestamptz(3)          @default(now())
   updatedAt           DateTime @db.Timestamptz(3)          @updatedAt
   deletedAt           DateTime? @db.Timestamptz(3)
@@ -208,6 +209,7 @@ model Sale {
   @@index([clientId, status, deletedAt])
   @@index([clientId, date])
   @@index([status, date])
+  @@index([idempotencyKey])
   @@map("sales")
 }
 

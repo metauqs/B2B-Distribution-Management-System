@@ -672,6 +672,7 @@ export default function SalesPage() {
           }),
         });
         const data = await res.json();
+        // Handle idempotency replay — backend returned the already-created invoice
         if (res.ok && data.success) {
           invalidateCache('/api/sales');
           invalidateCache('/api/clients');
@@ -679,9 +680,14 @@ export default function SalesPage() {
           invalidateCache('/api/collections');
           invalidateCache('/api/reports');
           window.dispatchEvent(new Event('app-revalidate'));
-          showToast(`✅ Invoice ${data.data.invoiceNo} created`);
+          showToast(`✅ Invoice ${data.data.invoiceNo} ${data.replayed ? 'retrieved (already created)' : 'created'}`);
           await loadSales(true);
           openDetail(data.data);
+        } else if (res.status === 409 && data.inProgress) {
+          // Invoice is currently being generated — do NOT show error, do NOT allow retry
+          // The useIdempotentSubmit inFlightRef is already blocking further clicks.
+          // Show a clear waiting message so the admin does not click again.
+          showToast('⏳ Invoice is being generated — please wait, do not click again.');
         } else {
           showToast('❌ ' + (data.error ?? 'Failed'));
         }
@@ -1670,10 +1676,21 @@ export default function SalesPage() {
                       style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6 }} />
                   </div>
 
-                  <button className="va-btn" style={{ width: '100%', marginTop: 14, fontSize: 15, padding: '12px', background: editingSale ? 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)' : undefined }}
-                    onClick={handleSubmit} disabled={isSubmittingInvoice || saving} aria-busy={isSubmittingInvoice || saving}>
-                    {isSubmittingInvoice || saving ? 'Processing…' : editingSale ? `✓ Save Changes to Invoice #${editingSale.invoiceNo}` : '✓ Generate Invoice'}
-                  </button>
+                  <form onSubmit={e => { e.preventDefault(); handleSubmit(); }} style={{ marginTop: 14 }}>
+                    <button
+                      type="submit"
+                      className="va-btn"
+                      style={{ width: '100%', fontSize: 15, padding: '12px', background: editingSale ? 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)' : undefined }}
+                      disabled={isSubmittingInvoice || saving}
+                      aria-busy={isSubmittingInvoice || saving}
+                    >
+                      {isSubmittingInvoice || saving
+                        ? 'Generating…'
+                        : editingSale
+                          ? `✓ Save Changes to Invoice #${editingSale.invoiceNo}`
+                          : '✓ Generate Invoice'}
+                    </button>
+                  </form>
                 </div>
               </div>
             </>

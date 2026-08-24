@@ -29,7 +29,9 @@ export async function claimIdempotencyKey(
   if (!scopedKey) return { isDuplicate: false };
 
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hr TTL
-  const STALE_THRESHOLD_MS = 60 * 1000; // 60s considered stale if abandoned in PROCESSING
+  // Must exceed the max transaction timeout (120s) + network overhead.
+  // If a record stays PROCESSING for longer than this, the server likely crashed.
+  const STALE_THRESHOLD_MS = 150 * 1000; // 150s — safely above the 120s tx timeout
 
   // 1. Attempt atomic insert
   try {
@@ -143,10 +145,10 @@ export async function idempotencyMiddleware(
       
       const resObj = claim.record.response as Record<string, any> | null;
 
-      // If the original request is still processing, wait briefly
+      // If the original request is still processing, poll until it completes.
+      // Poll for up to 30 seconds (150 × 200ms) — covers the full 120s tx timeout.
       if (claim.record.statusCode === 202 || resObj?.status === 'PROCESSING') {
-        // Poll for up to 3 seconds for the original request to complete
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 150; i++) {
           await new Promise(r => setTimeout(r, 200));
           const updated = await prisma.idempotencyRecord.findUnique({ where: { key: scopedKey } });
           const updatedRes = updated?.response as Record<string, any> | null;
@@ -155,11 +157,11 @@ export async function idempotencyMiddleware(
           }
         }
 
-        // If still processing after 3 seconds, inform client to wait
+        // Still processing after 30 seconds — inform client to wait and retry
         return res.status(409).json({
           success: false,
           inProgress: true,
-          error: 'This operation is currently processing. Please wait a moment and refresh.'
+          error: 'Invoice is being generated. Please wait a moment — do not click again. Your invoice will appear shortly.'
         });
       }
 
