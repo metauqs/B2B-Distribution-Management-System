@@ -18,8 +18,11 @@ interface ClientInfo {
   id: string;
   name: string;
   clientId?: string;
+  type?: string;
   phone?: string;
   whatsapp?: string;
+  address?: string;
+  deliveryLocation?: string;
   openingBalance?: number;
   currentBalance?: number;
 }
@@ -62,8 +65,11 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
         const html = generateOutstandingDueStatementHTML({
           clientName: client.name,
           clientId: client.clientId,
+          clientType: client.type,
           phone: client.phone,
           whatsapp: client.whatsapp,
+          address: client.address,
+          deliveryLocation: client.deliveryLocation,
           openingBalance: openBal,
           invoices: invoices.map(inv => ({
             invoiceNo: inv.invoiceNo,
@@ -172,8 +178,8 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
         backgroundColor: '#ffffff',
         borderRadius: '16px',
         width: '100%',
-        maxWidth: mode === 'share' ? '540px' : '750px',
-        maxHeight: '90vh',
+        maxWidth: '820px',
+        maxHeight: '92vh',
         display: 'flex',
         flexDirection: 'column',
         boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)',
@@ -189,7 +195,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
           backgroundColor: '#f8f9fa'
         }}>
           <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--ink)' }}>
-            {mode === 'view' ? '🔍 Outstanding Dues Breakdown' : '✉️ Send Due Statement'}
+            {mode === 'view' ? '🔍 Outstanding Dues Breakdown' : '✉️ Due Statement Preview & Share'}
           </h3>
           <button 
             onClick={onClose} 
@@ -274,7 +280,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
                 overflow: 'hidden',
                 width: '100%',
                 backgroundColor: '#ffffff',
-                maxHeight: '60vh',
+                maxHeight: '65vh',
                 overflowY: 'auto'
               }}>
                 {imageUrl ? (
@@ -283,7 +289,7 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
                   <iframe
                     srcDoc={htmlContent}
                     title="Statement Preview"
-                    style={{ width: '100%', height: '480px', border: 'none', background: '#fff' }}
+                    style={{ width: '100%', height: '560px', border: 'none', background: '#fff' }}
                   />
                 ) : (
                   <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--muted)' }}>

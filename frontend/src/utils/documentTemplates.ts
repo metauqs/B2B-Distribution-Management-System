@@ -1054,103 +1054,222 @@ export interface StatementData {
 export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, origin = ''): string {
   const today = stmt.statementDate ||
     new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Karachi' });
+  const time = new Date().toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi',
+  }).toLowerCase();
   const printedOn = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Karachi' });
   const isCredit = stmt.currentBalance <= 0;
+  const statusClass = isCredit ? 'PAID' : 'UNPAID';
 
-  const header = buildHeader(
-    brand,
-    'DUE STATEMENT',
-    `As of ${today}`,
-    `Client: ${stmt.clientId || '—'}`,
-    origin,
-    'واجب الادا تفصیل'
-  );
+  const logoSrc = (brand.logoUrl && (brand.logoUrl.startsWith('data:') || brand.logoUrl.startsWith('http')))
+    ? brand.logoUrl
+    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
 
+  const clientPhone = stmt.phone ?? '';
   const whatsappLine = stmt.whatsapp && stmt.whatsapp !== stmt.phone ? ` · WA: ${stmt.whatsapp}` : '';
   const addrLine = [stmt.address, stmt.deliveryLocation ? `Delivery: ${stmt.deliveryLocation}` : ''].filter(Boolean).join(' · ');
 
-  const infoGrid = `
-    <div class="doc-info-grid">
-      <div class="doc-info-box">
-        <div class="doc-info-label-urdu">کلائنٹ <span class="doc-info-sub-eng">(Client)</span></div>
-        <div class="doc-info-value large">${stmt.clientName}</div>
-        ${stmt.ownerName ? `<div class="doc-info-value" style="font-size:11px;color:#7A8C79;">Owner: ${stmt.ownerName}</div>` : ''}
-        ${stmt.phone ? `<div class="doc-info-value" style="font-size:11px;">📞 ${stmt.phone}${whatsappLine}</div>` : ''}
-        ${addrLine ? `<div class="doc-info-value" style="font-size:11px;color:#7A8C79;">${addrLine}</div>` : ''}
+  // ── Header (Exact Invoice Match) ──
+  const header = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 14px; border-bottom: 3px solid ${brand.primaryColor}; margin-bottom: 18px; direction: ltr;">
+      <!-- Left: Logo & Tagline -->
+      <div style="text-align: left; display: flex; flex-direction: column; align-items: flex-start;">
+        <img class="doc-header-logo" src="${logoSrc}" alt="${brand.companyName}" style="height: 52px; width: auto; object-fit: contain;">
+        <div style="font-size: 8.5px; color: #2D6A4F; margin-top: 5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">${brand.tagline}</div>
       </div>
-      <div class="doc-info-box">
-        <div class="doc-info-label-urdu">تاریخ <span class="doc-info-sub-eng">(Statement Date)</span></div>
-        <div class="doc-info-value large">${today}</div>
+
+      <!-- Right: Urdu & English Title, Date & Time, Client ID -->
+      <div style="text-align: right; direction: rtl;">
+        <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 28px; font-weight: 800; color: ${brand.primaryColor}; line-height: 1.1;">اکاؤنٹ اسٹیٹمنٹ</div>
+        <div style="font-size: 20px; font-weight: 800; color: ${brand.primaryColor}; letter-spacing: 0.06em; text-transform: uppercase; font-family: 'Lora', Georgia, serif; margin-top: 2px;">ACCOUNT STATEMENT</div>
+        <div style="font-size: 11.5px; color: #444444; margin-top: 3px; font-family: 'Lora', Georgia, serif; font-weight: 600;">${today} · ${time}</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 800; color: ${brand.primaryColor}; margin-top: 4px; letter-spacing: 0.04em;">#${stmt.clientId || 'WH-0000'}</div>
       </div>
     </div>
   `;
 
-  const kpiGrid = `
-    <div class="doc-kpi-grid">
-      <div class="doc-kpi-box">
-        <span class="doc-kpi-urdu">کل فروخت</span>
-        <span class="doc-kpi-label-eng">Total Sales</span>
-        <div class="doc-kpi-value">Rs ${stmt.totalSales.toLocaleString()}</div>
-      </div>
-      <div class="doc-kpi-box">
-        <span class="doc-kpi-urdu" style="color:#166534;">کل ادائیگی</span>
-        <span class="doc-kpi-label-eng">Total Paid</span>
-        <div class="doc-kpi-value ok">Rs ${stmt.totalCollected.toLocaleString()}</div>
-      </div>
-      <div class="doc-kpi-box">
-        <span class="doc-kpi-urdu" style="color:#991B1B;">کل واجب الادا</span>
-        <span class="doc-kpi-label-eng">Balance Due</span>
-        <div class="doc-kpi-value ${isCredit ? 'ok' : 'danger'}">
-          Rs ${Math.abs(stmt.currentBalance).toLocaleString()}${isCredit ? ' (Credit)' : ''}
+  // ── 2-Column Info Cards ──
+  const infoGrid = `
+    <div class="doc-info-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; direction: ltr;">
+      <!-- Left Card: Account Overview -->
+      <div style="background: #F8FAF8; border: 1px solid #DCE3DB; border-radius: 8px; padding: 14px 18px; text-align: left; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="text-align: right; margin-bottom: 6px;">
+          <span style="font-family: 'Lora', Georgia, serif; color: #555555; font-size: 11px; font-weight: 600;">(ACCOUNT OVERVIEW)</span>
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 700; color: #1A1A1A; margin-left: 4px; direction: rtl; unicode-bidi: isolate;">اکاؤنٹ خلاصہ</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 700; color: #1A1A1A; margin-bottom: 3px;">
+          📋 ${stmt.ledger.length} Transaction Record${stmt.ledger.length !== 1 ? 's' : ''}
+        </div>
+        <div style="font-size: 12px; font-weight: 600; color: #333333; margin-bottom: 8px;">
+          📅 Period: All Historical Dues &amp; Payments
+        </div>
+        <div style="font-size: 11px; color: #555555; font-weight: 600; margin-bottom: 2px;">
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; color: #1A1A1A; font-weight: 700; direction: rtl; unicode-bidi: isolate;">ادائیگی کیفیت</span>
+          <span style="font-family: 'Lora', Georgia, serif; font-size: 10px; margin-left: 2px;">(STATUS)</span>
+        </div>
+        <div style="font-size: 13.5px; font-weight: 800; color: ${isCredit ? '#166534' : '#B5533C'}; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em;">
+          ${isCredit ? 'ALL DUES CLEARED (Rs 0)' : `OUTSTANDING DUE: Rs ${Math.abs(stmt.currentBalance).toLocaleString()}`}
         </div>
       </div>
+
+      <!-- Right Card: Billed To / Client -->
+      <div style="background: #F8FAF8; border: 1px solid #DCE3DB; border-radius: 8px; padding: 14px 18px; text-align: right; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="text-align: right; margin-bottom: 6px;">
+          <span style="font-family: 'Lora', Georgia, serif; color: #555555; font-size: 11px; font-weight: 600;">(CLIENT)</span>
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 700; color: #1A1A1A; margin-left: 4px; direction: rtl; unicode-bidi: isolate;">کلائنٹ</span>
+        </div>
+        <div style="font-size: 16px; font-weight: 800; color: #1A1A1A; margin-bottom: 3px; font-family: 'Lora', Georgia, serif;">
+          ${stmt.clientName} <span style="font-size: 12px; font-weight: 600; color: #6B7C6A; font-family: 'IBM Plex Mono', monospace;">(${stmt.clientId || '—'})</span>
+        </div>
+        ${stmt.ownerName ? `<div style="font-size: 11px; color: #7A8C79; font-weight: 600; margin-bottom: 2px;">Owner: ${stmt.ownerName}</div>` : ''}
+        ${clientPhone ? `<div style="font-size: 12.5px; font-weight: 700; color: #1A1A1A; direction: ltr; text-align: right; margin-top: 2px;">📞 ${clientPhone}${whatsappLine}</div>` : ''}
+        ${addrLine ? `<div style="font-size: 11px; color: #64748B; margin-top: 2px;">📍 ${addrLine}</div>` : ''}
+      </div>
     </div>
   `;
 
-  const ledgerRows = [...stmt.ledger].reverse().map(e => {
+  // ── Ledger Table (Exact Invoice Style) ──
+  const ledgerRows = [...stmt.ledger].reverse().map((e, i) => {
     const dateStr = new Date(e.date).toLocaleDateString('en-GB', {
       day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Karachi',
     });
-    const balClass = e.runningBalance > 0 ? 'balance-pos' : 'balance-neg';
+    const isDebit = e.debit > 0;
     return `
-      <tr>
-        <td>${dateStr}</td>
-        <td>${e.description}</td>
-        <td class="debit right">${e.debit > 0 ? 'Rs ' + e.debit.toLocaleString() : '—'}</td>
-        <td class="credit right">${e.credit > 0 ? 'Rs ' + e.credit.toLocaleString() : '—'}</td>
-        <td class="${balClass} right">Rs ${e.runningBalance.toLocaleString()}</td>
+      <tr style="background: ${i % 2 === 1 ? '#F9FAF9' : '#FFFFFF'}; border-bottom: 1px solid #ECECEC;">
+        <td class="center muted" style="padding: 9px 6px; font-size: 11.5px; font-weight: 600; color: #64748B;">${i + 1}</td>
+        <td class="center" style="padding: 9px 8px; font-size: 12px; font-weight: 600; color: #333333;">${dateStr}</td>
+        <td style="padding: 9px 10px; text-align: right;">
+          <div style="font-size: 13px; font-weight: 700; color: #1A1A1A; font-family: 'Lora', Georgia, serif;">${e.description}</div>
+        </td>
+        <td class="center mono" style="padding: 9px 8px; font-size: 12.5px; font-weight: 700; color: ${isDebit ? '#1A1A1A' : '#94A3B8'};">
+          ${isDebit ? 'Rs ' + e.debit.toLocaleString() : '—'}
+        </td>
+        <td class="center mono" style="padding: 9px 8px; font-size: 12.5px; font-weight: 700; color: ${e.credit > 0 ? '#166534' : '#94A3B8'};">
+          ${e.credit > 0 ? 'Rs ' + e.credit.toLocaleString() : '—'}
+        </td>
+        <td class="center mono" style="padding: 9px 8px; font-size: 13px; font-weight: 800; color: ${e.runningBalance > 0 ? '#B5533C' : '#166534'};">
+          Rs ${e.runningBalance.toLocaleString()}
+        </td>
       </tr>
     `;
   }).join('');
 
   const ledgerTable = `
-    <table class="doc-table">
+    <table class="doc-table rtl-table" style="direction: rtl; width: 100%; border-collapse: collapse; margin-bottom: 18px;">
       <thead>
-        <tr>
-          <th><span class="urdu-th">تاریخ</span> <span class="eng-th">(Date)</span></th>
-          <th><span class="urdu-th">تفصیل</span> <span class="eng-th">(Description)</span></th>
-          <th class="right"><span class="urdu-th">بل / واجب</span> <span class="eng-th">(Debit Rs)</span></th>
-          <th class="right"><span class="urdu-th">وصولی / ادا</span> <span class="eng-th">(Credit Rs)</span></th>
-          <th class="right"><span class="urdu-th">بقایا جات</span> <span class="eng-th">(Balance Rs)</span></th>
+        <tr style="background: ${brand.primaryColor}; color: #FFFFFF;">
+          <th class="center" style="width: 32px; font-size: 11px; padding: 9px 6px; border-top-right-radius: 6px;">#</th>
+          <th class="center" style="width: 100px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">تاریخ</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(DATE)</bdi>
+          </th>
+          <th style="text-align: right; padding: 9px 10px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 15px; margin-left: 2px;">تفصیل</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(DESCRIPTION)</bdi>
+          </th>
+          <th class="center" style="width: 105px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">بل / واجب</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(DEBIT RS)</bdi>
+          </th>
+          <th class="center" style="width: 105px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">وصولی / ادا</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(CREDIT RS)</bdi>
+          </th>
+          <th class="center" style="width: 115px; padding: 9px 8px; font-size: 11px; border-top-left-radius: 6px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">بقایا جات</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(BALANCE RS)</bdi>
+          </th>
         </tr>
       </thead>
       <tbody>
-        ${ledgerRows || '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:20px;">No transactions found</td></tr>'}
+        ${ledgerRows || '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:20px;">No transactions found</td></tr>'}
       </tbody>
     </table>
   `;
 
-  const footer = buildFooter(brand, `Printed: ${printedOn}`);
+  // ── Financial Summary Box & Status / WhatsApp Section ──
+  const summary = `
+    <div style="border: 1px solid #E5E7EB; border-radius: 6px; overflow: hidden; background: #FFFFFF; width: 340px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #1A1A1A;">Rs ${stmt.totalSales.toLocaleString()}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #1A1A1A; line-height: 1.2;">کل فروخت / بل</div>
+          <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Total Billed</div>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #166534;">Rs ${stmt.totalCollected.toLocaleString()}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #166534; line-height: 1.2;">کل وصول شدہ رقم</div>
+          <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Total Paid</div>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: ${brand.primaryColor}; color: #FFFFFF; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 900; font-size: 18px; color: #FFFFFF;">Rs ${Math.abs(stmt.currentBalance).toLocaleString()}${isCredit ? ' (Cr)' : ''}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 18px; font-weight: 800; color: #FFFFFF; line-height: 1.2;">کل واجب الادا رقم</div>
+          <div style="font-size: 10px; color: rgba(255,255,255,0.85); font-weight: 600; font-family: 'Lora', Georgia, serif;">Net Balance Due</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const bottomSection = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 22px; margin-bottom: 24px; direction: ltr; gap: 20px;">
+      <!-- Left: Financial Summary Box -->
+      <div>
+        ${summary}
+      </div>
+
+      <!-- Right: Payment Status Badge & WhatsApp Button -->
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 12px; width: 280px;">
+        <div class="doc-status-badge ${statusClass}" style="width: 100%; text-align: center; padding: 9px 16px; border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em;">
+          ACCOUNT STATUS: ${isCredit ? 'ALL DUES CLEARED' : 'OUTSTANDING DUES'}
+        </div>
+        <a href="https://wa.me/923061110041" target="_blank" style="background: #00B050; color: #FFFFFF; font-size: 15px; font-weight: 800; padding: 12px 20px; border-radius: 8px; width: 100%; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Lora', Georgia, serif; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          Whatsapp | ${brand.contactNumber || '03061110041'}
+        </a>
+      </div>
+    </div>
+  `;
+
+  // Bank transfer info box
+  const bankBox = `
+    <div style="background: #F8FAF8; border: 1px dashed #B8C9B7; border-radius: 8px; padding: 10px 16px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; direction: ltr;">
+      <div>
+        <div style="font-size: 10.5px; font-weight: 700; color: #2D6A4F; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Bank Transfer / Online Payment</div>
+        <div style="font-size: 12px; color: #1A1A1A; font-weight: 600;">Meezan Bank · A/C: 02840108620244 · Halal Vegg Supplies</div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; font-weight: 700; color: #2D6A4F;">آن لائن بینک ٹرانسفر</div>
+        <div style="font-size: 9.5px; color: #666666;">براہ کرم ادائیگی کے بعد رسید واٹس ایپ پر ارسال فرمائیں</div>
+      </div>
+    </div>
+  `;
+
+  const footer = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 14px; border-top: 1px solid #E2E8F0; margin-top: 18px; direction: ltr;">
+      <div style="text-align: left;">
+        <div style="font-size: 9.5px; color: #7A8C79; text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em;">FOR PAYMENTS &amp; WHATSAPP INQUIRIES</div>
+        <div style="font-size: 12px; font-weight: 700; color: #1A1A1A; margin-top: 2px;">WhatsApp / Contact: <strong>${brand.contactNumber || '03061110041'}</strong></div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 9.5px; color: #7A8C79; text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em;">${brand.companyName || 'HALAL VEGG SUPPLIES'}</div>
+        <div style="font-size: 11px; color: #6B7C6A; font-weight: 600; margin-top: 2px;">Printed: ${printedOn}</div>
+      </div>
+    </div>
+  `;
 
   const body = `
     ${header}
     ${infoGrid}
-    ${kpiGrid}
     ${ledgerTable}
+    ${bottomSection}
+    ${bankBox}
     ${footer}
   `;
 
-  return buildDocShell(brand, `Due Statement — ${stmt.clientName}`, body, origin);
+  return buildDocShell(brand, `Account Statement — ${stmt.clientName}`, body, origin);
 }
 
 
@@ -1475,8 +1594,11 @@ export interface OutstandingDueItem {
 export interface OutstandingDueData {
   clientName: string;
   clientId?: string | null;
+  clientType?: string | null;
   phone?: string | null;
   whatsapp?: string | null;
+  address?: string | null;
+  deliveryLocation?: string | null;
   openingBalance?: number;
   invoices: OutstandingDueItem[];
   totalBilled: number;
@@ -1492,123 +1614,236 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
   });
   const time = new Date().toLocaleTimeString('en-GB', {
     hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi',
-  });
+  }).toLowerCase();
   const printedOn = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Karachi' });
+  const isClear = data.totalOutstanding <= 0;
+  const statusClass = isClear ? 'PAID' : 'UNPAID';
 
-  const header = buildHeader(
-    brand,
-    'OUTSTANDING DUE STATEMENT',
-    `${today} · ${time}`,
-    `Client: ${data.clientId || '—'}`,
-    origin,
-    'واجب الادا تفصیل'
-  );
+  const logoSrc = (brand.logoUrl && (brand.logoUrl.startsWith('data:') || brand.logoUrl.startsWith('http')))
+    ? brand.logoUrl
+    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
 
+  const clientPhone = data.phone ?? '';
+  const whatsappLine = data.whatsapp && data.whatsapp !== data.phone ? ` · WA: ${data.whatsapp}` : '';
+  const addrLine = [data.address, data.deliveryLocation ? `Delivery: ${data.deliveryLocation}` : ''].filter(Boolean).join(' · ');
+
+  // ── Header (Exact Invoice Match) ──
+  const header = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 14px; border-bottom: 3px solid ${brand.primaryColor}; margin-bottom: 18px; direction: ltr;">
+      <!-- Left: Logo & Tagline -->
+      <div style="text-align: left; display: flex; flex-direction: column; align-items: flex-start;">
+        <img class="doc-header-logo" src="${logoSrc}" alt="${brand.companyName}" style="height: 52px; width: auto; object-fit: contain;">
+        <div style="font-size: 8.5px; color: #2D6A4F; margin-top: 5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">${brand.tagline}</div>
+      </div>
+
+      <!-- Right: Urdu & English Title, Date & Time, Client ID -->
+      <div style="text-align: right; direction: rtl;">
+        <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 28px; font-weight: 800; color: ${brand.primaryColor}; line-height: 1.1;">واجب الادا تفصیل</div>
+        <div style="font-size: 20px; font-weight: 800; color: ${brand.primaryColor}; letter-spacing: 0.06em; text-transform: uppercase; font-family: 'Lora', Georgia, serif; margin-top: 2px;">DUE STATEMENT</div>
+        <div style="font-size: 11.5px; color: #444444; margin-top: 3px; font-family: 'Lora', Georgia, serif; font-weight: 600;">${today} · ${time}</div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 800; color: ${brand.primaryColor}; margin-top: 4px; letter-spacing: 0.04em;">#${data.clientId || 'WH-0000'}</div>
+      </div>
+    </div>
+  `;
+
+  // ── 2-Column Info Cards ──
   const infoGrid = `
-    <div class="doc-info-grid">
-      <div class="doc-info-box">
-        <div class="doc-info-label-urdu">کلائنٹ <span class="doc-info-sub-eng">(Client)</span></div>
-        <div class="doc-info-value large">${data.clientName}</div>
-        ${data.phone ? `<div class="doc-info-value" style="font-size:11px;">📞 ${data.phone}</div>` : ''}
-        ${data.whatsapp && data.whatsapp !== data.phone ? `<div class="doc-info-value" style="font-size:11px;color:#2D6A4F;">💬 WA: ${data.whatsapp}</div>` : ''}
+    <div class="doc-info-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; direction: ltr;">
+      <!-- Left Card: Account Overview -->
+      <div style="background: #F8FAF8; border: 1px solid #DCE3DB; border-radius: 8px; padding: 14px 18px; text-align: left; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="text-align: right; margin-bottom: 6px;">
+          <span style="font-family: 'Lora', Georgia, serif; color: #555555; font-size: 11px; font-weight: 600;">(ACCOUNT OVERVIEW)</span>
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 700; color: #1A1A1A; margin-left: 4px; direction: rtl; unicode-bidi: isolate;">اکاؤنٹ خلاصہ</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 700; color: #1A1A1A; margin-bottom: 3px;">
+          📋 ${data.invoices.length} Unpaid / Partial Invoice${data.invoices.length !== 1 ? 's' : ''}
+        </div>
+        <div style="font-size: 12px; font-weight: 600; color: #333333; margin-bottom: 8px;">
+          📅 As of ${today}
+        </div>
+        <div style="font-size: 11px; color: #555555; font-weight: 600; margin-bottom: 2px;">
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; color: #1A1A1A; font-weight: 700; direction: rtl; unicode-bidi: isolate;">ادائیگی کیفیت</span>
+          <span style="font-family: 'Lora', Georgia, serif; font-size: 10px; margin-left: 2px;">(STATUS)</span>
+        </div>
+        <div style="font-size: 13.5px; font-weight: 800; color: ${isClear ? '#166534' : '#B5533C'}; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em;">
+          ${isClear ? 'ALL DUES CLEARED (Rs 0)' : `OUTSTANDING DUE: Rs ${Math.max(0, data.totalOutstanding).toLocaleString()}`}
+        </div>
       </div>
-      <div class="doc-info-box">
-        <div class="doc-info-label-urdu">تاریخ <span class="doc-info-sub-eng">(Statement Date)</span></div>
-        <div class="doc-info-value large">${today}</div>
+
+      <!-- Right Card: Billed To / Client -->
+      <div style="background: #F8FAF8; border: 1px solid #DCE3DB; border-radius: 8px; padding: 14px 18px; text-align: right; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="text-align: right; margin-bottom: 6px;">
+          <span style="font-family: 'Lora', Georgia, serif; color: #555555; font-size: 11px; font-weight: 600;">(CLIENT)</span>
+          <span style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 700; color: #1A1A1A; margin-left: 4px; direction: rtl; unicode-bidi: isolate;">کلائنٹ</span>
+        </div>
+        <div style="font-size: 16px; font-weight: 800; color: #1A1A1A; margin-bottom: 3px; font-family: 'Lora', Georgia, serif;">
+          ${data.clientName} <span style="font-size: 12px; font-weight: 600; color: #6B7C6A; font-family: 'IBM Plex Mono', monospace;">(${data.clientId || '—'})</span>
+        </div>
+        <div style="font-size: 11px; color: #7A8C79; text-transform: uppercase; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.04em;">
+          ${data.clientType || 'RESTAURANT'}
+        </div>
+        ${clientPhone ? `<div style="font-size: 12.5px; font-weight: 700; color: #1A1A1A; direction: ltr; text-align: right; margin-top: 2px;">📞 ${clientPhone}${whatsappLine}</div>` : ''}
+        ${addrLine ? `<div style="font-size: 11px; color: #64748B; margin-top: 2px;">📍 ${addrLine}</div>` : ''}
       </div>
     </div>
   `;
 
-  const kpiGrid = `
-    <div class="doc-kpi-grid">
-      <div class="doc-kpi-box">
-        <span class="doc-kpi-urdu" style="color:#991B1B;">کل واجب الادا (کل بقایا جات)</span>
-        <span class="doc-kpi-label-eng">Total Outstanding Balance</span>
-        <div class="doc-kpi-value danger" style="font-size:22px;">Rs ${data.totalOutstanding.toLocaleString()}</div>
-      </div>
-    </div>
-  `;
-
-  const itemRows = data.invoices.map((inv, i) => `
-    <tr>
-      <td class="center muted">${i + 1}</td>
-      <td class="mono font-bold" style="color:${brand.primaryColor};">${inv.invoiceNo}</td>
-      <td>${new Date(inv.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-      <td class="right mono">${inv.total.toLocaleString()}</td>
-      <td class="right mono" style="color:#2D6A4F;">${inv.paid.toLocaleString()}</td>
-      <td class="right mono" style="color:#B5533C;font-weight:700;">${inv.balance.toLocaleString()}</td>
-    </tr>
-  `).join('');
+  // ── Outstanding Invoices Table (Exact Invoice Style) ──
+  const itemRows = data.invoices.map((inv, i) => {
+    const invDateStr = new Date(inv.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    const isUnpaid = inv.status === 'PENDING' || inv.balance === inv.total;
+    return `
+      <tr style="background: ${i % 2 === 1 ? '#F9FAF9' : '#FFFFFF'}; border-bottom: 1px solid #ECECEC;">
+        <td class="center muted" style="padding: 9px 6px; font-size: 11.5px; font-weight: 600; color: #64748B;">${i + 1}</td>
+        <td style="padding: 9px 10px; text-align: right;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 800; color: ${brand.primaryColor};">${inv.invoiceNo}</span>
+        </td>
+        <td class="center" style="padding: 9px 8px; font-size: 12px; font-weight: 600; color: #333333;">${invDateStr}</td>
+        <td class="center mono" style="padding: 9px 8px; font-size: 12.5px; font-weight: 700; color: #1A1A1A;">
+          ${inv.total.toLocaleString()}
+        </td>
+        <td class="center mono" style="padding: 9px 8px; font-size: 12.5px; font-weight: 700; color: ${inv.paid > 0 ? '#166534' : '#94A3B8'};">
+          ${inv.paid > 0 ? inv.paid.toLocaleString() : '—'}
+        </td>
+        <td class="center mono" style="padding: 9px 8px; font-size: 13px; font-weight: 800; color: #B5533C;">
+          ${inv.balance.toLocaleString()}
+        </td>
+        <td class="center" style="padding: 9px 8px;">
+          <span style="display: inline-block; font-size: 9.5px; font-weight: 800; padding: 2px 7px; border-radius: 12px; letter-spacing: 0.04em; background: ${inv.status === 'PAID' ? '#DCFCE7; color: #166534' : inv.status === 'PARTIAL' ? '#FEF3C7; color: #92400E' : '#FEE2E2; color: #991B1B'};">
+            ${inv.status}
+          </span>
+        </td>
+      </tr>
+    `;
+  }).join('');
 
   const table = `
-    <table class="doc-table">
+    <table class="doc-table rtl-table" style="direction: rtl; width: 100%; border-collapse: collapse; margin-bottom: 18px;">
       <thead>
-        <tr>
-          <th class="center" style="width:36px;">#</th>
-          <th><span class="urdu-th">انواﺋس نمبر</span> <span class="eng-th">(Invoice No)</span></th>
-          <th><span class="urdu-th">تاریخ</span> <span class="eng-th">(Date)</span></th>
-          <th class="right"><span class="urdu-th">کل رقم</span> <span class="eng-th">(Total Rs)</span></th>
-          <th class="right"><span class="urdu-th">وصولی / ادائیگی</span> <span class="eng-th">(Paid Rs)</span></th>
-          <th class="right"><span class="urdu-th">بقیہ واجب الادا</span> <span class="eng-th">(Remaining Due)</span></th>
+        <tr style="background: ${brand.primaryColor}; color: #FFFFFF;">
+          <th class="center" style="width: 32px; font-size: 11px; padding: 9px 6px; border-top-right-radius: 6px;">#</th>
+          <th style="text-align: right; padding: 9px 10px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 15px; margin-left: 2px;">انوائس نمبر</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(INVOICE NO)</bdi>
+          </th>
+          <th class="center" style="width: 100px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">تاریخ</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(DATE)</bdi>
+          </th>
+          <th class="center" style="width: 95px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">کل رقم</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(TOTAL RS)</bdi>
+          </th>
+          <th class="center" style="width: 95px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">وصول شدہ</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(PAID RS)</bdi>
+          </th>
+          <th class="center" style="width: 105px; padding: 9px 6px; font-size: 11px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">بقیہ واجب</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(DUE RS)</bdi>
+          </th>
+          <th class="center" style="width: 80px; padding: 9px 8px; font-size: 11px; border-top-left-radius: 6px;">
+            <span class="urdu-th" style="font-size: 14px; margin-left: 2px;">اسٹیٹس</span>
+            <bdi dir="ltr" class="eng-th" style="font-size: 9px; unicode-bidi: isolate;">(STATUS)</bdi>
+          </th>
         </tr>
       </thead>
       <tbody>
-        ${itemRows || '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:20px;">No outstanding invoices</td></tr>'}
+        ${itemRows || '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:20px;">No outstanding invoices found</td></tr>'}
       </tbody>
     </table>
   `;
 
+  // ── Financial Summary Box & Status / WhatsApp Section ──
   const openBalRow = data.openingBalance && data.openingBalance > 0 ? `
-    <div class="doc-summary-row prev">
-      <span class="label">
-        <span class="urdu-main" style="color:#991B1B;">سابقی بقایا</span>
-        <span class="eng-sub">Opening Balance</span>
-      </span>
-      <span class="val">Rs ${data.openingBalance.toLocaleString()}</span>
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+      <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #B5533C;">Rs ${data.openingBalance.toLocaleString()}</span>
+      <div style="text-align: right;">
+        <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #B5533C; line-height: 1.2;">سابقہ بقایا جات</div>
+        <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Opening Balance</div>
+      </div>
     </div>
   ` : '';
 
   const summary = `
-    <div class="doc-summary-wrap">
-      <div class="doc-summary-box">
-        ${openBalRow}
-        <div class="doc-summary-row">
-          <span class="label">
-            <span class="urdu-main">کل بل (موجودہ)</span>
-            <span class="eng-sub">Total Billed</span>
-          </span>
-          <span class="val">Rs ${data.totalBilled.toLocaleString()}</span>
+    <div style="border: 1px solid #E5E7EB; border-radius: 6px; overflow: hidden; background: #FFFFFF; width: 340px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      ${openBalRow}
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #1A1A1A;">Rs ${data.totalBilled.toLocaleString()}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #1A1A1A; line-height: 1.2;">کل بل رقم</div>
+          <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Total Invoiced</div>
         </div>
-        <div class="doc-summary-row paid-row">
-          <span class="label">
-            <span class="urdu-main" style="color:#166534;">کل ادا شدہ رقم</span>
-            <span class="eng-sub">Total Paid</span>
-          </span>
-          <span class="val" style="color:#166534;">Rs ${data.totalPaid.toLocaleString()}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #166534;">Rs ${data.totalPaid.toLocaleString()}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #166534; line-height: 1.2;">کل وصول شدہ رقم</div>
+          <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Total Paid</div>
         </div>
-        <div class="doc-summary-row grand-row">
-          <span class="label">
-            <span class="urdu-main" style="color:#FFFFFF !important; font-size:19px; font-weight:800;">بقیہ واجب الادا</span>
-            <span class="eng-sub" style="color:rgba(255,255,255,0.85); font-size:11px;">Remaining Outstanding</span>
-          </span>
-          <span class="val" style="color:#FFFFFF; font-size:20px; font-weight:900;">Rs ${data.totalOutstanding.toLocaleString()}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: ${brand.primaryColor}; color: #FFFFFF; direction: ltr;">
+        <span style="font-family: 'Lora', Georgia, serif; font-weight: 900; font-size: 18px; color: #FFFFFF;">Rs ${Math.max(0, data.totalOutstanding).toLocaleString()}</span>
+        <div style="text-align: right;">
+          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 18px; font-weight: 800; color: #FFFFFF; line-height: 1.2;">کل واجب الادا رقم</div>
+          <div style="font-size: 10px; color: rgba(255,255,255,0.85); font-weight: 600; font-family: 'Lora', Georgia, serif;">Total Outstanding Balance</div>
         </div>
       </div>
     </div>
   `;
 
-  const notesBlock = '';
-  const statusBadge = '';
-  const footer = buildFooter(brand, `Printed: ${printedOn}`);
+  const bottomSection = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 22px; margin-bottom: 24px; direction: ltr; gap: 20px;">
+      <!-- Left: Financial Summary Box -->
+      <div>
+        ${summary}
+      </div>
+
+      <!-- Right: Payment Status Badge & WhatsApp Button -->
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 12px; width: 280px;">
+        <div class="doc-status-badge ${statusClass}" style="width: 100%; text-align: center; padding: 9px 16px; border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em;">
+          ACCOUNT STATUS: ${isClear ? 'ALL DUES CLEARED' : 'PAYMENT DUE'}
+        </div>
+        <a href="https://wa.me/923061110041" target="_blank" style="background: #00B050; color: #FFFFFF; font-size: 15px; font-weight: 800; padding: 12px 20px; border-radius: 8px; width: 100%; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Lora', Georgia, serif; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          Whatsapp | ${brand.contactNumber || '03061110041'}
+        </a>
+      </div>
+    </div>
+  `;
+
+  // Bank transfer info box
+  const bankBox = `
+    <div style="background: #F8FAF8; border: 1px dashed #B8C9B7; border-radius: 8px; padding: 10px 16px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; direction: ltr;">
+      <div>
+        <div style="font-size: 10.5px; font-weight: 700; color: #2D6A4F; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Bank Transfer / Online Payment</div>
+        <div style="font-size: 12px; color: #1A1A1A; font-weight: 600;">Meezan Bank · A/C: 02840108620244 · Halal Vegg Supplies</div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; font-weight: 700; color: #2D6A4F;">آن لائن بینک ٹرانسفر</div>
+        <div style="font-size: 9.5px; color: #666666;">براہ کرم ادائیگی کے بعد رسید واٹس ایپ پر ارسال فرمائیں</div>
+      </div>
+    </div>
+  `;
+
+  const footer = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 14px; border-top: 1px solid #E2E8F0; margin-top: 18px; direction: ltr;">
+      <div style="text-align: left;">
+        <div style="font-size: 9.5px; color: #7A8C79; text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em;">FOR PAYMENTS &amp; WHATSAPP INQUIRIES</div>
+        <div style="font-size: 12px; font-weight: 700; color: #1A1A1A; margin-top: 2px;">WhatsApp / Contact: <strong>${brand.contactNumber || '03061110041'}</strong></div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 9.5px; color: #7A8C79; text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em;">${brand.companyName || 'HALAL VEGG SUPPLIES'}</div>
+        <div style="font-size: 11px; color: #6B7C6A; font-weight: 600; margin-top: 2px;">Printed: ${printedOn}</div>
+      </div>
+    </div>
+  `;
 
   const body = `
     ${header}
     ${infoGrid}
-    ${kpiGrid}
     ${table}
-    ${summary}
-    ${notesBlock}
-    ${statusBadge}
+    ${bottomSection}
+    ${bankBox}
     ${footer}
   `;
 
