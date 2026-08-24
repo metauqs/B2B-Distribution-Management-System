@@ -31,7 +31,7 @@ import vehiclesRouter from './routes/vehicles';
 import broadcastsRouter from './routes/broadcasts';
 import settingsRouter from './routes/settings';
 import employeesRouter from './routes/employees';
-import renderRouter from './routes/render';
+import renderRouter, { warmBrowser } from './routes/render';
 import cashAccountsRouter from './routes/cashAccounts';
 import bankAccountsRouter from './routes/bankAccounts';
 
@@ -97,6 +97,12 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Dedicated Public Warmup Endpoint for UptimeRobot / Keep-Alive
+app.get('/api/render/warmup', (req, res) => {
+  res.status(200).json({ success: true, status: 'warm' });
+  warmBrowser().catch(() => {});
+});
+
 // Protected routes (Authentication strictly required)
 app.use(authMiddleware);
 // Idempotency middleware runs after auth so req.user is populated —
@@ -143,4 +149,6 @@ import { recalculateAllClientsOnStartup } from './lib/recalculateAllClients';
 app.listen(Number(port), '0.0.0.0', () => {
   console.log(`🚀 Server running on http://127.0.0.1:${port}`);
   recalculateAllClientsOnStartup().catch(err => console.error('[STARTUP RECALC ERROR]', err));
+  // Pre-warm Puppeteer/Chromium so the first real render is instant
+  warmBrowser().catch(err => console.warn('[STARTUP PUPPETEER WARM-UP ERROR]', err));
 });

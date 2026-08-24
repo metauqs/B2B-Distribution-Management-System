@@ -155,6 +155,7 @@ export default function PriceListPage() {
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [activeBroadcastId, setActiveBroadcastId] = useState<string | null>(null);
   const [broadcastProgress, setBroadcastProgress] = useState<any>(null);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   // Access permissions
   const { isAdmin, isSupervisor } = useAccess();
@@ -547,6 +548,8 @@ export default function PriceListPage() {
   };
 
   const openWhatsAppDownloadModal = async (filenamePrefix = 'PriceList') => {
+    if (isGeneratingImage) return;
+    setIsGeneratingImage(true);
     showToast('⏳ Generating Price List image...');
     try {
       const base64Img = await generateBroadcastImageBase64();
@@ -564,6 +567,8 @@ export default function PriceListPage() {
       });
     } catch (err: any) {
       showToast('❌ Unable to prepare WhatsApp share image.');
+    } finally {
+      setIsGeneratingImage(false);
     }
   };
 
@@ -576,6 +581,8 @@ export default function PriceListPage() {
   };
 
   const previewPriceListImage = async () => {
+    if (isGeneratingImage) return;
+    setIsGeneratingImage(true);
     try {
       const base64Img = await generateBroadcastImageBase64();
       if (!base64Img) {
@@ -586,6 +593,8 @@ export default function PriceListPage() {
       setShowPreviewModal(true);
     } catch (err: any) {
       showToast('❌ ' + err.message);
+    } finally {
+      setIsGeneratingImage(false);
     }
   };
 
@@ -2246,15 +2255,17 @@ export default function PriceListPage() {
                 className="va-btn secondary"
                 style={{
                   display: 'flex', alignItems: 'center', gap: 12,
-                  textAlign: 'left', padding: '12px 16px', borderRadius: 8, fontSize: 14, fontWeight: 'bold'
+                  textAlign: 'left', padding: '12px 16px', borderRadius: 8, fontSize: 14, fontWeight: 'bold',
+                  opacity: isGeneratingImage ? 0.5 : 1, cursor: isGeneratingImage ? 'not-allowed' : 'pointer',
                 }}
+                disabled={isGeneratingImage}
                 onClick={() => {
                   shareWhatsAppStatus();
                 }}
               >
                 <span style={{ fontSize: 20 }}>📢</span>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                  <span>Share as WhatsApp Status</span>
+                  <span>{isGeneratingImage ? '⏳ Generating...' : 'Share as WhatsApp Status'}</span>
                   <small style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>Download rate card optimized for Status upload</small>
                 </div>
               </button>
@@ -2279,15 +2290,17 @@ export default function PriceListPage() {
                 className="va-btn secondary"
                 style={{
                   display: 'flex', alignItems: 'center', gap: 12,
-                  textAlign: 'left', padding: '12px 16px', borderRadius: 8, fontSize: 14, fontWeight: 'bold'
+                  textAlign: 'left', padding: '12px 16px', borderRadius: 8, fontSize: 14, fontWeight: 'bold',
+                  opacity: isGeneratingImage ? 0.5 : 1, cursor: isGeneratingImage ? 'not-allowed' : 'pointer',
                 }}
+                disabled={isGeneratingImage}
                 onClick={() => {
                   downloadPriceListJpg();
                 }}
               >
                 <span style={{ fontSize: 20 }}>💾</span>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                  <span>Download JPG</span>
+                  <span>{isGeneratingImage ? '⏳ Generating...' : 'Download JPG'}</span>
                   <small style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>Save high-quality image card locally</small>
                 </div>
               </button>
@@ -2296,15 +2309,17 @@ export default function PriceListPage() {
                 className="va-btn secondary"
                 style={{
                   display: 'flex', alignItems: 'center', gap: 12,
-                  textAlign: 'left', padding: '12px 16px', borderRadius: 8, fontSize: 14, fontWeight: 'bold'
+                  textAlign: 'left', padding: '12px 16px', borderRadius: 8, fontSize: 14, fontWeight: 'bold',
+                  opacity: isGeneratingImage ? 0.5 : 1, cursor: isGeneratingImage ? 'not-allowed' : 'pointer',
                 }}
+                disabled={isGeneratingImage}
                 onClick={() => {
                   previewPriceListImage();
                 }}
               >
                 <span style={{ fontSize: 20 }}>👁</span>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                  <span>Preview Image</span>
+                  <span>{isGeneratingImage ? '⏳ Generating...' : 'Preview Image'}</span>
                   <small style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>View rates card preview in full resolution</small>
                 </div>
               </button>
@@ -2372,14 +2387,15 @@ export default function PriceListPage() {
               </button>
               <button
                 className="va-btn small"
-                style={{ background: '#25D366', color: '#fff', borderColor: '#25D366', fontWeight: 'bold' }}
+                style={{ background: '#25D366', color: '#fff', borderColor: '#25D366', fontWeight: 'bold', opacity: isGeneratingImage ? 0.5 : 1, cursor: isGeneratingImage ? 'not-allowed' : 'pointer' }}
+                disabled={isGeneratingImage}
                 onClick={() => {
                   setShowPreviewModal(false);
                   setPreviewImgUrl(null);
                   downloadPriceListJpg();
                 }}
               >
-                💾 Download
+                {isGeneratingImage ? '⏳ Generating...' : '💾 Download'}
               </button>
             </div>
           </div>
