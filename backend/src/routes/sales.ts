@@ -72,7 +72,7 @@ router.get('/', async (req: Request, res: Response) => {
       deletedAt: null,
       ...(branchId ? { branchId } : {}),
       ...(clientId ? { clientId: String(clientId) } : {}),
-      ...(status && status !== 'all' ? { status: status as any } : {}),
+      ...(status && status !== 'all' ? { status: status as any } : { status: { not: 'CANCELLED' } }),
       ...(mode && mode !== 'all' ? { paymentMode: mode as any } : {}),
       ...(search ? {
         OR: [

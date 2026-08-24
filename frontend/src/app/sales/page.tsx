@@ -988,7 +988,7 @@ export default function SalesPage() {
   };
 
   // ── KPIs for list view (synchronized with selected date) ───────────────────
-  const selectedSales = sales;
+  const selectedSales = sales.filter(s => s.status !== 'CANCELLED');
   const selectedTotal = selectedSales.reduce((s, x) => s + x.total, 0);
   const todayCash     = todayCollectionsAmt;
   const totalBal      = selectedSales.reduce((s, x) => s + x.balance, 0);
@@ -1040,8 +1040,8 @@ export default function SalesPage() {
                 style={{ flex: 2, minWidth: 180, padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }} />
               <select value={filterSt} onChange={e => setFilterSt(e.target.value)}
                 style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}>
-                <option value="all">All Status</option>
-                {['PENDING','PARTIAL','PAID'].map(s => <option key={s}>{s}</option>)}
+                <option value="all">All Active</option>
+                {['PENDING','PARTIAL','PAID','CANCELLED'].map(s => <option key={s}>{s}</option>)}
               </select>
               <select value={filterMode} onChange={e => setFilterMode(e.target.value)}
                 style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 6, fontSize: 13 }}>
