@@ -15,13 +15,38 @@
  */
 export function getTodayBusinessDateString(input?: Date | string | number | null): string {
   if (!input) input = new Date();
+
   if (typeof input === 'string') {
     const trimmed = input.trim();
+    // 1. Pure date string: YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
       return trimmed;
     }
+
+    // 2. Datetime string without timezone offset (e.g. "2026-08-24T00:30")
+    const localMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (localMatch) {
+      let year = parseInt(localMatch[1], 10);
+      let month = parseInt(localMatch[2], 10);
+      let day = parseInt(localMatch[3], 10);
+      const hour = parseInt(localMatch[4], 10);
+
+      // If before 5:00 AM PKT, it belongs to the previous business date
+      if (hour < 5) {
+        const prevDate = new Date(Date.UTC(year, month - 1, day - 1));
+        year = prevDate.getUTCFullYear();
+        month = prevDate.getUTCMonth() + 1;
+        day = prevDate.getUTCDate();
+      }
+
+      const yyyy = String(year);
+      const mm = String(month).padStart(2, '0');
+      const dd = String(day).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
   }
 
+  // 3. Date object, timestamp, or ISO string with explicit timezone
   const d = new Date(input);
   if (isNaN(d.getTime())) return getTodayBusinessDateString(new Date());
 
