@@ -1233,20 +1233,6 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
     </div>
   `;
 
-  // Bank transfer info box
-  const bankBox = `
-    <div style="background: #F8FAF8; border: 1px dashed #B8C9B7; border-radius: 8px; padding: 10px 16px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; direction: ltr;">
-      <div>
-        <div style="font-size: 10.5px; font-weight: 700; color: #2D6A4F; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Bank Transfer / Online Payment</div>
-        <div style="font-size: 12px; color: #1A1A1A; font-weight: 600;">Meezan Bank · A/C: 02840108620244 · Halal Vegg Supplies</div>
-      </div>
-      <div style="text-align: right;">
-        <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; font-weight: 700; color: #2D6A4F;">آن لائن بینک ٹرانسفر</div>
-        <div style="font-size: 9.5px; color: #666666;">براہ کرم ادائیگی کے بعد رسید واٹس ایپ پر ارسال فرمائیں</div>
-      </div>
-    </div>
-  `;
-
   const footer = `
     <div style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 14px; border-top: 1px solid #E2E8F0; margin-top: 18px; direction: ltr;">
       <div style="text-align: left;">
@@ -1265,7 +1251,6 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
     ${infoGrid}
     ${ledgerTable}
     ${bottomSection}
-    ${bankBox}
     ${footer}
   `;
 
@@ -1811,20 +1796,6 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
     </div>
   `;
 
-  // Bank transfer info box
-  const bankBox = `
-    <div style="background: #F8FAF8; border: 1px dashed #B8C9B7; border-radius: 8px; padding: 10px 16px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; direction: ltr;">
-      <div>
-        <div style="font-size: 10.5px; font-weight: 700; color: #2D6A4F; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Bank Transfer / Online Payment</div>
-        <div style="font-size: 12px; color: #1A1A1A; font-weight: 600;">Meezan Bank · A/C: 02840108620244 · Halal Vegg Supplies</div>
-      </div>
-      <div style="text-align: right;">
-        <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 15px; font-weight: 700; color: #2D6A4F;">آن لائن بینک ٹرانسفر</div>
-        <div style="font-size: 9.5px; color: #666666;">براہ کرم ادائیگی کے بعد رسید واٹس ایپ پر ارسال فرمائیں</div>
-      </div>
-    </div>
-  `;
-
   const footer = `
     <div style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 14px; border-top: 1px solid #E2E8F0; margin-top: 18px; direction: ltr;">
       <div style="text-align: left;">
@@ -1843,7 +1814,6 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
     ${infoGrid}
     ${table}
     ${bottomSection}
-    ${bankBox}
     ${footer}
   `;
 
