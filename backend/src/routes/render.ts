@@ -72,9 +72,28 @@ async function getSharedBrowser() {
     return await browserStarting;
   }
 
+  // Auto-discover Chromium/Chrome binary if available
+  const candidatePaths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  ].filter(Boolean) as string[];
+
+  let executablePath: string | undefined = undefined;
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      executablePath = p;
+      break;
+    }
+  }
+
   // Launch a new browser instance
   browserStarting = puppeteer.launch({
     headless: true,
+    ...(executablePath ? { executablePath } : {}),
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
