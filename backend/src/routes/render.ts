@@ -48,7 +48,15 @@ function resolveLocalAsset(urlStr: string): { filePath: string; contentType: str
     for (const dir of searchDirs) {
       const candidate = path.join(dir, filename);
       if (fs.existsSync(candidate)) {
-        return { filePath: candidate, contentType };
+        try {
+          const stats = fs.statSync(candidate);
+          if (ext !== '.woff2' && ext !== '.woff' && ext !== '.ttf' && ext !== '.otf' && stats.size < 200) {
+            continue;
+          }
+          return { filePath: candidate, contentType };
+        } catch {
+          return { filePath: candidate, contentType };
+        }
       }
     }
   } catch (err) {

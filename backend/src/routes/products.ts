@@ -73,7 +73,14 @@ export function findImageFile(filename: string): string | null {
   const safeFilename = path.basename(filename);
   for (const dir of getUploadDirectories()) {
     const candidate = path.join(dir, safeFilename);
-    if (fs.existsSync(candidate)) return candidate;
+    if (fs.existsSync(candidate)) {
+      try {
+        const stats = fs.statSync(candidate);
+        if (stats.size > 200) return candidate;
+      } catch {
+        return candidate;
+      }
+    }
   }
   return null;
 }
@@ -139,9 +146,8 @@ export function getProductFallbackEmoji(name: string): string {
 
 export function generateProductSvgFallback(emoji: string): string {
   const cleanEmoji = (emoji && emoji.trim()) || '🥬';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" dir="ltr" direction="ltr" style="direction:ltr;unicode-bidi:isolate;">
-  <rect width="64" height="64" rx="14" fill="#F4F8F4" stroke="#E2EFE3" stroke-width="2"/>
-  <text x="32" y="34" font-size="34" text-anchor="middle" dominant-baseline="central" alignment-baseline="central" direction="ltr" unicode-bidi="isolate" style="direction:ltr;unicode-bidi:isolate;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;">${cleanEmoji}</text>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" dir="ltr" direction="ltr" style="direction:ltr;unicode-bidi:isolate;background:transparent;">
+  <text x="32" y="34" font-size="44" text-anchor="middle" dominant-baseline="central" alignment-baseline="central" direction="ltr" unicode-bidi="isolate" style="direction:ltr;unicode-bidi:isolate;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;">${cleanEmoji}</text>
 </svg>`;
 }
 
