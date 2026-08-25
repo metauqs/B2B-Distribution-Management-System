@@ -138,9 +138,10 @@ export function getProductFallbackEmoji(name: string): string {
 }
 
 export function generateProductSvgFallback(emoji: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  const cleanEmoji = (emoji && emoji.trim()) || '🥬';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" dir="ltr" direction="ltr" style="direction:ltr;unicode-bidi:isolate;">
   <rect width="64" height="64" rx="14" fill="#F4F8F4" stroke="#E2EFE3" stroke-width="2"/>
-  <text x="32" y="46" font-size="40" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif">${emoji}</text>
+  <text x="32" y="34" font-size="34" text-anchor="middle" dominant-baseline="central" alignment-baseline="central" direction="ltr" unicode-bidi="isolate" style="direction:ltr;unicode-bidi:isolate;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;">${cleanEmoji}</text>
 </svg>`;
 }
 
@@ -153,7 +154,7 @@ function sendSvg(res: any, svg: string) {
   res.end(svg);
 }
 
-export async function serveProductImageOrFallback(filenameOrId: string, res: Response, isId = false) {
+export async function serveProductImageOrFallback(filenameOrId: string, res: Response, isId = false, req?: Request) {
   const safeFilename = path.basename(filenameOrId.split('?')[0]);
   let filePath = isId ? null : findImageFile(safeFilename);
 
@@ -162,6 +163,10 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
     return res.sendFile(filePath);
   }
 
+  // Check query params if passed
+  const queryEmoji = typeof req?.query?.emoji === 'string' ? req.query.emoji : null;
+  const queryName = typeof req?.query?.name === 'string' ? req.query.name : null;
+
   // Look up product in DB to find its name/emoji
   try {
     let product: any = null;
@@ -169,7 +174,12 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
       product = await prisma.product.findUnique({ where: { id: filenameOrId }, select: { name: true, emoji: true, imageUrl: true } });
     } else {
       product = await prisma.product.findFirst({
-        where: { imageUrl: { contains: safeFilename } },
+        where: {
+          OR: [
+            { imageUrl: { contains: safeFilename } },
+            { id: safeFilename.replace(/\.[^/.]+$/, '') },
+          ]
+        },
         select: { name: true, emoji: true, imageUrl: true },
       });
     }
@@ -197,11 +207,11 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
       }
     }
 
-    const emoji = (product?.emoji && product.emoji.trim()) || getProductFallbackEmoji(product?.name || safeFilename);
+    const emoji = queryEmoji?.trim() || (product?.emoji && product.emoji.trim()) || getProductFallbackEmoji(queryName || product?.name || safeFilename);
     const svg = generateProductSvgFallback(emoji);
     return sendSvg(res, svg);
   } catch (err) {
-    const fallbackEmoji = getProductFallbackEmoji(safeFilename);
+    const fallbackEmoji = queryEmoji?.trim() || getProductFallbackEmoji(queryName || safeFilename);
     const svg = generateProductSvgFallback(fallbackEmoji);
     return sendSvg(res, svg);
   }
@@ -209,12 +219,12 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
 
 // GET /api/products/image/:filename — Public product image serving (with 100% SVG fallback guarantee)
 router.get('/image/:filename', (req: Request, res: Response) => {
-  return serveProductImageOrFallback(req.params.filename, res, false);
+  return serveProductImageOrFallback(req.params.filename, res, false, req);
 });
 
 // GET /api/products/:id/image — Serve image by Product ID (with 100% SVG fallback guarantee)
 router.get('/:id/image', async (req: Request, res: Response) => {
-  return serveProductImageOrFallback(req.params.id, res, true);
+  return serveProductImageOrFallback(req.params.id, res, true, req);
 });
 
 // POST /api/products

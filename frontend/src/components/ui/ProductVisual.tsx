@@ -136,7 +136,9 @@ export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'laz
           lineHeight: 1,
           display: 'inline-block',
           verticalAlign: 'middle',
-          fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif',
+          direction: 'ltr',
+          unicodeBidi: 'isolate',
+          fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Segoe UI Symbol", sans-serif',
           ...style
         }}
         className={className}
@@ -182,7 +184,9 @@ export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'laz
         lineHeight: 1,
         display: 'inline-block',
         verticalAlign: 'middle',
-        fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif',
+        direction: 'ltr',
+        unicodeBidi: 'isolate',
+        fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Segoe UI Symbol", sans-serif',
         ...style
       }}
       className={className}

@@ -178,8 +178,23 @@ async function setupRenderPage(browser: any, width: number, scaleFactor = 2.5) {
 
     // ── Serve product image fallback SVGs ─────────────────────────────────────
     if (url.includes('/api/products/image/') || url.includes('/uploads/products/')) {
-      const filename = path.basename(url.split('?')[0]);
-      const fallbackEmoji = getProductFallbackEmoji(filename);
+      let fallbackEmoji = '🥬';
+      try {
+        const parsedUrl = new URL(url, 'http://localhost');
+        const qEmoji = parsedUrl.searchParams.get('emoji');
+        const qName = parsedUrl.searchParams.get('name');
+        const filename = path.basename(parsedUrl.pathname);
+        if (qEmoji && qEmoji.trim()) {
+          fallbackEmoji = qEmoji.trim();
+        } else if (qName && qName.trim()) {
+          fallbackEmoji = getProductFallbackEmoji(qName);
+        } else {
+          fallbackEmoji = getProductFallbackEmoji(filename);
+        }
+      } catch {
+        const filename = path.basename(url.split('?')[0]);
+        fallbackEmoji = getProductFallbackEmoji(filename);
+      }
       const svg = generateProductSvgFallback(fallbackEmoji);
       return req.respond({
         status: 200,

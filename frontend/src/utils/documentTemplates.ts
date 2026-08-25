@@ -713,22 +713,26 @@ export function getProductHtmlVisual(
     if (!finalUrl.startsWith('data:') && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
       finalUrl = `${baseOrigin}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
     }
-    return `<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;vertical-align:middle;overflow:visible;"><img src="${finalUrl}" alt="${name}" style="width:26px;height:26px;min-width:26px;min-height:26px;object-fit:contain;border-radius:4px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';"><span style="display:none;align-items:center;justify-content:center;width:28px;height:28px;font-size:20px;line-height:normal;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;overflow:visible;">${effectiveEmoji}</span></div>`;
+    if (!finalUrl.startsWith('data:') && (finalUrl.includes('/api/products/image/') || finalUrl.includes('/uploads/products/'))) {
+      const sep = finalUrl.includes('?') ? '&' : '?';
+      finalUrl = `${finalUrl}${sep}name=${encodeURIComponent(name || '')}&emoji=${encodeURIComponent(effectiveEmoji)}`;
+    }
+    return `<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;vertical-align:middle;overflow:visible;direction:ltr;unicode-bidi:isolate;"><img src="${finalUrl}" alt="${name}" style="width:26px;height:26px;min-width:26px;min-height:26px;object-fit:contain;border-radius:4px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';"><span style="display:none;align-items:center;justify-content:center;width:28px;height:28px;font-size:20px;line-height:normal;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;overflow:visible;direction:ltr;unicode-bidi:isolate;">${effectiveEmoji}</span></div>`;
   }
 
   // 2. Second Priority: Explicit Product Master Emoji
   if (emoji && emoji.trim()) {
-    return `<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;line-height:normal;font-size:20px;vertical-align:middle;overflow:visible;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;box-sizing:border-box;">${emoji.trim()}</div>`;
+    return `<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;line-height:normal;font-size:20px;vertical-align:middle;overflow:visible;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;box-sizing:border-box;direction:ltr;unicode-bidi:isolate;">${emoji.trim()}</div>`;
   }
 
   // 3. Pre-mapped static image assets
   if (visualFallback.type === 'image') {
     const staticUrl = `${baseOrigin}${visualFallback.value.startsWith('/') ? '' : '/'}${visualFallback.value}`;
-    return `<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;vertical-align:middle;overflow:visible;"><img src="${staticUrl}" alt="${name}" style="width:26px;height:26px;min-width:26px;min-height:26px;object-fit:contain;border-radius:4px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';"><span style="display:none;align-items:center;justify-content:center;width:28px;height:28px;font-size:20px;line-height:normal;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;overflow:visible;">${visualFallback.fallback}</span></div>`;
+    return `<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;vertical-align:middle;overflow:visible;direction:ltr;unicode-bidi:isolate;"><img src="${staticUrl}" alt="${name}" style="width:26px;height:26px;min-width:26px;min-height:26px;object-fit:contain;border-radius:4px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';"><span style="display:none;align-items:center;justify-content:center;width:28px;height:28px;font-size:20px;line-height:normal;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;overflow:visible;direction:ltr;unicode-bidi:isolate;">${visualFallback.fallback}</span></div>`;
   }
 
   // 4. Standardized Fallback Emoji
-  return `<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;line-height:normal;font-size:20px;vertical-align:middle;overflow:visible;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;box-sizing:border-box;">${effectiveEmoji}</div>`;
+  return `<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;line-height:normal;font-size:20px;vertical-align:middle;overflow:visible;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;box-sizing:border-box;direction:ltr;unicode-bidi:isolate;">${effectiveEmoji}</div>`;
 }
 
 // ─── Invoice Types ────────────────────────────────────────────────────────────
@@ -894,7 +898,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
                 ${item.urduName || item.itemName}<bdi dir="ltr" style="font-family: 'Lora', Georgia, serif; font-size: 11px; font-weight: 600; color: #555555; unicode-bidi: isolate; display: inline-block; margin-right: 4px;">(${item.itemName})</bdi>
               </div>
             </td>
-            <td class="center" style="padding: 6px 4px; vertical-align: middle; line-height: normal; overflow: visible;">
+            <td class="center" style="padding: 6px 4px; vertical-align: middle; line-height: normal; overflow: visible; direction: ltr; unicode-bidi: isolate;">
               ${getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl, origin)}
             </td>
             <td class="center mono" style="padding: 9px 6px; font-size: 12.5px; font-weight: 700; color: #1A1A1A;">
