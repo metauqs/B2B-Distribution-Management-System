@@ -140,7 +140,7 @@ export function getProductFallbackEmoji(name: string): string {
 export function generateProductSvgFallback(emoji: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="14" fill="#F4F8F4" stroke="#E2EFE3" stroke-width="2"/>
-  <text x="50%" y="55%" font-size="36" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif">${emoji}</text>
+  <text x="32" y="46" font-size="40" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif">${emoji}</text>
 </svg>`;
 }
 

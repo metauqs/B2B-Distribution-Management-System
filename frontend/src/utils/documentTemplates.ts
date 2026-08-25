@@ -713,22 +713,22 @@ export function getProductHtmlVisual(
     if (!finalUrl.startsWith('data:') && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
       finalUrl = `${baseOrigin}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
     }
-    return `<img src="${finalUrl}" alt="${name}" style="width:24px;height:24px;min-width:24px;min-height:24px;object-fit:cover;vertical-align:middle;border-radius:4px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:20px;margin-left:4px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${effectiveEmoji}</span>`;
+    return `<img src="${finalUrl}" alt="${name}" style="width:24px;height:24px;min-width:24px;min-height:24px;object-fit:contain;vertical-align:middle;border-radius:4px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:20px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;line-height:1;">${effectiveEmoji}</span>`;
   }
 
   // 2. Second Priority: Explicit Product Master Emoji
   if (emoji && emoji.trim()) {
-    return `<span style="font-size:22px;margin-left:4px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${emoji.trim()}</span>`;
+    return `<span style="font-size:22px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;line-height:1;display:inline-block;">${emoji.trim()}</span>`;
   }
 
   // 3. Pre-mapped static image assets
   if (visualFallback.type === 'image') {
     const staticUrl = `${baseOrigin}${visualFallback.value.startsWith('/') ? '' : '/'}${visualFallback.value}`;
-    return `<img src="${staticUrl}" alt="${name}" style="width:22px;height:22px;min-width:22px;min-height:22px;object-fit:cover;vertical-align:middle;border-radius:3px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:18px;margin-left:4px;vertical-align:middle;">${visualFallback.fallback}</span>`;
+    return `<img src="${staticUrl}" alt="${name}" style="width:24px;height:24px;min-width:24px;min-height:24px;object-fit:contain;vertical-align:middle;border-radius:4px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"><span style="display:none;font-size:18px;vertical-align:middle;line-height:1;">${visualFallback.fallback}</span>`;
   }
 
   // 4. Standardized Fallback Emoji
-  return `<span style="font-size:22px;margin-left:4px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;">${effectiveEmoji}</span>`;
+  return `<span style="font-size:22px;vertical-align:middle;font-family:'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',sans-serif;line-height:1;display:inline-block;">${effectiveEmoji}</span>`;
 }
 
 // ─── Invoice Types ────────────────────────────────────────────────────────────
