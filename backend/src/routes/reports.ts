@@ -12,6 +12,100 @@ const router = Router();
 const DASHBOARD_CACHE = new Map<string, { ts: number; data: any }>();
 const DASHBOARD_CACHE_TTL = 10000;
 
+/**
+ * Compute total receivables and count of clients with positive outstanding balances
+ * as of a specific Business Date cutoff (05:00 AM PKT boundary).
+ */
+async function getHistoricalReceivables(branchId?: string, targetEnd?: Date, isToday?: boolean): Promise<{ receivables: number; clientCount: number }> {
+  const bWhere = branchId ? { branchId, deletedAt: null } : { deletedAt: null };
+
+  if (isToday) {
+    const [agg, clientsWithDuesCount] = await Promise.all([
+      prisma.client.aggregate({
+        where: { ...bWhere, currentBalance: { gt: 0 } },
+        _sum: { currentBalance: true },
+      }),
+      prisma.client.count({
+        where: { ...bWhere, currentBalance: { gt: 0 } },
+      }),
+    ]);
+    return {
+      receivables: Math.round((agg._sum.currentBalance ?? 0) * 100) / 100,
+      clientCount: clientsWithDuesCount,
+    };
+  }
+
+  // Historical calculation as of targetEnd
+  const [clients, ledgerEntries] = await Promise.all([
+    prisma.client.findMany({
+      where: bWhere,
+      select: { id: true, openingBalance: true, createdAt: true },
+    }),
+    prisma.customerLedger.findMany({
+      where: {
+        ...(branchId ? { branchId } : {}),
+        date: { lte: targetEnd },
+      },
+      select: {
+        clientId: true,
+        type: true,
+        debit: true,
+        credit: true,
+        description: true,
+        date: true,
+        createdAt: true,
+      },
+      orderBy: [
+        { date: 'asc' },
+        { createdAt: 'asc' },
+      ],
+    }),
+  ]);
+
+  const clientLedgerMap = new Map<string, typeof ledgerEntries>();
+  for (const entry of ledgerEntries) {
+    let list = clientLedgerMap.get(entry.clientId);
+    if (!list) {
+      list = [];
+      clientLedgerMap.set(entry.clientId, list);
+    }
+    list.push(entry);
+  }
+
+  let totalReceivables = 0;
+  let clientsWithDuesCount = 0;
+
+  for (const client of clients) {
+    const entries = clientLedgerMap.get(client.id);
+    let clientBal = 0;
+
+    if (entries && entries.length > 0) {
+      const first = entries[0];
+      const isOpening = first.type === 'ADJUSTMENT' && (first.description?.toLowerCase().includes('opening balance') ?? false);
+      let running = isOpening ? 0 : (client.openingBalance || 0);
+
+      for (const e of entries) {
+        running += (e.debit || 0) - (e.credit || 0);
+      }
+      clientBal = Math.max(0, Math.round(running * 100) / 100);
+    } else {
+      if (targetEnd && client.createdAt <= targetEnd) {
+        clientBal = Math.max(0, client.openingBalance || 0);
+      }
+    }
+
+    if (clientBal > 0.01) {
+      totalReceivables += clientBal;
+      clientsWithDuesCount++;
+    }
+  }
+
+  return {
+    receivables: Math.round(totalReceivables * 100) / 100,
+    clientCount: clientsWithDuesCount,
+  };
+}
+
 // GET /api/reports/dashboard
 router.get('/dashboard', async (req: Request, res: Response) => {
   const start = Date.now();
@@ -48,8 +142,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       todayExpensesAgg,
       todayCollectionsAgg,
       todayWastageAgg,
-      totalReceivablesAgg,
-      clientCount,
+      receivablesData,
       supplierPurchasesArr,
       supplierPaymentsArr,
       allSuppliers,
@@ -74,8 +167,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       prisma.expense.aggregate({ where: tWhere, _sum: { amount: true } }),
       prisma.collection.aggregate({ where: tWhere, _sum: { amount: true } }),
       prisma.wastage.aggregate({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } }, _sum: { qty: true }, _count: true }),
-      prisma.client.aggregate({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, _sum: { currentBalance: true } }),
-      prisma.client.count({ where: { ...bWhere, deletedAt: null } }),
+      getHistoricalReceivables(branchId, todayEnd, isToday),
       prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
       prisma.supplierPayment.groupBy({ by: ['supplierId'], where: branchId ? { branchId } : {}, _sum: { amount: true } }),
       prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } }),
@@ -110,7 +202,8 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     // by using whichever is larger — standalone collections already include invoice checkout payments
     // recorded as collections; sale.paid already sums all collected amounts on the invoice)
     const todayCollections = todaySalesPaid > dbCollectionsSum ? todaySalesPaid : dbCollectionsSum;
-    const totalReceivables = totalReceivablesAgg._sum.currentBalance ?? 0;
+    const totalReceivables = receivablesData.receivables;
+    const clientCount = receivablesData.clientCount;
 
     // ── Gross Profit: same formula as Reports module (financialEngine.ts) ─────────
     // netSales  = grossSales (subtotal) - discounts   [matches financialEngine line 75]
