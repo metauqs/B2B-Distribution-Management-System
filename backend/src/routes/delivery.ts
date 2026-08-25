@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { stockReturn } from '../lib/inventoryService';
-import { getBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
+import { getBusinessDateRange, parseInputDateToUtc, getBusinessDateString } from '../lib/businessDate';
 import { reconcileClientBalancesAndAllocations, deriveInvoiceStatus } from '../lib/business';
 
 const router = Router();
@@ -265,16 +265,11 @@ router.patch('/', async (req: Request, res: Response) => {
         select: { date: true }
       });
       if (existing) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const todayBStr = getBusinessDateString(new Date());
+        const deliveryBStr = getBusinessDateString(existing.date);
 
-        const deliveryDate = new Date(existing.date);
-        deliveryDate.setHours(0, 0, 0, 0);
-
-        if (deliveryDate < today) {
-          const completedDate = new Date(existing.date);
-          completedDate.setHours(17, 0, 0, 0);
-          deliveredAt = completedDate;
+        if (deliveryBStr < todayBStr) {
+          deliveredAt = parseInputDateToUtc(existing.date);
         } else {
           deliveredAt = new Date();
         }

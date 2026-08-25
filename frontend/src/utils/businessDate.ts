@@ -85,20 +85,44 @@ export function getTodayBusinessDateString(input?: Date | string | number | null
 }
 
 /**
- * Returns today's input-ready datetime string (YYYY-MM-DDTHH:mm) in Asia/Karachi time,
- * using the active Business Date.
+ * Calculates a business date offset in days from a reference date (defaults to current business date).
+ * Perfectly handles month and year rollovers.
+ * Example: getBusinessDateOffset(-1) returns yesterday's business date.
  */
-export function getTodayBusinessInputDateTime(): string {
-  const d = new Date();
-  const bDate = getTodayBusinessDateString(d);
-  const timeFormatter = new Intl.DateTimeFormat('en-GB', {
+export function getBusinessDateOffset(days: number, fromDate?: Date | string | null): string {
+  const bDate = getTodayBusinessDateString(fromDate);
+  const [yStr, mStr, dStr] = bDate.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+  const day = parseInt(dStr, 10);
+  const target = new Date(Date.UTC(year, month, day + days));
+  const yyyy = String(target.getUTCFullYear());
+  const mm = String(target.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(target.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Returns the current local datetime string (YYYY-MM-DDTHH:mm) in Asia/Karachi time
+ * suitable for `<input type="datetime-local">`.
+ */
+export function getTodayBusinessInputDateTime(dateObj: Date = new Date()): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Karachi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     hour12: false,
   });
-  const timePart = timeFormatter.format(d);
-  return `${bDate}T${timePart}`;
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(dateObj).map(p => [p.type, p.value])
+  );
+
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
 /**

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import prisma from '../lib/prisma';
 import { Prisma } from '@prisma/client';
-import { getCurrentBusinessDateRange, getBusinessDateRange } from '../lib/businessDate';
+import { getCurrentBusinessDateRange, getBusinessDateRange, getBusinessDateString, getBusinessDatePresetRange } from '../lib/businessDate';
 import { getExecutiveDashboardMetrics, getFinancialAlerts } from '../lib/financialEngine';
 import { getAuthoritativeGrossSales, calculateGrossSalesFromSales } from '../services/grossSalesService';
 
@@ -317,7 +317,7 @@ router.get('/pnl', async (req: Request, res: Response) => {
 
     const dayMap: Record<string, { sales: number; purchases: number; expenses: number; profit: number }> = {};
     const addDay = (d: Date | string, field: 'sales' | 'purchases' | 'expenses', val: number) => {
-      const key = new Date(d).toISOString().slice(0, 10);
+      const key = getBusinessDateString(d);
       if (!dayMap[key]) dayMap[key] = { sales: 0, purchases: 0, expenses: 0, profit: 0 };
       dayMap[key][field] += val;
     };
@@ -413,12 +413,12 @@ router.get('/cashflow', async (req: Request, res: Response) => {
 
     const dayMap: Record<string, { inflow: number; outflow: number }> = {};
     const addInflow = (d: Date | string, val: number) => {
-      const key = new Date(d).toISOString().slice(0, 10);
+      const key = getBusinessDateString(d);
       if (!dayMap[key]) dayMap[key] = { inflow: 0, outflow: 0 };
       dayMap[key].inflow += val;
     };
     const addOutflow = (d: Date | string, val: number) => {
-      const key = new Date(d).toISOString().slice(0, 10);
+      const key = getBusinessDateString(d);
       if (!dayMap[key]) dayMap[key] = { inflow: 0, outflow: 0 };
       dayMap[key].outflow += val;
     };
@@ -524,19 +524,8 @@ router.get('/invoice-registry', async (req: Request, res: Response) => {
     const { clientId, status, search, from, to, limit: limitQuery } = req.query;
     const limit = Math.min(parseInt(String(limitQuery ?? '500'), 10) || 500, 1000);
 
-    let dateFrom: Date | undefined;
-    let dateTo: Date | undefined;
-
-    if (from) {
-      dateFrom = new Date(String(from));
-      dateFrom.setHours(0, 0, 0, 0);
-      if (isNaN(dateFrom.getTime())) dateFrom = undefined;
-    }
-    if (to) {
-      dateTo = new Date(String(to));
-      dateTo.setHours(23, 59, 59, 999);
-      if (isNaN(dateTo.getTime())) dateTo = undefined;
-    }
+    const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
+    const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
 
     const where: any = {
       deletedAt: null,
@@ -655,40 +644,9 @@ router.get('/executive-dashboard', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { preset = 'today', from, to } = req.query;
 
-    let fromDate: Date;
-    let toDate: Date;
-
-    const currentRange = getCurrentBusinessDateRange();
-
-    if (preset === 'today') {
-      fromDate = currentRange.start;
-      toDate = currentRange.end;
-    } else if (preset === 'yesterday') {
-      const yestStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      const r = getBusinessDateRange(yestStr);
-      fromDate = r.start;
-      toDate = r.end;
-    } else if (preset === 'this_week') {
-      fromDate = new Date(Date.now() - 7 * 86400000);
-      toDate = currentRange.end;
-    } else if (preset === 'last_week') {
-      fromDate = new Date(Date.now() - 14 * 86400000);
-      toDate = new Date(Date.now() - 7 * 86400000);
-    } else if (preset === 'this_month') {
-      const now = new Date();
-      fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      toDate = currentRange.end;
-    } else if (preset === 'last_month') {
-      const now = new Date();
-      fromDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      toDate = new Date(now.getFullYear(), now.getMonth(), 0);
-    } else if (from && to) {
-      fromDate = getBusinessDateRange(String(from)).start;
-      toDate = getBusinessDateRange(String(to)).end;
-    } else {
-      fromDate = currentRange.start;
-      toDate = currentRange.end;
-    }
+    const presetRange = getBusinessDatePresetRange(String(preset), from ? String(from) : undefined, to ? String(to) : undefined);
+    const fromDate = presetRange.start;
+    const toDate = presetRange.end;
 
     const [metrics, alerts] = await Promise.all([
       getExecutiveDashboardMetrics({ branchId, from: fromDate, to: toDate }),

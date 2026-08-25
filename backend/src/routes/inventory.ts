@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { recordWastage, manualAdjust, recalculateProductStock } from '../lib/inventoryService';
-import { getCurrentBusinessDateRange } from '../lib/businessDate';
+import { getCurrentBusinessDateRange, getBusinessDateRange } from '../lib/businessDate';
 
 const router = Router();
 
@@ -423,13 +423,10 @@ router.get('/movements', async (req: Request, res: Response) => {
     };
 
     if (from || to) {
-      where.date = {};
-      if (from) where.date.gte = new Date(String(from));
-      if (to) {
-        const d = new Date(String(to));
-        d.setHours(23, 59, 59, 999);
-        where.date.lte = d;
-      }
+      where.date = {
+        ...(from ? { gte: getBusinessDateRange(String(from)).start } : {}),
+        ...(to ? { lte: getBusinessDateRange(String(to)).end } : {}),
+      };
     }
 
     const movements = await prisma.stockMovement.findMany({

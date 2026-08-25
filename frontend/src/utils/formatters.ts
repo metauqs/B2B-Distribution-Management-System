@@ -10,7 +10,7 @@ export function fmtMoney(n: number): string {
 
 export const PKT_TIMEZONE = 'Asia/Karachi';
 
-import { getTodayBusinessDateString } from './businessDate';
+import { getTodayBusinessDateString, getBusinessDateOffset } from './businessDate';
 
 // ─── Date ─────────────────────────────────────────────────────────────────────
 // Format date adhering to 5:00 AM PKT business day cutoff
@@ -75,22 +75,27 @@ export function todayInputDate(): string {
 
 // ─── Today & Current Time for <input type="datetime-local"> in PKT ───────────
 export function todayInputDateTime(dateObj: Date = new Date()): string {
-  const bDate = getTodayBusinessDateString(dateObj);
-  const timeFormatter = new Intl.DateTimeFormat('en-GB', {
+  const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: PKT_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     hour12: false,
   });
-  const timePart = timeFormatter.format(dateObj);
-  return `${bDate}T${timePart}`;
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(dateObj).map(p => [p.type, p.value])
+  );
+
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
-// ─── Date offset in PKT ──────────────────────────────────────────────────────
+// ─── Date offset in PKT (Business Day Aware) ──────────────────────────────────
 export function dateOffset(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return todayStr(d);
+  return getBusinessDateOffset(n);
 }
 
 // ─── Qty with unit ────────────────────────────────────────────────────────────

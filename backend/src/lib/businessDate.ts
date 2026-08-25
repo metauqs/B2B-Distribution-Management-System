@@ -123,6 +123,117 @@ export function getCurrentBusinessDateRange(): BusinessDateRange {
 }
 
 /**
+ * Calculates a business date offset in days from a reference date (defaults to current business date).
+ * Perfectly handles month and year rollovers.
+ * Example: getBusinessDateOffset(-1) returns yesterday's business date.
+ */
+export function getBusinessDateOffset(days: number, fromDate?: Date | string | null): string {
+  const bDate = getBusinessDateString(fromDate);
+  const [yStr, mStr, dStr] = bDate.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+  const day = parseInt(dStr, 10);
+  const target = new Date(Date.UTC(year, month, day + days));
+  const yyyy = String(target.getUTCFullYear());
+  const mm = String(target.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(target.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Computes the exact UTC Date range for standard business date presets.
+ */
+export function getBusinessDatePresetRange(preset?: string, from?: string, to?: string): BusinessDateRange {
+  const current = getCurrentBusinessDateRange();
+  const currentBDate = current.businessDateStr;
+
+  if (from && to) {
+    const startRange = getBusinessDateRange(String(from).trim());
+    const endRange = getBusinessDateRange(String(to).trim());
+    return {
+      start: startRange.start,
+      end: endRange.end,
+      businessDateStr: `${startRange.businessDateStr} to ${endRange.businessDateStr}`,
+    };
+  }
+
+  const [yStr, mStr] = currentBDate.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+
+  switch (preset) {
+    case 'today':
+      return current;
+
+    case 'yesterday': {
+      const yestStr = getBusinessDateOffset(-1);
+      return getBusinessDateRange(yestStr);
+    }
+
+    case 'this_week': {
+      const weekStartStr = getBusinessDateOffset(-7);
+      const startRange = getBusinessDateRange(weekStartStr);
+      return {
+        start: startRange.start,
+        end: current.end,
+        businessDateStr: `${weekStartStr} to ${currentBDate}`,
+      };
+    }
+
+    case 'last_week': {
+      const lastWeekStartStr = getBusinessDateOffset(-14);
+      const lastWeekEndStr = getBusinessDateOffset(-7);
+      const startRange = getBusinessDateRange(lastWeekStartStr);
+      const endRange = getBusinessDateRange(lastWeekEndStr);
+      return {
+        start: startRange.start,
+        end: endRange.end,
+        businessDateStr: `${lastWeekStartStr} to ${lastWeekEndStr}`,
+      };
+    }
+
+    case 'this_month': {
+      const monthStartStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      const startRange = getBusinessDateRange(monthStartStr);
+      return {
+        start: startRange.start,
+        end: current.end,
+        businessDateStr: `${monthStartStr} to ${currentBDate}`,
+      };
+    }
+
+    case 'last_month': {
+      const prevMonthDate = new Date(Date.UTC(year, month - 1, 1));
+      const prevYear = prevMonthDate.getUTCFullYear();
+      const prevMonth = prevMonthDate.getUTCMonth();
+      const prevMonthLastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const startStr = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-01`;
+      const endStr = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(prevMonthLastDay).padStart(2, '0')}`;
+      const startRange = getBusinessDateRange(startStr);
+      const endRange = getBusinessDateRange(endStr);
+      return {
+        start: startRange.start,
+        end: endRange.end,
+        businessDateStr: `${startStr} to ${endStr}`,
+      };
+    }
+
+    case 'last_30_days': {
+      const startStr = getBusinessDateOffset(-30);
+      const startRange = getBusinessDateRange(startStr);
+      return {
+        start: startRange.start,
+        end: current.end,
+        businessDateStr: `${startStr} to ${currentBDate}`,
+      };
+    }
+
+    default:
+      return current;
+  }
+}
+
+/**
  * Safely parse a date string or timestamp into a Date object suitable for saving in database.
  * Anchors the date at 12:00 PM PKT (07:00:00.000 UTC) of its corresponding Business Date.
  */

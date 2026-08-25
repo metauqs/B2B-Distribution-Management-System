@@ -319,7 +319,7 @@ router.post('/', async (req: Request, res: Response) => {
           clientId,
           branchId,
           userId: validatedUserId ?? undefined,
-          date: date ? parseInputDateToUtc(date) : new Date(),
+          date: parseInputDateToUtc(date),
           subtotal,
           discount: Number(discount),
           deliveryCharge: Number(deliveryCharge),
@@ -332,7 +332,7 @@ router.post('/', async (req: Request, res: Response) => {
           paymentMode,
           notes: notes?.trim() ?? undefined,
           employeeId: employeeId || undefined,
-          deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
+          deliveryDate: deliveryDate ? parseInputDateToUtc(deliveryDate) : undefined,
           deliveryTime: deliveryTime || undefined,
           idempotencyKey: rawIdempKey || undefined,
           items: {

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
-import { getBusinessDateRange, getCurrentBusinessDateRange } from '../lib/businessDate';
+import { getBusinessDateRange, getCurrentBusinessDateRange, getBusinessDatePresetRange } from '../lib/businessDate';
 
 const router = Router();
 
@@ -55,28 +55,9 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Range helpers
     if (range) {
-      const now = new Date();
-      if (range === 'today') {
-        const { start, end } = getCurrentBusinessDateRange();
-        dateFrom = start;
-        dateTo = end;
-      } else if (range === 'yesterday') {
-        const yest = new Date(now.setDate(now.getDate() - 1));
-        dateFrom = new Date(yest.setHours(0, 0, 0, 0));
-        dateTo = new Date(yest.setHours(23, 59, 59, 999));
-      } else if (range === 'this_week') {
-        const day = now.getDay();
-        const diffToMon = now.getDate() - day + (day === 0 ? -6 : 1);
-        dateFrom = new Date(now.setDate(diffToMon));
-        dateFrom.setHours(0, 0, 0, 0);
-        dateTo = new Date();
-        dateTo.setHours(23, 59, 59, 999);
-      } else if (range === 'this_month') {
-        dateFrom = new Date(now.getFullYear(), now.getMonth(), 1);
-        dateFrom.setHours(0, 0, 0, 0);
-        dateTo = new Date();
-        dateTo.setHours(23, 59, 59, 999);
-      }
+      const presetRange = getBusinessDatePresetRange(String(range));
+      dateFrom = presetRange.start;
+      dateTo = presetRange.end;
     }
 
     const where: any = {

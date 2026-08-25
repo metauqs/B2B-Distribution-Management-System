@@ -384,10 +384,7 @@ router.get('/', async (req: Request, res: Response) => {
     const limit = Math.min(parseInt(String(limitQuery ?? '30')), 90);
 
     if (dateStr) {
-      const day = new Date(String(dateStr));
-      day.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(String(dateStr));
-      dayEnd.setHours(23, 59, 59, 999);
+      const { start: day, end: dayEnd } = getBusinessDateRange(String(dateStr));
 
       const list = await prisma.priceList.findFirst({
         where: {

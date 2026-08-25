@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { fmtMoney } from '@/utils/formatters';
+import { fmtMoney, fmtDate } from '@/utils/formatters';
 import { getTodayBusinessDateString, fmtBusinessDate } from '@/utils/businessDate';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
@@ -63,10 +63,6 @@ function healthLabel(score: number) {
   if (score >= 75) return { text: 'Healthy',           color: 'var(--ok)'      };
   if (score >= 50) return { text: 'Fair',               color: 'var(--mustard)' };
   return              { text: 'Needs Attention',     color: 'var(--danger)'  };
-}
-
-function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────

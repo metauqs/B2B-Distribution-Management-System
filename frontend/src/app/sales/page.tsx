@@ -667,7 +667,7 @@ export default function SalesPage() {
             employeeId: selEmpId || undefined,
             deliveryDate: delivDate || undefined,
             deliveryTime: delivTime || undefined,
-            date: (!invDate || invDate === todayInputDate()) ? new Date().toISOString() : invDate,
+            date: invDate || todayInputDate(),
             forceNew: true,
           }),
         });

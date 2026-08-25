@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma';
 import { writeAuditLog, getValidUserId } from '../lib/business';
-import { parseInputDateToUtc } from '../lib/businessDate';
+import { parseInputDateToUtc, getBusinessDateString, getCurrentBusinessDateRange, getBusinessDatePresetRange } from '../lib/businessDate';
 import { ExpenseCategory, PaymentMethod } from '@prisma/client';
 import { postExpenseLedger } from '../lib/financialLedgerService';
 
@@ -36,7 +36,7 @@ export interface UpdateExpenseInput {
   notes?: string;
 }
 
-const VALID_CATEGORIES: string[] = [
+export const VALID_CATEGORIES = [
   'TRANSPORT', 'LABOUR', 'FUEL', 'RENT', 'ELECTRICITY', 'PACKAGING',
   'VEHICLE', 'SALARY', 'MISC', 'PURCHASE', 'INVENTORY_WASTAGE', 'OFFICE',
   'MAINTENANCE', 'MARKETING', 'BAD_DEBT', 'TAX', 'BANK_CHARGES', 'EQUIPMENT', 'REPAIR'
@@ -47,7 +47,7 @@ export class ExpenseService {
    * Helper to format reference numbers like EXP-20260726-0001
    */
   private static async generateExpenseReference(branchId: string, tx: any): Promise<string> {
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const todayStr = getBusinessDateString().replace(/-/g, '');
     const count = await tx.expense.count({
       where: { branchId },
     });
@@ -116,7 +116,7 @@ export class ExpenseService {
           reference: expRef,
           category: validCategory,
           amount,
-          date: date ? parseInputDateToUtc(date) : new Date(),
+          date: parseInputDateToUtc(date),
           description: description || undefined,
           paidBy: paymentMethod || undefined,
           cashAccountId: paymentMethod === 'CASH' ? cashAccountId : undefined,
@@ -358,20 +358,13 @@ export class ExpenseService {
     const dateFilter = fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : undefined;
 
     // Today range
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
+    const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
 
-    // This Week range (Monday to today)
-    const now = new Date();
-    const day = now.getDay();
-    const diffToMon = now.getDate() - day + (day === 0 ? -6 : 1);
-    const weekStart = new Date(now.setDate(diffToMon));
-    weekStart.setHours(0, 0, 0, 0);
+    // This Week range
+    const weekStart = getBusinessDatePresetRange('this_week').start;
 
     // This Month range
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const monthStart = getBusinessDatePresetRange('this_month').start;
 
     const [
       todayAgg,
