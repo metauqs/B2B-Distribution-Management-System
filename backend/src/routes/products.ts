@@ -164,6 +164,7 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
   const safeFilename = path.basename(filenameOrId.split('?')[0]);
   let filePath = isId ? null : findImageFile(safeFilename);
 
+  res.setHeader('Access-Control-Allow-Origin', '*');
   if (filePath && fs.existsSync(filePath)) {
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     return res.sendFile(filePath);
@@ -196,6 +197,7 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
         const mimeType = match[1];
         const buffer = Buffer.from(match[2], 'base64');
         res.setHeader('Content-Type', mimeType);
+        res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         if (typeof (res as any).send === 'function') {
           return (res as any).send(buffer);
@@ -208,6 +210,7 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
       const altFile = path.basename(product.imageUrl.split('?')[0]);
       const altPath = findImageFile(altFile);
       if (altPath && fs.existsSync(altPath)) {
+        res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         return res.sendFile(altPath);
       }

@@ -3,6 +3,7 @@ import puppeteer from 'puppeteer';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { findImageFile } from './products';
 
 const router = Router();
 
@@ -44,6 +45,14 @@ function resolveLocalAsset(urlStr: string): { filePath: string; contentType: str
       path.resolve(process.cwd(), '../frontend/public'),
       path.resolve(process.cwd(), 'public'),
     ];
+
+    // ── Check product upload directories via findImageFile ──────────────────
+    if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp' || ext === '.svg' || ext === '.gif') {
+      const productImageFile = findImageFile(filename);
+      if (productImageFile && fs.existsSync(productImageFile)) {
+        return { filePath: productImageFile, contentType };
+      }
+    }
 
     for (const dir of searchDirs) {
       const candidate = path.join(dir, filename);
@@ -168,7 +177,7 @@ async function setupRenderPage(browser: any, width: number, scaleFactor = 2.5) {
   page.on('request', (req: any) => {
     const url = req.url();
 
-    // ── Serve local assets (fonts + product images) from disk ─────────────────
+    // ── 1. Serve local assets (fonts + product images) from disk ───────────────
     const asset = resolveLocalAsset(url);
     if (asset) {
       try {
@@ -184,14 +193,18 @@ async function setupRenderPage(browser: any, width: number, scaleFactor = 2.5) {
       }
     }
 
-    // ── Allow data: and blob: URIs ─────────────────────────────────────────────
+    // ── 2. Allow data: and blob: URIs ──────────────────────────────────────────
     if (url.startsWith('data:') || url.startsWith('blob:')) {
       return req.continue();
     }
 
-    // ── Block all external network requests & missing assets ────────────────────
-    // Fonts and verified images are served from disk above. Missing images abort
-    // immediately so their onerror handlers instantly show native HTML emojis.
+    // ── 3. Allow images and fonts to fetch via network if not found locally ───
+    const resourceType = req.resourceType();
+    if (resourceType === 'image' || resourceType === 'font') {
+      return req.continue();
+    }
+
+    // ── 4. Abort unnecessary resources (media, websockets, analytics) ──────────
     req.abort();
   });
 
