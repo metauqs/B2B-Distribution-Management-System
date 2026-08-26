@@ -6,7 +6,7 @@ import { MobileInvoiceCard } from '@/components/sales/MobileInvoiceCard';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
-import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
+import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
 import { ProductVisual } from '@/components/ui/ProductVisual';
@@ -165,6 +165,10 @@ export default function SalesPage() {
   const [clientSrch,  setClientSrch]  = useState('');
   const [debouncedClientSrch, setDebouncedClientSrch] = useState('');
   const [selClient,   setSelClient]   = useState<Client | null>(null);
+  const [catalogProducts, setCatalogProducts] = useState<any[]>(() => {
+    const cached = getCachedData<any>('/api/products');
+    return Array.isArray(cached) ? cached : (cached?.data || []);
+  });
   const [priceItems,  setPriceItems]  = useState<PriceItem[]>([]);
   const [items,       setItems]       = useState<OrderItem[]>([blankItem()]);
   const [discount,    setDiscount]    = useState(0);
@@ -335,13 +339,22 @@ export default function SalesPage() {
     setClientsLoad(false);
   }, [debouncedClientSrch]);
 
-  // ── Load today's price list (with error guard & active catalog fallback) ─────
+  // ── Load today's price list & master catalog products ─────
   const loadPrices = useCallback(async (targetDate?: string) => {
     try {
       const dateStr = targetDate || invDate || todayInputDate();
-      const data = await fetchWithCache<any>(`/api/pricelist?date=${dateStr}`, { ttl: TTL_MEDIUM });
-      if (data?.items && data.items.length > 0) {
-        setPriceItems(data.items);
+      const [priceData, prodData] = await Promise.all([
+        fetchWithCache<any>(`/api/pricelist?date=${dateStr}`, { ttl: TTL_MEDIUM }),
+        fetchWithCache<any>('/api/products', { ttl: TTL_LONG }),
+      ]);
+
+      if (prodData) {
+        const pList = prodData?.data || (Array.isArray(prodData) ? prodData : []);
+        if (pList.length > 0) setCatalogProducts(pList);
+      }
+
+      if (priceData?.items && priceData.items.length > 0) {
+        setPriceItems(priceData.items);
       } else {
         // Fallback to active price list / products
         const activeData = await fetchWithCache<any>('/api/pricelist/active', { ttl: TTL_MEDIUM });
@@ -354,6 +367,24 @@ export default function SalesPage() {
       console.error('loadPrices error:', err);
     }
   }, [invDate]);
+
+  // ── Single Source of Truth Product Visual Resolver ──────────────────────────
+  const resolveItemVisuals = useCallback((item: { productId?: string | null; itemName?: string; product?: any }) => {
+    const pId = item.productId || item.product?.id;
+    const rawName = (item.itemName || (item as any)?.name || '').toString().toLowerCase().trim();
+    const prodById = pId ? catalogProducts.find(p => p.id === pId) : null;
+    const prodByName = rawName ? catalogProducts.find(p => (p.name || '').toLowerCase().trim() === rawName) : null;
+    const pItem = priceItems.find(p => (pId && p.productId === pId) || (rawName && (p.itemName || '').toLowerCase().trim() === rawName));
+
+    const resolved = prodById || item.product || pItem?.product || prodByName;
+
+    return {
+      productId: pId || resolved?.id || null,
+      urduName: resolved?.urduName || (item as any).urduName || '',
+      imageUrl: resolved?.imageUrl || (item as any).imageUrl || null,
+      emoji: resolved?.emoji || (item as any).emoji || null,
+    };
+  }, [catalogProducts, priceItems]);
 
   useEffect(() => {
     loadSales();
@@ -766,17 +797,17 @@ export default function SalesPage() {
         deliveryDate:        s.deliveryDate,
         deliveryTime:        s.deliveryTime,
         items: s.items.map(i => {
-          const pItem = priceItems.find(p => (i.productId && p.productId === i.productId) || p.itemName.toLowerCase() === i.itemName.toLowerCase());
+          const vis = resolveItemVisuals(i);
           return {
             itemName: i.itemName,
             qty:      i.qty,
             unit:     i.unit,
             rate:     i.rate,
             amount:   i.amount,
-            urduName: i.product?.urduName || pItem?.product?.urduName || (i as any).urduName || '',
-            imageUrl: i.product?.imageUrl || pItem?.product?.imageUrl || (i as any).imageUrl || null,
-            emoji:    i.product?.emoji || pItem?.product?.emoji || (i as any).emoji || null,
-            productId: i.productId || pItem?.productId || null,
+            urduName: vis.urduName,
+            imageUrl: vis.imageUrl,
+            emoji:    vis.emoji,
+            productId: vis.productId,
             returnedQty: (i as any).returnedQty,
             returnReason: (i as any).returnReason,
           };
@@ -819,17 +850,17 @@ export default function SalesPage() {
           deliveryDate:        s.deliveryDate,
           deliveryTime:        s.deliveryTime,
           items: s.items.map(i => {
-            const pItem = priceItems.find(p => (i.productId && p.productId === i.productId) || p.itemName.toLowerCase() === i.itemName.toLowerCase());
+            const vis = resolveItemVisuals(i);
             return {
               itemName: i.itemName,
               qty:      i.qty,
               unit:     i.unit,
               rate:     i.rate,
               amount:   i.amount,
-              urduName: i.product?.urduName || pItem?.product?.urduName || (i as any).urduName || '',
-              imageUrl: i.product?.imageUrl || pItem?.product?.imageUrl || (i as any).imageUrl || null,
-              emoji:    i.product?.emoji || pItem?.product?.emoji || (i as any).emoji || null,
-              productId: i.productId || pItem?.productId || null,
+              urduName: vis.urduName,
+              imageUrl: vis.imageUrl,
+              emoji:    vis.emoji,
+              productId: vis.productId,
               returnedQty: (i as any).returnedQty,
               returnReason: (i as any).returnReason,
             };
@@ -893,17 +924,17 @@ export default function SalesPage() {
         deliveryDate:        s.deliveryDate,
         deliveryTime:        s.deliveryTime,
         items: s.items.map(i => {
-          const pItem = priceItems.find(p => (i.productId && p.productId === i.productId) || p.itemName.toLowerCase() === i.itemName.toLowerCase());
+          const vis = resolveItemVisuals(i);
           return {
             itemName: i.itemName,
             qty:      i.qty,
             unit:     i.unit,
             rate:     i.rate,
             amount:   i.amount,
-            urduName: i.product?.urduName || pItem?.product?.urduName || (i as any).urduName || '',
-            imageUrl: i.product?.imageUrl || pItem?.product?.imageUrl || (i as any).imageUrl || null,
-            emoji:    i.product?.emoji || pItem?.product?.emoji || (i as any).emoji || null,
-            productId: i.productId || pItem?.productId || null,
+            urduName: vis.urduName,
+            imageUrl: vis.imageUrl,
+            emoji:    vis.emoji,
+            productId: vis.productId,
             returnedQty: (i as any).returnedQty,
             returnReason: (i as any).returnReason,
           };
@@ -945,17 +976,17 @@ export default function SalesPage() {
           deliveryDate:        s.deliveryDate,
           deliveryTime:        s.deliveryTime,
           items: s.items.map(i => {
-            const pItem = priceItems.find(p => (i.productId && p.productId === i.productId) || p.itemName.toLowerCase() === i.itemName.toLowerCase());
+            const vis = resolveItemVisuals(i);
             return {
               itemName: i.itemName,
               qty:      i.qty,
               unit:     i.unit,
               rate:     i.rate,
               amount:   i.amount,
-              urduName: i.product?.urduName || pItem?.product?.urduName || (i as any).urduName || '',
-              imageUrl: i.product?.imageUrl || pItem?.product?.imageUrl || (i as any).imageUrl || null,
-              emoji:    i.product?.emoji || pItem?.product?.emoji || (i as any).emoji || null,
-              productId: i.productId || pItem?.productId || null,
+              urduName: vis.urduName,
+              imageUrl: vis.imageUrl,
+              emoji:    vis.emoji,
+              productId: vis.productId,
               returnedQty: (i as any).returnedQty,
               returnReason: (i as any).returnReason,
             };
@@ -2065,8 +2096,8 @@ export default function SalesPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <ProductVisual
                         name={item.itemName}
-                        emoji={(item.product as any)?.emoji}
-                        imageUrl={(item.product as any)?.imageUrl}
+                        emoji={resolveItemVisuals(item).emoji}
+                        imageUrl={resolveItemVisuals(item).imageUrl}
                         size={22}
                       />
                       <div>

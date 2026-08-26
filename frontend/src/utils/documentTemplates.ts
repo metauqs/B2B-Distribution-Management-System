@@ -1288,7 +1288,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
 
   const buildPriceRows = (items: typeof data.items, startIdx: number) =>
     items.map((item, i) => {
-      const htmlVisual = getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl);
+      const htmlVisual = getProductHtmlVisual(item.itemName, item.emoji, item.imageUrl, origin);
       const bg = i % 2 === 0 ? '#072E1D' : '#0A3723';
       return `
         <tr style="background:${bg};border-bottom:1px solid #14492E;">
