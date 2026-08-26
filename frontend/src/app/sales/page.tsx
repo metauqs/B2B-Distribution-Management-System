@@ -340,12 +340,12 @@ export default function SalesPage() {
   }, [debouncedClientSrch]);
 
   // ── Load today's price list & master catalog products ─────
-  const loadPrices = useCallback(async (targetDate?: string) => {
+  const loadPrices = useCallback(async (targetDate?: string, forceRefresh = false) => {
     try {
       const dateStr = targetDate || invDate || todayInputDate();
       const [priceData, prodData] = await Promise.all([
-        fetchWithCache<any>(`/api/pricelist?date=${dateStr}`, { ttl: TTL_MEDIUM }),
-        fetchWithCache<any>('/api/products', { ttl: TTL_LONG }),
+        fetchWithCache<any>(`/api/pricelist?date=${dateStr}`, { ttl: TTL_MEDIUM, forceRefresh }),
+        fetchWithCache<any>('/api/products', { ttl: forceRefresh ? 0 : TTL_MEDIUM, forceRefresh }),
       ]);
 
       if (prodData) {
@@ -357,7 +357,7 @@ export default function SalesPage() {
         setPriceItems(priceData.items);
       } else {
         // Fallback to active price list / products
-        const activeData = await fetchWithCache<any>('/api/pricelist/active', { ttl: TTL_MEDIUM });
+        const activeData = await fetchWithCache<any>('/api/pricelist/active', { ttl: TTL_MEDIUM, forceRefresh });
         const itemsList = activeData?.items || activeData?.data?.items || [];
         if (itemsList.length > 0) {
           setPriceItems(itemsList);
@@ -369,19 +369,26 @@ export default function SalesPage() {
   }, [invDate]);
 
   // ── Single Source of Truth Product Visual Resolver ──────────────────────────
-  const resolveItemVisuals = useCallback((item: { productId?: string | null; itemName?: string; product?: any }) => {
+  const resolveItemVisuals = useCallback((item: { productId?: string | null; itemName?: string; product?: any }, productsOverride?: any[]) => {
+    const pList = productsOverride && productsOverride.length > 0 ? productsOverride : catalogProducts;
     const pId = item.productId || item.product?.id;
     const rawName = (item.itemName || (item as any)?.name || '').toString().toLowerCase().trim();
-    const prodById = pId ? catalogProducts.find(p => p.id === pId) : null;
-    const prodByName = rawName ? catalogProducts.find(p => (p.name || '').toLowerCase().trim() === rawName) : null;
+    const prodById = pId ? pList.find(p => p.id === pId) : null;
+    const prodByName = rawName ? pList.find(p => (p.name || '').toLowerCase().trim() === rawName) : null;
     const pItem = priceItems.find(p => (pId && p.productId === pId) || (rawName && (p.itemName || '').toLowerCase().trim() === rawName));
 
     const resolved = prodById || item.product || pItem?.product || prodByName;
 
+    let imgUrl = resolved?.imageUrl || (item as any).imageUrl || null;
+    if (imgUrl && resolved?.updatedAt && !imgUrl.includes('?v=')) {
+      const ts = new Date(resolved.updatedAt).getTime();
+      imgUrl = `${imgUrl}?v=${ts}`;
+    }
+
     return {
       productId: pId || resolved?.id || null,
       urduName: resolved?.urduName || (item as any).urduName || '',
-      imageUrl: resolved?.imageUrl || (item as any).imageUrl || null,
+      imageUrl: imgUrl,
       emoji: resolved?.emoji || (item as any).emoji || null,
     };
   }, [catalogProducts, priceItems]);
@@ -394,9 +401,9 @@ export default function SalesPage() {
   useEffect(() => {
     const handleRevalidate = () => {
       loadSales(true);
+      loadPrices(undefined, true);
       if (view === 'new') {
         loadClients();
-        loadPrices();
         loadEmployees();
       }
     };
@@ -773,12 +780,30 @@ export default function SalesPage() {
     setAddPayBusy(false);
   };
 
+  // ── Helper to ensure fresh Master Catalog products on invoice export ──────
+  const getLiveCatalogProducts = async () => {
+    try {
+      const prodRes = await fetchWithCache<any>('/api/products', { ttl: 0, forceRefresh: true });
+      const pList = prodRes?.data || (Array.isArray(prodRes) ? prodRes : []);
+      if (pList && pList.length > 0) {
+        setCatalogProducts(pList);
+        return pList;
+      }
+    } catch (e) {
+      console.warn('Failed to refresh live catalog:', e);
+    }
+    return catalogProducts;
+  };
+
   // ── Print invoice ─────────────────────────────────────────────────────────────
   const printInvoice = async (s: Sale) => {
     // Open window synchronously first — avoids browser popup blocker
     const w = openPrintWindow();
     if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfigWithLogo();
+    const [brand, liveCatalog] = await Promise.all([
+      loadBrandConfigWithLogo(),
+      getLiveCatalogProducts(),
+    ]);
     const html = generateInvoiceHTML(
       {
         invoiceNo:           s.invoiceNo,
@@ -797,7 +822,7 @@ export default function SalesPage() {
         deliveryDate:        s.deliveryDate,
         deliveryTime:        s.deliveryTime,
         items: s.items.map(i => {
-          const vis = resolveItemVisuals(i);
+          const vis = resolveItemVisuals(i, liveCatalog);
           return {
             itemName: i.itemName,
             qty:      i.qty,
@@ -831,7 +856,10 @@ export default function SalesPage() {
     setWhatsappSharing(true);
     showToast('⏳ Generating invoice image...');
     try {
-      const brand = await loadBrandConfigWithLogo();
+      const [brand, liveCatalog] = await Promise.all([
+        loadBrandConfigWithLogo(),
+        getLiveCatalogProducts(),
+      ]);
       const html = generateInvoiceHTML(
         {
           invoiceNo:           s.invoiceNo,
@@ -850,7 +878,7 @@ export default function SalesPage() {
           deliveryDate:        s.deliveryDate,
           deliveryTime:        s.deliveryTime,
           items: s.items.map(i => {
-            const vis = resolveItemVisuals(i);
+            const vis = resolveItemVisuals(i, liveCatalog);
             return {
               itemName: i.itemName,
               qty:      i.qty,
@@ -903,9 +931,13 @@ export default function SalesPage() {
 
   // ── Download Invoice as PDF ───────────────────────────────────────────────────────
   const downloadInvoice = async (s: Sale) => {
-    const w = openDownloadWindow();
+    // Open window synchronously first — avoids browser popup blocker
+    const w = openPrintWindow();
     if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfigWithLogo();
+    const [brand, liveCatalog] = await Promise.all([
+      loadBrandConfigWithLogo(),
+      getLiveCatalogProducts(),
+    ]);
     const html = generateInvoiceHTML(
       {
         invoiceNo:           s.invoiceNo,
@@ -924,7 +956,7 @@ export default function SalesPage() {
         deliveryDate:        s.deliveryDate,
         deliveryTime:        s.deliveryTime,
         items: s.items.map(i => {
-          const vis = resolveItemVisuals(i);
+          const vis = resolveItemVisuals(i, liveCatalog);
           return {
             itemName: i.itemName,
             qty:      i.qty,
@@ -957,7 +989,10 @@ export default function SalesPage() {
     setSaving(true);
     showToast('⏳ Generating image...');
     try {
-      const brand = await loadBrandConfigWithLogo();
+      const [brand, liveCatalog] = await Promise.all([
+        loadBrandConfigWithLogo(),
+        getLiveCatalogProducts(),
+      ]);
       const html = generateInvoiceHTML(
         {
           invoiceNo:           s.invoiceNo,
@@ -976,7 +1011,7 @@ export default function SalesPage() {
           deliveryDate:        s.deliveryDate,
           deliveryTime:        s.deliveryTime,
           items: s.items.map(i => {
-            const vis = resolveItemVisuals(i);
+            const vis = resolveItemVisuals(i, liveCatalog);
             return {
               itemName: i.itemName,
               qty:      i.qty,

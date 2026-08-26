@@ -2641,6 +2641,15 @@ export async function generateTemplateImageBase64(html: string): Promise<string>
           clonedElem.style.padding = '0px';
           clonedElem.style.margin = '0px';
           clonedElem.style.transform = 'none';
+
+          const clonedImgs = Array.from(clonedElem.querySelectorAll('img')) as HTMLImageElement[];
+          for (const img of clonedImgs) {
+            img.loading = 'eager';
+            img.decoding = 'sync';
+            if (!img.crossOrigin && img.src && !img.src.startsWith('data:')) {
+              img.crossOrigin = 'anonymous';
+            }
+          }
         }
       },
     });
