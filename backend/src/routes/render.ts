@@ -289,18 +289,52 @@ router.post('/jpeg', async (req, res) => {
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
     const contentMs = Date.now() - t_content;
 
-    // Fast font & image readiness check with hard 400ms timeout
+    // Robust font & image readiness check with decode() and natural dimension verification
     const t_fonts = Date.now();
     await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 400))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 800))]);
       }
-      const images = Array.from(d.querySelectorAll('img'));
-      await Promise.race([
-        Promise.all(images.map((img: any) => (img.complete ? Promise.resolve() : new Promise((r) => { img.onload = r; img.onerror = r; })))),
-        new Promise((r) => setTimeout(r, 400)),
-      ]);
+      const images = Array.from(d.querySelectorAll('img')) as any[];
+      if (images.length > 0) {
+        await Promise.race([
+          Promise.all(images.map((img: any) => {
+            img.loading = 'eager';
+            const done = async () => {
+              if (typeof img.decode === 'function') {
+                try { await img.decode(); } catch {}
+              }
+              if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+                img.style.display = 'none';
+                const sibling = img.nextElementSibling;
+                if (sibling) sibling.style.display = 'inline-flex';
+              }
+            };
+            if (img.complete && img.naturalWidth > 0) return done();
+            return new Promise<void>((r) => {
+              img.onload = () => { done().then(() => r()); };
+              img.onerror = () => {
+                img.style.display = 'none';
+                const sibling = img.nextElementSibling;
+                if (sibling) sibling.style.display = 'inline-flex';
+                r();
+              };
+            });
+          })),
+          new Promise((r) => setTimeout(r, 2500)),
+        ]);
+      }
+      // Wait for rendering frame
+      await new Promise<void>((r) => {
+        if (typeof (globalThis as any).requestAnimationFrame === 'function') {
+          (globalThis as any).requestAnimationFrame(() => {
+            (globalThis as any).requestAnimationFrame(() => r());
+          });
+        } else {
+          setTimeout(r, 50);
+        }
+      });
     });
     const fontsMs = Date.now() - t_fonts;
 
@@ -377,6 +411,53 @@ router.post('/png', async (req, res) => {
     page = await setupRenderPage(browser, requestedWidth, 2.5);
 
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+    // Robust font & image readiness check with decode() and natural dimension verification
+    await page.evaluate(async () => {
+      const d = (globalThis as any).document;
+      if (d?.fonts?.ready) {
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 800))]);
+      }
+      const images = Array.from(d.querySelectorAll('img')) as any[];
+      if (images.length > 0) {
+        await Promise.race([
+          Promise.all(images.map((img: any) => {
+            img.loading = 'eager';
+            const done = async () => {
+              if (typeof img.decode === 'function') {
+                try { await img.decode(); } catch {}
+              }
+              if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+                img.style.display = 'none';
+                const sibling = img.nextElementSibling;
+                if (sibling) sibling.style.display = 'inline-flex';
+              }
+            };
+            if (img.complete && img.naturalWidth > 0) return done();
+            return new Promise<void>((r) => {
+              img.onload = () => { done().then(() => r()); };
+              img.onerror = () => {
+                img.style.display = 'none';
+                const sibling = img.nextElementSibling;
+                if (sibling) sibling.style.display = 'inline-flex';
+                r();
+              };
+            });
+          })),
+          new Promise((r) => setTimeout(r, 2500)),
+        ]);
+      }
+      // Wait for rendering frame
+      await new Promise<void>((r) => {
+        if (typeof (globalThis as any).requestAnimationFrame === 'function') {
+          (globalThis as any).requestAnimationFrame(() => {
+            (globalThis as any).requestAnimationFrame(() => r());
+          });
+        } else {
+          setTimeout(r, 50);
+        }
+      });
+    });
 
     const bodyHeight = await page.evaluate(() => {
       const d = (globalThis as any).document;

@@ -2425,6 +2425,88 @@ export async function generateTemplateJpgBase64(html: string): Promise<string> {
 }
 
 /**
+ * Rigorously preloads, decodes, and verifies all <img> elements inside a DOM container
+ * to ensure Safari and all mobile/desktop browsers have completely loaded and painted
+ * every product image with valid natural dimensions prior to canvas capture.
+ */
+async function preloadAndVerifyImages(container: HTMLElement, timeoutMs = 8000): Promise<void> {
+  const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+  if (imgs.length === 0) return;
+
+  const loadPromises = imgs.map((img) => {
+    return new Promise<void>((resolve) => {
+      // 1. Force eager loading and CORS configuration
+      img.loading = 'eager';
+      img.decoding = 'async';
+      if (!img.crossOrigin && img.src && !img.src.startsWith('data:')) {
+        img.crossOrigin = 'anonymous';
+      }
+
+      const onDone = async () => {
+        try {
+          // 2. Explicitly wait for img.decode() if supported (vital for Safari WebKit)
+          if (typeof img.decode === 'function') {
+            await img.decode().catch(() => {});
+          }
+        } catch {
+          // Graceful fallback if decode is unsupported or rejected
+        }
+
+        // 3. Verify natural dimensions
+        if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+          // Image failed to load or has 0 dimensions — trigger fallback
+          img.style.display = 'none';
+          const sibling = img.nextElementSibling as HTMLElement | null;
+          if (sibling) {
+            sibling.style.display = 'inline-flex';
+          }
+        }
+        resolve();
+      };
+
+      if (img.complete && img.naturalWidth > 0) {
+        onDone();
+      } else {
+        const timer = setTimeout(() => {
+          // Timeout fallback — don't let one slow/broken image hang the process
+          if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+            img.style.display = 'none';
+            const sibling = img.nextElementSibling as HTMLElement | null;
+            if (sibling) sibling.style.display = 'inline-flex';
+          }
+          resolve();
+        }, timeoutMs);
+
+        img.onload = () => {
+          clearTimeout(timer);
+          onDone();
+        };
+        img.onerror = () => {
+          clearTimeout(timer);
+          img.style.display = 'none';
+          const sibling = img.nextElementSibling as HTMLElement | null;
+          if (sibling) sibling.style.display = 'inline-flex';
+          resolve();
+        };
+      }
+    });
+  });
+
+  await Promise.all(loadPromises);
+
+  // 4. Wait for double requestAnimationFrame to ensure browser paint is committed to the display buffer
+  await new Promise<void>((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    } else {
+      setTimeout(resolve, 60);
+    }
+  });
+}
+
+/**
  * Generates a high-quality Full HD image from an invoice/document HTML string using html2canvas.
  */
 export async function generateTemplateImageBase64(html: string): Promise<string> {
@@ -2527,12 +2609,8 @@ export async function generateTemplateImageBase64(html: string): Promise<string>
       await (document as any).fonts.ready;
     }
 
-    // Wait for all images inside template to decode
-    const imgs = Array.from(container.querySelectorAll('img'));
-    await Promise.all(imgs.map((img) => (img.complete ? Promise.resolve() : new Promise((r) => { img.onload = r; img.onerror = r; }))));
-
-    // Wait 400ms for typography shaping & glyph rendering
-    await new Promise((r) => setTimeout(r, 400));
+    // Comprehensive image preload, decode, and natural dimension verification
+    await preloadAndVerifyImages(container, 8000);
 
     const contentHeight = container.scrollHeight || 1123;
 
