@@ -88,15 +88,17 @@ interface ProductVisualProps {
 }
 
 export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'lazy', style, className }: ProductVisualProps) {
-  const [imgError, setImgError] = useState(false);
+  const [masterImgError, setMasterImgError] = useState(false);
+  const [staticImgError, setStaticImgError] = useState(false);
 
-  // Reset imgError whenever the imageUrl prop changes
+  // Reset imgError whenever the imageUrl or name prop changes
   React.useEffect(() => {
-    setImgError(false);
-  }, [imageUrl]);
+    setMasterImgError(false);
+    setStaticImgError(false);
+  }, [imageUrl, name]);
 
   // 1. Highest Priority: Uploaded Image from Product Master (imageUrl)
-  if (imageUrl && imageUrl.trim() && !imgError) {
+  if (imageUrl && imageUrl.trim() && !masterImgError) {
     const rawUrl = imageUrl.trim();
     // Normalize URL to ensure it routes through API proxy if needed
     const finalUrl = rawUrl.startsWith('/uploads/products/')
@@ -111,7 +113,7 @@ export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'laz
         height={size}
         loading={loading}
         decoding="async"
-        onError={() => setImgError(true)}
+        onError={() => setMasterImgError(true)}
         style={{
           width: size,
           height: size,
@@ -127,7 +129,34 @@ export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'laz
     );
   }
 
-  // 2. Second Priority: Explicit Product Master Emoji
+  // 2. Second Priority: Pre-mapped static image assets
+  const visual = getProductVisual(name);
+  if (visual.type === 'image' && !staticImgError) {
+    return (
+      <img
+        src={visual.value}
+        alt={name}
+        width={size}
+        height={size}
+        loading={loading}
+        decoding="async"
+        onError={() => setStaticImgError(true)}
+        style={{
+          width: size,
+          height: size,
+          aspectRatio: '1 / 1',
+          objectFit: 'cover',
+          borderRadius: size > 30 ? 6 : 4,
+          display: 'inline-block',
+          verticalAlign: 'middle',
+          ...style
+        }}
+        className={className}
+      />
+    );
+  }
+
+  // 3. Third Priority: Explicit Product Master Emoji
   if (emoji && emoji.trim()) {
     return (
       <span
@@ -148,35 +177,7 @@ export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'laz
     );
   }
 
-  // 3. Third Priority: Pre-mapped static assets or dynamic fallback emoji
-  const visual = getProductVisual(name);
-
-  if (visual.type === 'image' && !imgError) {
-    return (
-      <img
-        src={visual.value}
-        alt={name}
-        width={size}
-        height={size}
-        loading={loading}
-        decoding="async"
-        onError={() => setImgError(true)}
-        style={{
-          width: size,
-          height: size,
-          aspectRatio: '1 / 1',
-          objectFit: 'cover',
-          borderRadius: size > 30 ? 6 : 4,
-          display: 'inline-block',
-          verticalAlign: 'middle',
-          ...style
-        }}
-        className={className}
-      />
-    );
-  }
-
-  // Fallback to emoji
+  // 4. Fallback to standard emoji
   return (
     <span
       style={{

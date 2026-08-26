@@ -64,24 +64,53 @@ function getUploadDirectories() {
     path.resolve(__dirname, '../../uploads/products'),
     path.resolve(__dirname, '../uploads/products'),
     path.resolve(process.cwd(), 'uploads/products'),
+    path.resolve(process.cwd(), 'backend/uploads/products'),
     path.resolve(process.cwd(), '../frontend/public/uploads/products'),
+    path.resolve(__dirname, '../../../frontend/public/uploads/products'),
+    path.resolve(__dirname, '../../../frontend/public'),
+    path.resolve(process.cwd(), '../frontend/public'),
+    path.resolve(process.cwd(), 'frontend/public'),
+    path.resolve(process.cwd(), 'public'),
   ];
   return [...new Set(dirs)];
 }
 
 export function findImageFile(filename: string): string | null {
   const safeFilename = path.basename(filename);
+  if (!safeFilename) return null;
+
+  // 1. Direct filename match
   for (const dir of getUploadDirectories()) {
     const candidate = path.join(dir, safeFilename);
     if (fs.existsSync(candidate)) {
       try {
         const stats = fs.statSync(candidate);
-        if (stats.size > 200) return candidate;
+        if (stats.size > 0) return candidate;
       } catch {
         return candidate;
       }
     }
   }
+
+  // 2. Match by Product ID prefix (e.g. prod_cms1nyk1700026vzmldlbqpfk_*)
+  const prodIdMatch = safeFilename.match(/^prod_([a-zA-Z0-9]+)/) || safeFilename.match(/^([a-zA-Z0-9]{20,30})/);
+  if (prodIdMatch && prodIdMatch[1]) {
+    const targetId = prodIdMatch[1];
+    for (const dir of getUploadDirectories()) {
+      if (fs.existsSync(dir)) {
+        try {
+          const files = fs.readdirSync(dir);
+          const matched = files.find(f => f.startsWith(`prod_${targetId}`) || f.startsWith(targetId));
+          if (matched) {
+            const candidate = path.join(dir, matched);
+            const stats = fs.statSync(candidate);
+            if (stats.size > 0) return candidate;
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -213,6 +242,52 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         return res.sendFile(altPath);
+      }
+    }
+
+    // Check for pre-mapped static PNG assets by product name
+    const productName = (product?.name || queryName || '').toLowerCase().trim();
+    if (productName) {
+      const staticImageNames: Record<string, string> = {
+        'lady finger': 'ladyfinger.png',
+        'ladyfinger': 'ladyfinger.png',
+        'bhindi': 'ladyfinger.png',
+        'okra': 'ladyfinger.png',
+        'guava': 'guava.png',
+        'amrood': 'guava.png',
+        'papaya': 'papaya.png',
+        'papeeta': 'papaya.png',
+        'papiya': 'papaya.png',
+        'pomegranate': 'pomegranate.png',
+        'anar': 'pomegranate.png',
+        'turnip': 'turnip.png',
+        'shalgam': 'turnip.png',
+        'shuljam': 'turnip.png',
+        'radish': 'radish.png',
+        'mooli': 'radish.png',
+        'beetroot': 'beetroot.png',
+        'chukandar': 'beetroot.png',
+        'plum': 'plum.png',
+        'alobukhara': 'plum.png',
+        'alubukhara': 'plum.png',
+        'aloo': 'prod_cms1nyk4800036vzmobqdo8nc_1786822055419.png',
+        'potato': 'prod_cms1nyk4800036vzmobqdo8nc_1786822055419.png',
+        'tomato': 'prod_cms1nyk1700026vzmldlbqpfk_1786822056027.png',
+        'tamatar': 'prod_cms1nyk1700026vzmldlbqpfk_1786822056027.png',
+        'lemon': 'prod_cms1nyn4g000n6vzm06ddark1_1786822055725.png',
+        'limo': 'prod_cms1nyn4g000n6vzm06ddark1_1786822055725.png',
+        'nimbu': 'prod_cms1nyn4g000n6vzm06ddark1_1786822055725.png',
+      };
+
+      for (const [key, imgFile] of Object.entries(staticImageNames)) {
+        if (productName.includes(key)) {
+          const staticPath = findImageFile(imgFile);
+          if (staticPath && fs.existsSync(staticPath)) {
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            return res.sendFile(staticPath);
+          }
+        }
       }
     }
 
