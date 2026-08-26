@@ -713,6 +713,10 @@ export function getProductHtmlVisual(
     if (!finalUrl.startsWith('data:') && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
       finalUrl = `${baseOrigin}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
     }
+    if (!finalUrl.startsWith('data:') && (finalUrl.includes('/api/products/image/') || finalUrl.includes('/uploads/products/'))) {
+      const sep = finalUrl.includes('?') ? '&' : '?';
+      finalUrl = `${finalUrl}${sep}name=${encodeURIComponent(name || '')}&emoji=${encodeURIComponent(effectiveEmoji)}`;
+    }
     return `<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;vertical-align:middle;overflow:visible;direction:ltr;unicode-bidi:isolate;"><img src="${finalUrl}" alt="${name}" style="width:26px;height:26px;min-width:26px;min-height:26px;object-fit:contain;border-radius:4px;display:inline-block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';"><span style="display:none;align-items:center;justify-content:center;width:28px;height:28px;font-size:22px;line-height:1;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif;overflow:visible;direction:ltr;unicode-bidi:isolate;">${effectiveEmoji}</span></div>`;
   }
 

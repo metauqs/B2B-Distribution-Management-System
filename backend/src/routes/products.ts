@@ -216,9 +216,13 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
       }
     }
 
-    return res.status(404).send('Image not found');
+    const emoji = queryEmoji?.trim() || (product?.emoji && product.emoji.trim()) || getProductFallbackEmoji(queryName || product?.name || safeFilename);
+    const svg = generateProductSvgFallback(emoji);
+    return sendSvg(res, svg);
   } catch (err) {
-    return res.status(404).send('Image not found');
+    const fallbackEmoji = queryEmoji?.trim() || getProductFallbackEmoji(queryName || safeFilename);
+    const svg = generateProductSvgFallback(fallbackEmoji);
+    return sendSvg(res, svg);
   }
 }
 
