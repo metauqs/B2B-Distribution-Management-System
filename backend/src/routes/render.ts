@@ -80,7 +80,7 @@ let browserStarting: Promise<any> | null = null;
 
 async function getSharedBrowser() {
   // If browser is already running and connected, return it
-  if (sharedBrowser && sharedBrowser.isConnected()) {
+  if (sharedBrowser && (typeof (sharedBrowser as any).connected === 'boolean' ? (sharedBrowser as any).connected : true)) {
     return sharedBrowser;
   }
 
@@ -107,7 +107,7 @@ async function getSharedBrowser() {
     }
   }
 
-  // Launch a new browser instance
+  // Launch a new browser instance with low-memory single-process flags
   browserStarting = puppeteer.launch({
     headless: true,
     ...(executablePath ? { executablePath } : {}),
@@ -117,6 +117,9 @@ async function getSharedBrowser() {
       '--disable-web-security',
       '--disable-dev-shm-usage',
       '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--no-zygote',
+      '--single-process', // Low-memory single process mode saves ~150MB RAM
       '--disable-extensions',
       '--disable-background-networking',
       '--disable-sync',
@@ -128,6 +131,7 @@ async function getSharedBrowser() {
       '--font-render-hinting=none',
       '--enable-font-antialiasing',
       '--lang=en-GB',
+      '--js-flags="--max-old-space-size=64"', // Bound Chromium V8 heap to 64MB
     ],
   }).then(browser => {
     sharedBrowser = browser;
@@ -168,7 +172,7 @@ export async function warmBrowser(): Promise<void> {
 
 import { getProductFallbackEmoji, generateProductSvgFallback } from './products';
 
-async function setupRenderPage(browser: any, width: number, scaleFactor = 2.5) {
+async function setupRenderPage(browser: any, width: number, scaleFactor = 1.5) {
   const page = await browser.newPage();
   const requestedWidth = Number(width) || 794;
   await page.setViewport({ width: requestedWidth, height: 1123, deviceScaleFactor: scaleFactor });
@@ -198,7 +202,7 @@ async function setupRenderPage(browser: any, width: number, scaleFactor = 2.5) {
       return req.continue();
     }
 
-    // ── 4. Allow images and fonts to fetch via network if not found locally ───
+    // ── 4. Allow Cloudinary CDN images and fonts to fetch via network ─────────
     const resourceType = req.resourceType();
     if (resourceType === 'image' || resourceType === 'font') {
       return req.continue();
@@ -211,7 +215,7 @@ async function setupRenderPage(browser: any, width: number, scaleFactor = 2.5) {
   return page;
 }
 
-// ── In-Memory LRU Cache for Rendered JPGs / PNGs ──────────────────────────────
+// ── In-Memory LRU Cache for Rendered JPGs / PNGs (Capped at 10 items) ─────────
 interface CachedImage {
   buffer: Buffer;
   contentType: string;
@@ -219,8 +223,13 @@ interface CachedImage {
 }
 
 const imageCache = new Map<string, CachedImage>();
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
-const CACHE_MAX_SIZE = 100;
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes TTL
+const CACHE_MAX_SIZE = 10; // Strict cap of 10 renders max to keep RAM < 200MB
+
+export function clearRenderCache(): void {
+  imageCache.clear();
+  inFlightRenders.clear();
+}
 
 function getCacheKey(html: string, optionsKey: string): string {
   return crypto.createHash('md5').update(`${html}_${optionsKey}`).digest('hex');
@@ -236,7 +245,6 @@ function getCachedImage(cacheKey: string): Buffer | null {
 }
 
 function setCachedImage(cacheKey: string, buffer: Buffer, contentType: string) {
-  // LRU eviction: remove the oldest entry when at capacity
   if (imageCache.size >= CACHE_MAX_SIZE) {
     let oldestKey: string | null = null;
     let oldestTime = Infinity;
@@ -249,6 +257,16 @@ function setCachedImage(cacheKey: string, buffer: Buffer, contentType: string) {
     if (oldestKey) imageCache.delete(oldestKey);
   }
   imageCache.set(cacheKey, { buffer, contentType, createdAt: Date.now() });
+}
+
+// ── Sequential Render Queue Mutex ──────────────────────────────────────────────
+// Ensures at most 1 heavy render occurs in Chromium at any moment, eliminating memory spikes
+let renderQueueMutex = Promise.resolve();
+
+function runInRenderQueue<T>(task: () => Promise<T>): Promise<T> {
+  const next = renderQueueMutex.then(task, task);
+  renderQueueMutex = next.then(() => {}, () => {});
+  return next;
 }
 
 // ── In-Flight Deduplication — prevents rendering the same HTML twice concurrently ──
@@ -286,16 +304,16 @@ router.post('/jpeg', async (req, res) => {
     }
   }
 
-  // ── Fresh Render ────────────────────────────────────────────────────────────
+  // ── Fresh Render (Serialized to prevent concurrent Chromium memory spikes) ──
   let page: any = null;
-  const renderPromise = (async (): Promise<Buffer> => {
+  const renderPromise = runInRenderQueue(async (): Promise<Buffer> => {
     const t_browser = Date.now();
     const browser = await getSharedBrowser();
     const browserMs = Date.now() - t_browser;
 
     const t_page = Date.now();
     const requestedWidth = Number(width) || 794;
-    page = await setupRenderPage(browser, requestedWidth, 2.5);
+    page = await setupRenderPage(browser, requestedWidth, 1.5);
     const pageMs = Date.now() - t_page;
 
     const t_content = Date.now();
@@ -307,7 +325,7 @@ router.post('/jpeg', async (req, res) => {
     await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 800))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 600))]);
       }
       const images = Array.from(d.querySelectorAll('img')) as any[];
       if (images.length > 0) {
@@ -335,19 +353,9 @@ router.post('/jpeg', async (req, res) => {
               };
             });
           })),
-          new Promise((r) => setTimeout(r, 2500)),
+          new Promise((r) => setTimeout(r, 1200)),
         ]);
       }
-      // Wait for rendering frame
-      await new Promise<void>((r) => {
-        if (typeof (globalThis as any).requestAnimationFrame === 'function') {
-          (globalThis as any).requestAnimationFrame(() => {
-            (globalThis as any).requestAnimationFrame(() => r());
-          });
-        } else {
-          setTimeout(r, 50);
-        }
-      });
     });
     const fontsMs = Date.now() - t_fonts;
 
@@ -355,7 +363,7 @@ router.post('/jpeg', async (req, res) => {
       const d = (globalThis as any).document;
       return d?.body?.scrollHeight || 1123;
     });
-    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 2.5 });
+    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.5 });
 
     const t_shot = Date.now();
     const jpegBuffer = await page.screenshot({
@@ -371,7 +379,7 @@ router.post('/jpeg', async (req, res) => {
 
     setCachedImage(cacheKey, jpegBuffer, 'image/jpeg');
     return jpegBuffer;
-  })();
+  });
 
   inFlightRenders.set(cacheKey, renderPromise);
 
@@ -418,10 +426,10 @@ router.post('/png', async (req, res) => {
   }
 
   let page: any = null;
-  const renderPromise = (async (): Promise<Buffer> => {
+  const renderPromise = runInRenderQueue(async (): Promise<Buffer> => {
     const browser = await getSharedBrowser();
     const requestedWidth = Number(width) || 794;
-    page = await setupRenderPage(browser, requestedWidth, 2.5);
+    page = await setupRenderPage(browser, requestedWidth, 1.5);
 
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
@@ -429,7 +437,7 @@ router.post('/png', async (req, res) => {
     await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 800))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 600))]);
       }
       const images = Array.from(d.querySelectorAll('img')) as any[];
       if (images.length > 0) {
@@ -457,32 +465,22 @@ router.post('/png', async (req, res) => {
               };
             });
           })),
-          new Promise((r) => setTimeout(r, 2500)),
+          new Promise((r) => setTimeout(r, 1200)),
         ]);
       }
-      // Wait for rendering frame
-      await new Promise<void>((r) => {
-        if (typeof (globalThis as any).requestAnimationFrame === 'function') {
-          (globalThis as any).requestAnimationFrame(() => {
-            (globalThis as any).requestAnimationFrame(() => r());
-          });
-        } else {
-          setTimeout(r, 50);
-        }
-      });
     });
 
     const bodyHeight = await page.evaluate(() => {
       const d = (globalThis as any).document;
       return d?.body?.scrollHeight || 1123;
     });
-    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 2.5 });
+    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.5 });
 
     const screenshot = await page.screenshot({ type: 'png', fullPage: true, timeout: 15000 });
     console.log(`📸 [PNG Render] ${Date.now() - startTime}ms`);
     setCachedImage(cacheKey, screenshot, 'image/png');
     return screenshot;
-  })();
+  });
 
   inFlightRenders.set(cacheKey, renderPromise);
 
@@ -510,16 +508,19 @@ router.post('/pdf', async (req, res) => {
 
   let page: any = null;
   try {
-    const browser = await getSharedBrowser();
-    const requestedWidth = Number(width) || 794;
-    page = await setupRenderPage(browser, requestedWidth, 2.0);
+    const pdfBuffer = await runInRenderQueue(async () => {
+      const browser = await getSharedBrowser();
+      const requestedWidth = Number(width) || 794;
+      page = await setupRenderPage(browser, requestedWidth, 1.5);
 
-    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
-    const pdfBuffer = await page.pdf({
-      format: 'A4' as any,
-      printBackground: true,
-      margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+      const buffer = await page.pdf({
+        format: 'A4' as any,
+        printBackground: true,
+        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+      });
+      return buffer;
     });
 
     console.log(`📄 [PDF Render] ${Date.now() - startTime}ms`);

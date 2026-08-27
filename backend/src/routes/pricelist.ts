@@ -376,6 +376,14 @@ router.post('/duplicate', async (req: Request, res: Response) => {
   }
 });
 
+// In-Memory cache for Price List queries (20s TTL)
+const PRICELIST_CACHE = new Map<string, { ts: number; data: any }>();
+const PRICELIST_CACHE_TTL = 20000;
+
+export function clearPriceListCache(): void {
+  PRICELIST_CACHE.clear();
+}
+
 // GET /api/pricelist — List or query price lists
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -384,58 +392,67 @@ router.get('/', async (req: Request, res: Response) => {
     const limit = Math.min(parseInt(String(limitQuery ?? '30')), 90);
 
     if (dateStr) {
+      const cacheKey = `${branchId || 'all'}_${dateStr}`;
+      const cached = PRICELIST_CACHE.get(cacheKey);
+      if (cached && (Date.now() - cached.ts) < PRICELIST_CACHE_TTL) {
+        return res.json(cached.data);
+      }
+
       const { start: day, end: dayEnd } = getBusinessDateRange(String(dateStr));
 
-      const list = await prisma.priceList.findFirst({
-        where: {
-          branchId: branchId ?? undefined,
-          date: { gte: day, lte: dayEnd },
-          isActive: true,
-        },
-        include: {
-          items: {
-            include: {
-              product: {
-                select: { id: true, name: true, urduName: true, category: true, availability: true }
-              }
-            },
-            orderBy: { itemName: 'asc' }
+      const [list, inventories, activeProducts] = await Promise.all([
+        prisma.priceList.findFirst({
+          where: {
+            branchId: branchId ?? undefined,
+            date: { gte: day, lte: dayEnd },
+            isActive: true,
           },
-          createdBy: { select: { id: true, name: true } },
-        },
-      });
+          include: {
+            items: {
+              include: {
+                product: {
+                  select: { id: true, name: true, urduName: true, category: true, availability: true, emoji: true, imageUrl: true }
+                }
+              },
+              orderBy: { itemName: 'asc' }
+            },
+            createdBy: { select: { id: true, name: true } },
+          },
+        }),
+        branchId ? prisma.inventory.findMany({ where: { branchId } }) : Promise.resolve([]),
+        prisma.product.findMany({
+          where: {
+            availability: { in: ['AVAILABLE', 'SEASONAL'] },
+            isActive: true,
+          },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        }),
+      ]);
 
-      const inventories = branchId ? await prisma.inventory.findMany({
-        where: { branchId },
-      }) : [];
       const inventoryMap = new Map<string, any>();
       inventories.forEach(inv => inventoryMap.set(inv.productId, inv));
 
-      const activeProducts = await prisma.product.findMany({
-        where: {
-          availability: { in: ['AVAILABLE', 'SEASONAL'] },
-          isActive: true,
-        },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      });
-
       const synchronizedItems = buildSynchronizedPriceListItems(list, activeProducts, inventoryMap);
 
+      let responsePayload;
       if (list) {
-        return res.json({ success: true, isDraft: false, data: { ...list, items: synchronizedItems } });
+        responsePayload = { success: true, isDraft: false, data: { ...list, items: synchronizedItems } };
+      } else {
+        responsePayload = {
+          success: true,
+          isDraft: true,
+          data: {
+            id: 'draft',
+            date: day.toISOString(),
+            isActive: true,
+            notes: 'Draft based on central inventory catalog',
+            items: synchronizedItems,
+          },
+        };
       }
 
-      return res.json({
-        success: true,
-        isDraft: true,
-        data: {
-          id: 'draft',
-          date: day.toISOString(),
-          isActive: true,
-          notes: 'Draft based on central inventory catalog',
-          items: synchronizedItems,
-        },
-      });
+      PRICELIST_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+      return res.json(responsePayload);
     }
 
     const lists = await prisma.priceList.findMany({

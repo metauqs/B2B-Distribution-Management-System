@@ -22,6 +22,15 @@ import { authRateLimiter } from '../middleware/rateLimiter';
 router.use('/login', authRateLimiter);
 router.use('/refresh', authRateLimiter);
 
+// In-Memory cache for /me endpoint (30s TTL) to eliminate query storms
+const ME_CACHE = new Map<string, { ts: number; user: any }>();
+const ME_CACHE_TTL = 30000;
+
+export function invalidateMeCache(userId?: string) {
+  if (userId) ME_CACHE.delete(userId);
+  else ME_CACHE.clear();
+}
+
 // POST /api/auth/login
 router.post('/login', async (req: Request, res: Response) => {
   try {
@@ -33,48 +42,47 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const trimmedId = employeeId.trim();
 
-    // Ensure at least one admin employee exists to prevent lockout (fail-safe)
-    try {
-      const employeeCount = await prisma.employee.count();
-      if (employeeCount === 0) {
-        const branch = await prisma.branch.findFirst();
-        if (branch) {
-          const adminPass = await bcrypt.hash(config.initialAdmin.password, 10);
-          await prisma.employee.create({
-            data: {
-              employeeId: config.initialAdmin.employeeId,
-              password: adminPass,
-              name: 'System Admin (Owner)',
-              role: 'ADMIN',
-              phone: '03000000000',
-              whatsapp: '03000000000',
-              branchId: branch.id,
-              isActive: true,
-            }
-          });
-        }
-      }
-    } catch (seedErr) {
-      console.warn('[AUTH SEED CHECK SKIPPED]', seedErr);
-    }
-
-    // 1. Search by exact stored employeeId field
+    // 1. Direct search by exact stored employeeId field
     let matchedEmployee = await prisma.employee.findFirst({
       where: { employeeId: trimmedId }
     });
 
-    // 2. Fallback to derived phone/whatsapp last-4-digits for legacy employees
+    // 2. Fallback to phone search if not found
+    if (!matchedEmployee && trimmedId.length >= 4) {
+      matchedEmployee = await prisma.employee.findFirst({
+        where: {
+          OR: [
+            { phone: { endsWith: trimmedId } },
+            { whatsapp: { endsWith: trimmedId } },
+          ],
+          isActive: true,
+        }
+      });
+    }
+
+    // 3. Fail-safe admin check only if employee not found
     if (!matchedEmployee) {
-      const allEmployees = await prisma.employee.findMany();
-      matchedEmployee = allEmployees.find(emp => {
-        const phone = emp.phone?.trim() || '';
-        const whatsapp = emp.whatsapp?.trim() || '';
-        let derivedId = '';
-        if (phone && whatsapp && phone === whatsapp) derivedId = phone.slice(-4);
-        else if (whatsapp) derivedId = whatsapp.slice(-4);
-        else if (phone) derivedId = phone.slice(-4);
-        return derivedId === trimmedId;
-      }) ?? null;
+      try {
+        const employeeCount = await prisma.employee.count();
+        if (employeeCount === 0) {
+          const branch = await prisma.branch.findFirst();
+          if (branch) {
+            const adminPass = await bcrypt.hash(config.initialAdmin.password, 10);
+            matchedEmployee = await prisma.employee.create({
+              data: {
+                employeeId: config.initialAdmin.employeeId,
+                password: adminPass,
+                name: 'System Admin (Owner)',
+                role: 'ADMIN',
+                phone: '03000000000',
+                whatsapp: '03000000000',
+                branchId: branch.id,
+                isActive: true,
+              }
+            });
+          }
+        }
+      } catch {}
     }
 
     if (!matchedEmployee) {
@@ -276,13 +284,6 @@ router.post('/refresh', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/auth/logout
-router.post('/logout', (req: Request, res: Response) => {
-  res.clearCookie('sabzi_token', { path: '/' });
-  res.clearCookie('sabzi_refresh_token', { path: '/' });
-  return res.json({ success: true, message: 'Logged out successfully' });
-});
-
 // GET /api/auth/me
 router.get('/me', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -290,21 +291,37 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: 'Not authenticated' });
     }
 
+    const userId = req.user.sub;
+    const cached = ME_CACHE.get(userId);
+    if (cached && (Date.now() - cached.ts) < ME_CACHE_TTL) {
+      return res.json({ success: true, data: cached.user });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { id: req.user.sub, deletedAt: null },
+      where: { id: userId, deletedAt: null },
       include: { branch: { select: { id: true, name: true } } },
     });
 
     if (!user || !user.isActive) {
+      ME_CACHE.delete(userId);
       return res.status(401).json({ success: false, error: 'User not found or inactive' });
     }
 
     const { password: _pwd, ...safeUser } = user;
+    ME_CACHE.set(userId, { ts: Date.now(), user: safeUser });
     return res.json({ success: true, data: safeUser });
   } catch (error) {
     console.error('[me]', error);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
+});
+
+// POST /api/auth/logout
+router.post('/logout', (req: Request, res: Response) => {
+  if (req.user?.sub) ME_CACHE.delete(req.user.sub);
+  res.clearCookie('sabzi_token', { path: '/' });
+  res.clearCookie('sabzi_refresh_token', { path: '/' });
+  return res.json({ success: true, message: 'Logged out successfully' });
 });
 
 export default router;

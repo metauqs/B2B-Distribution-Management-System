@@ -56,30 +56,47 @@ export const logout = createAsyncThunk('auth/logout', async () => {
   await fetch('/api/auth/logout', { method: 'POST' });
 });
 
+let lastFetchTime = 0;
+let inFlightFetch: Promise<any> | null = null;
+const FETCH_THROTTLE_MS = 60000; // 60s throttle
+
 export const fetchCurrentUser = createAsyncThunk(
   'auth/fetchCurrentUser',
-  async (_, { rejectWithValue }) => {
-    try {
-      const res = await fetch('/api/auth/me', {
-        headers: {
-          'Cache-Control': 'no-cache',
-        },
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setCachedUser(null);
-        return rejectWithValue('Session expired or invalid');
-      }
-      const user = (data.data ?? data.user) as User;
-      setCachedUser(user);
-      return user;
-    } catch {
-      // Don't log out user on temporary network disconnects
-      const cached = loadCachedUser();
-      if (cached) return cached;
-      setCachedUser(null);
-      return rejectWithValue('Network connection failure');
+  async (force: boolean | undefined, { rejectWithValue }) => {
+    const cached = loadCachedUser();
+    const now = Date.now();
+
+    if (!force && cached && (now - lastFetchTime) < FETCH_THROTTLE_MS) {
+      return cached;
     }
+
+    if (inFlightFetch) {
+      return inFlightFetch;
+    }
+
+    inFlightFetch = (async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          setCachedUser(null);
+          return rejectWithValue('Session expired or invalid');
+        }
+        const user = (data.data ?? data.user) as User;
+        setCachedUser(user);
+        lastFetchTime = Date.now();
+        return user;
+      } catch {
+        const existing = loadCachedUser();
+        if (existing) return existing;
+        setCachedUser(null);
+        return rejectWithValue('Network connection failure');
+      } finally {
+        inFlightFetch = null;
+      }
+    })();
+
+    return inFlightFetch;
   }
 );
 

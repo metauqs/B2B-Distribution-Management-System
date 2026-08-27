@@ -42,13 +42,14 @@ import { idempotencyMiddleware } from './lib/idempotency';
 import prisma from './lib/prisma';
 
 import { config } from './config/env';
-
 import { apiRateLimiter, renderRateLimiter } from './middleware/rateLimiter';
+import { memoryMonitorMiddleware, getMemoryStats } from './middleware/memoryMonitor';
 
 const app = express();
 const port = config.port;
 
-// Global API rate limiting
+// Global memory telemetry and API rate limiting
+app.use(memoryMonitorMiddleware);
 app.use('/api', apiRateLimiter);
 
 // CORS configuration - support cookies and cross-origin requests
@@ -88,12 +89,25 @@ const GROQ_MODELS = [
   'gemma2-9b-it'
 ];
 
+// Root / ping endpoint for HTTP health monitors & load balancers
+app.get('/', (req, res) => res.status(200).send('OK'));
+app.head('/', (req, res) => res.status(200).end());
+
 // Health check endpoint for UptimeRobot & Render monitoring
 app.get('/api/health', (req, res) => {
   return res.status(200).json({
     status: 'online',
     provider: 'Groq',
     models: GROQ_MODELS
+  });
+});
+
+// Live memory diagnostics endpoint
+app.get('/api/health/memory', (req, res) => {
+  return res.status(200).json({
+    success: true,
+    memory: getMemoryStats(),
+    uptimeSeconds: Math.round(process.uptime()),
   });
 });
 
@@ -148,7 +162,9 @@ import { recalculateAllClientsOnStartup } from './lib/recalculateAllClients';
 // Start server
 app.listen(Number(port), '0.0.0.0', () => {
   console.log(`🚀 Server running on http://127.0.0.1:${port}`);
-  recalculateAllClientsOnStartup().catch(err => console.error('[STARTUP RECALC ERROR]', err));
-  // Pre-warm Puppeteer/Chromium so the first real render is instant
-  warmBrowser().catch(err => console.warn('[STARTUP PUPPETEER WARM-UP ERROR]', err));
+  // Defer non-critical background recalculations by 15s to keep startup instantaneous
+  setTimeout(() => {
+    recalculateAllClientsOnStartup().catch(err => console.error('[STARTUP RECALC ERROR]', err));
+    warmBrowser().catch(err => console.warn('[STARTUP PUPPETEER WARM-UP ERROR]', err));
+  }, 15000);
 });

@@ -56,7 +56,7 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { clientId, status, mode, search, from, to, limit: limitQuery } = req.query;
-    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 100000) : (clientId || from || to ? undefined : 10000);
+    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 1000) : (clientId || from || to ? 200 : 100);
 
     const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
     const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
@@ -90,13 +90,44 @@ router.get('/', async (req: Request, res: Response) => {
 
     const sales = await prisma.sale.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        invoiceNo: true,
+        clientId: true,
+        date: true,
+        subtotal: true,
+        discount: true,
+        deliveryCharge: true,
+        previousBalance: true,
+        total: true,
+        paid: true,
+        balance: true,
+        status: true,
+        paymentMode: true,
+        isLocked: true,
+        deliveryStatus: true,
+        notes: true,
+        createdAt: true,
         client: { select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, type: true } },
-        items: { include: { product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } } } },
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            itemName: true,
+            unit: true,
+            qty: true,
+            rate: true,
+            amount: true,
+            costPrice: true,
+            returnedQty: true,
+            returnReason: true,
+            product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } },
+          },
+        },
         employee: { select: { id: true, name: true, role: true, phone: true } },
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      ...(limit ? { take: limit } : {}),
+      take: limit,
     });
 
     return res.json({ success: true, data: sales });

@@ -1,13 +1,30 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { writeAuditLog, getValidUserId } from '../lib/business';
+import { uploadProductImage, getUploadDirectories } from '../lib/storageService';
+import { clearRenderCache } from './render';
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
+
+// In-Memory cache for Product catalog queries (30s TTL)
+const PRODUCT_CACHE = new Map<string, { ts: number; data: any }>();
+const PRODUCT_CACHE_TTL = 30000;
+
+export function clearProductCache(): void {
+  PRODUCT_CACHE.clear();
+}
 
 // GET /api/products
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { category, availability } = req.query;
+    const cacheKey = `${category || 'all'}_${availability || 'default'}`;
+    const cached = PRODUCT_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < PRODUCT_CACHE_TTL) {
+      return res.json({ success: true, data: cached.data });
+    }
 
     const where: any = {};
     if (category) where.category = category;
@@ -26,6 +43,7 @@ router.get('/', async (req: Request, res: Response) => {
       orderBy: [{ sortOrder: 'asc' }, { category: 'asc' }, { name: 'asc' }],
     });
 
+    PRODUCT_CACHE.set(cacheKey, { ts: Date.now(), data: products });
     return res.json({ success: true, data: products });
   } catch (err: any) {
     console.error('Error fetching products:', err);
@@ -56,24 +74,6 @@ router.get('/:id/audit-logs', async (req: Request, res: Response) => {
 });
 
 import { getCurrentBusinessDateRange } from '../lib/businessDate';
-import path from 'path';
-import fs from 'fs';
-
-function getUploadDirectories() {
-  const dirs = [
-    path.resolve(__dirname, '../../uploads/products'),
-    path.resolve(__dirname, '../uploads/products'),
-    path.resolve(process.cwd(), 'uploads/products'),
-    path.resolve(process.cwd(), 'backend/uploads/products'),
-    path.resolve(process.cwd(), '../frontend/public/uploads/products'),
-    path.resolve(__dirname, '../../../frontend/public/uploads/products'),
-    path.resolve(__dirname, '../../../frontend/public'),
-    path.resolve(process.cwd(), '../frontend/public'),
-    path.resolve(process.cwd(), 'frontend/public'),
-    path.resolve(process.cwd(), 'public'),
-  ];
-  return [...new Set(dirs)];
-}
 
 export function findImageFile(filename: string): string | null {
   const safeFilename = path.basename(filename);
@@ -389,6 +389,8 @@ router.post('/', async (req: Request, res: Response) => {
       newData: { name: product.name, unit: product.defaultUnit, category: product.category, imageUrl: product.imageUrl, emoji: product.emoji }
     });
 
+    clearProductCache();
+    clearRenderCache();
     return res.status(201).json({ success: true, data: product });
   } catch (e: any) {
     console.error('Error creating product:', e);
@@ -435,40 +437,16 @@ router.post('/:id/image', async (req: Request, res: Response) => {
     if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = 'jpg';
     else if (mimeType.includes('webp')) ext = 'webp';
 
-    const timestamp = Date.now();
-    const newFilename = `prod_${id}_${timestamp}.${ext}`;
-    const allDirs = getUploadDirectories();
-
-    // 1. Clean up old image files across all upload directories
-    if (existingProduct.imageUrl) {
-      const oldFilename = path.basename(existingProduct.imageUrl.split('?')[0]);
-      for (const dir of allDirs) {
-        const oldPath = path.join(dir, oldFilename);
-        if (fs.existsSync(oldPath)) {
-          try { fs.unlinkSync(oldPath); } catch (err) { /* ignore */ }
-        }
-      }
-    }
-
-    // 2. Write file to all existing upload directories
-    for (const dir of allDirs) {
-      try {
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
-        const targetPath = path.join(dir, newFilename);
-        fs.writeFileSync(targetPath, buffer);
-      } catch (err) {
-        console.warn(`Could not write image to directory ${dir}:`, err);
-      }
-    }
-
-    const imageUrl = `/api/products/image/${newFilename}?v=${timestamp}`;
+    const uploadResult = await uploadProductImage(id, buffer, mimeType, ext);
+    const imageUrl = uploadResult.url;
 
     const updatedProduct = await prisma.product.update({
       where: { id },
       data: { imageUrl },
     });
+
+    clearProductCache();
+    clearRenderCache();
 
     const rawUserId = (req.headers['x-user-id'] as string) || (req.headers['x-staff-id'] as string) || null;
     const validatedUserId = await getValidUserId(rawUserId);
@@ -636,6 +614,8 @@ const updateProduct = async (req: Request, res: Response) => {
       },
     });
 
+    clearProductCache();
+    clearRenderCache();
     return res.json({ success: true, data: product });
   } catch (e: any) {
     console.error('Error updating product:', e);
@@ -657,6 +637,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
       prisma.purchaseItem.count({ where: { productId: id } }),
     ]);
 
+    clearProductCache();
+    clearRenderCache();
     if (sales > 0 || purchases > 0) {
       const product = await prisma.product.update({
         where: { id },

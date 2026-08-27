@@ -3,21 +3,41 @@ import prisma from '../lib/prisma';
 
 const router = Router();
 
+// In-Memory cache for suppliers (30s TTL)
+const SUPPLIER_CACHE = new Map<string, { ts: number; data: any }>();
+const SUPPLIER_CACHE_TTL = 30000;
+
+export function clearSupplierCache(): void {
+  SUPPLIER_CACHE.clear();
+}
+
 // GET /api/suppliers
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
-    const suppliers = await prisma.supplier.findMany({
-      where: { ...(branchId ? { branchId } : {}), deletedAt: null },
-      orderBy: { createdAt: 'asc' },
-    });
+    const cacheKey = branchId || 'all';
+    const cached = SUPPLIER_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < SUPPLIER_CACHE_TTL) {
+      return res.json({ success: true, data: cached.data });
+    }
 
-    const purchasesArr = await prisma.purchase.groupBy({
-      by: ['supplierId'], where: { ...(branchId ? { branchId } : {}), deletedAt: null }, _sum: { total: true },
-    });
-    const paymentsArr = await prisma.supplierPayment.groupBy({
-      by: ['supplierId'], where: branchId ? { branchId } : {}, _sum: { amount: true },
-    });
+    const [suppliers, purchasesArr, paymentsArr] = await Promise.all([
+      prisma.supplier.findMany({
+        where: { ...(branchId ? { branchId } : {}), deletedAt: null },
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.purchase.groupBy({
+        by: ['supplierId'],
+        where: { ...(branchId ? { branchId } : {}), deletedAt: null },
+        _sum: { total: true },
+      }),
+      prisma.supplierPayment.groupBy({
+        by: ['supplierId'],
+        where: branchId ? { branchId } : {},
+        _sum: { amount: true },
+      }),
+    ]);
+
     const purchMap = Object.fromEntries(purchasesArr.map(x => [x.supplierId, x._sum.total ?? 0]));
     const payMap = Object.fromEntries(paymentsArr.map(x => [x.supplierId, x._sum.amount ?? 0]));
 
@@ -26,6 +46,7 @@ router.get('/', async (req: Request, res: Response) => {
       currentBalance: s.openingBalance + (purchMap[s.id] ?? 0) - (payMap[s.id] ?? 0),
     }));
 
+    SUPPLIER_CACHE.set(cacheKey, { ts: Date.now(), data });
     return res.json({ success: true, data });
   } catch (err: any) {
     console.error('Error fetching suppliers:', err);
