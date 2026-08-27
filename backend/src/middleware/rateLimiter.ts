@@ -49,6 +49,12 @@ export function createRateLimiter(options: RateLimitOptions) {
 
     let record = hits.get(ip);
     if (!record || now > record.resetTime) {
+      if (hits.size > 1000) {
+        for (const [k, v] of hits.entries()) {
+          if (now > v.resetTime) hits.delete(k);
+        }
+        if (hits.size > 1000) hits.clear();
+      }
       record = {
         count: 1,
         resetTime: now + windowMs,

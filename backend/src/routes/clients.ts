@@ -7,12 +7,26 @@ import { calculateCollectionBehaviour } from '../lib/collectionBehaviour';
 
 const router = Router();
 
+// In-Memory cache for client listings (20s TTL)
+const CLIENT_CACHE = new Map<string, { ts: number; data: any }>();
+const CLIENT_CACHE_TTL = 20000;
+
+export function clearClientCache(): void {
+  CLIENT_CACHE.clear();
+}
+
 // GET /api/clients
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { type, status, rating, search, stats, minimal, archived } = req.query;
     const isArchived = archived === 'true';
+
+    const cacheKey = `${branchId || 'all'}_${type || ''}_${status || ''}_${rating || ''}_${search || ''}_${stats || ''}_${minimal || ''}_${archived || ''}`;
+    const cached = CLIENT_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < CLIENT_CACHE_TTL) {
+      return res.json({ success: true, data: cached.data });
+    }
 
     const where: any = { 
       ...(isArchived ? { deletedAt: { not: null } } : { deletedAt: null }),
@@ -136,6 +150,7 @@ router.get('/', async (req: Request, res: Response) => {
       };
     });
 
+    CLIENT_CACHE.set(cacheKey, { ts: Date.now(), data });
     return res.json({ success: true, data });
   } catch (err: any) {
     console.error('[GET /api/clients]', err);
@@ -207,6 +222,7 @@ router.post('/', async (req: Request, res: Response) => {
     }, { maxWait: 15000, timeout: 120000 });
 
     await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Client', entityId: client.id, newData: { name } });
+    clearClientCache();
     return res.status(201).json({ success: true, data: client });
   } catch (err: any) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -464,6 +480,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       });
     }
 
+    clearClientCache();
     return res.json({ success: true, data: updated });
   } catch (err: any) {
     console.error('[PUT /api/clients/:id]', err);
@@ -588,6 +605,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       });
     }
 
+    clearClientCache();
     return res.json({ success: true, data: updated });
   } catch (err: any) {
     console.error('[PATCH /api/clients/:id]', err);
@@ -875,6 +893,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
         }
       });
 
+      clearClientCache();
       return res.json({
         success: true,
         action: 'PERMANENT_DELETE',
@@ -927,6 +946,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
         }
       });
 
+      clearClientCache();
       return res.json({
         success: true,
         action: 'ARCHIVE',
@@ -961,6 +981,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
         }
       });
 
+      clearClientCache();
       return res.json({
         success: true,
         action: 'HARD_DELETE',
