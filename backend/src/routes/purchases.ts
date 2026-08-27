@@ -19,8 +19,11 @@ router.get('/', async (req: Request, res: Response) => {
       select: {
         id: true,
         date: true,
+        subtotal: true,
         total: true,
         paid: true,
+        balance: true,
+        status: true,
         transportCost: true,
         notes: true,
         supplierId: true,
