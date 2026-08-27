@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import puppeteer from 'puppeteer';
+import puppeteer, { Browser } from 'puppeteer';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
@@ -75,12 +75,37 @@ function resolveLocalAsset(urlStr: string): { filePath: string; contentType: str
 }
 
 // ── Shared Singleton Puppeteer Browser Instance ────────────────────────────────
-let sharedBrowser: any = null;
+let sharedBrowser: Browser | null = null;
+let idleCloseTimer: NodeJS.Timeout | null = null;
+const IDLE_BROWSER_TIMEOUT_MS = 15000; // 15s after last render, close browser to free 100% RAM
 let browserStarting: Promise<any> | null = null;
 
-async function getSharedBrowser() {
-  // If browser is already running and connected, return it
-  if (sharedBrowser && (typeof (sharedBrowser as any).connected === 'boolean' ? (sharedBrowser as any).connected : true)) {
+export function scheduleBrowserIdleClose() {
+  if (idleCloseTimer) clearTimeout(idleCloseTimer);
+  idleCloseTimer = setTimeout(async () => {
+    if (sharedBrowser) {
+      try {
+        console.log('💤 [Puppeteer Idle] Closing browser to reclaim server RAM');
+        await sharedBrowser.close();
+      } catch {}
+      sharedBrowser = null;
+    }
+  }, IDLE_BROWSER_TIMEOUT_MS);
+  if (idleCloseTimer.unref) idleCloseTimer.unref();
+}
+
+/**
+ * Returns a reusable Puppeteer Browser instance.
+ * Launches on-demand with ultra-low memory flags and auto-closes when idle.
+ */
+async function getSharedBrowser(): Promise<Browser> {
+  if (idleCloseTimer) {
+    clearTimeout(idleCloseTimer);
+    idleCloseTimer = null;
+  }
+
+  // If we already have a healthy browser, reuse it
+  if (sharedBrowser && (sharedBrowser.connected || (sharedBrowser as any).isConnected?.())) {
     return sharedBrowser;
   }
 
@@ -414,6 +439,7 @@ router.post('/jpeg', async (req, res) => {
   } finally {
     inFlightRenders.delete(cacheKey);
     await closePageSafely(page);
+    scheduleBrowserIdleClose();
   }
 });
 
@@ -513,6 +539,7 @@ router.post('/png', async (req, res) => {
   } finally {
     inFlightRenders.delete(cacheKey);
     await closePageSafely(page);
+    scheduleBrowserIdleClose();
   }
 });
 
@@ -527,7 +554,7 @@ router.post('/pdf', async (req, res) => {
     const pdfBuffer = await runInRenderQueue(async () => {
       const browser = await getSharedBrowser();
       const requestedWidth = Number(width) || 794;
-      page = await setupRenderPage(browser, requestedWidth, 1.5);
+      page = await setupRenderPage(browser, requestedWidth, 1.2);
 
       await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
@@ -547,6 +574,7 @@ router.post('/pdf', async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   } finally {
     await closePageSafely(page);
+    scheduleBrowserIdleClose();
   }
 });
 

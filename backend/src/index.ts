@@ -164,6 +164,5 @@ app.listen(Number(port), '0.0.0.0', () => {
   // Defer non-critical background recalculations by 15s to keep startup instantaneous
   setTimeout(() => {
     recalculateAllClientsOnStartup().catch(err => console.error('[STARTUP RECALC ERROR]', err));
-    warmBrowser().catch(err => console.warn('[STARTUP PUPPETEER WARM-UP ERROR]', err));
   }, 15000);
 });

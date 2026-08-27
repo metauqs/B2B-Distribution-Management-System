@@ -2358,6 +2358,18 @@ export async function convertDataUrlToHighResJpg(dataUrl: string, quality = 0.98
 export async function generateTemplateJpgBase64(html: string): Promise<string> {
   if (!html || typeof window === 'undefined') return '';
 
+  // ── Step 1: High-Definition Client-Side Generation (0 MB Server RAM & 0% Server CPU) ──
+  try {
+    const clientPngBase64 = await generateTemplateImageBase64(html);
+    if (clientPngBase64) {
+      const jpg = await convertDataUrlToHighResJpg(clientPngBase64, 0.95);
+      if (jpg) return jpg;
+    }
+  } catch (clientErr) {
+    console.warn('Client-side canvas render error, falling back to server render:', clientErr);
+  }
+
+  // ── Step 2: Server-Side Fallback (only if client-side canvas failed) ──
   const TARGET_WIDTH = 794;
   const token = typeof window !== 'undefined' ? (localStorage.getItem('sabzi_token') || localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('sabzi_token') || sessionStorage.getItem('token') || '') : '';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -2365,17 +2377,13 @@ export async function generateTemplateJpgBase64(html: string): Promise<string> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // ── Step 1: Direct High-Speed Backend JPEG Screenshot ─────────────────────
-  // 30s timeout: warm Chromium completes in 2-4s. Render.com cold start can take
-  // up to 20s — 30s gives enough margin without triggering the slow fallback chain.
-  let jpegServerError = false;
   try {
     const res = await fetch('/api/render/jpeg', {
       method: 'POST',
       headers,
       credentials: 'include',
       body: JSON.stringify({ html, width: TARGET_WIDTH, quality: 88 }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (res.ok) {
@@ -2387,45 +2395,11 @@ export async function generateTemplateJpgBase64(html: string): Promise<string> {
         reader.readAsDataURL(blob);
       });
     }
-    // Hard server error (5xx) — skip PNG (same Puppeteer renderer would also fail)
-    if (res.status >= 500) jpegServerError = true;
   } catch (err: any) {
-    // AbortError (timeout) or network error — try PNG fallback
-    console.warn('Direct JPEG render fallback:', err);
+    console.warn('Server JPEG render fallback:', err);
   }
 
-  // ── Step 2: Direct PNG Fallback (skip on hard 500 errors) ────────────────
-  // Only attempt PNG if JPEG timed out. If JPEG returned 500, the renderer itself
-  // is broken — go straight to client-side html2canvas instead.
-  if (!jpegServerError) {
-    try {
-      const pngRes = await fetch('/api/render/png', {
-        method: 'POST',
-        headers,
-        credentials: 'include',
-        body: JSON.stringify({ html, width: TARGET_WIDTH }),
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (pngRes.ok) {
-        const blob = await pngRes.blob();
-        const pngBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve((reader.result as string) || '');
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        if (pngBase64) return await convertDataUrlToHighResJpg(pngBase64, 0.95);
-      }
-    } catch (pngErr) {
-      console.warn('Direct PNG fallback:', pngErr);
-    }
-  }
-
-  // ── Step 3: High-Definition Client-Side html2canvas Fallback ──────────────
-  const pngBase64 = await generateTemplateImageBase64(html);
-  if (!pngBase64) return '';
-  return await convertDataUrlToHighResJpg(pngBase64, 0.95);
+  return '';
 }
 
 /**
