@@ -140,17 +140,17 @@ export default function SalesPage() {
   // ── List state ──────────────────────────────────────────────────────────────
   const [sales,      setSales]      = useState<Sale[]>(() => {
     const targetDate = filterDate || todayInputDate();
-    const p = new URLSearchParams({ limit: '200', from: targetDate, to: targetDate + 'T23:59:59' });
+    const p = new URLSearchParams({ limit: '100', from: targetDate, to: targetDate + 'T23:59:59' });
     return getCachedData<Sale[]>(`/api/sales?${p}`) || [];
   });
   const [loading,    setLoading]    = useState(() => {
     const targetDate = filterDate || todayInputDate();
-    const p = new URLSearchParams({ limit: '200', from: targetDate, to: targetDate + 'T23:59:59' });
+    const p = new URLSearchParams({ limit: '100', from: targetDate, to: targetDate + 'T23:59:59' });
     return !getCachedData<Sale[]>(`/api/sales?${p}`);
   });
   const [todayCollectionsAmt, setTodayCollectionsAmt] = useState(() => {
     const targetDate = filterDate || todayInputDate();
-    const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=500`;
+    const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=100`;
     const cachedColls = getCachedData<any[]>(collKey);
     if (cachedColls && Array.isArray(cachedColls)) {
       return cachedColls.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
@@ -292,7 +292,7 @@ export default function SalesPage() {
   const loadSales = useCallback(async (isBackground = false) => {
     if (!isBackground && sales.length === 0) setLoading(true);
     try {
-      const p = new URLSearchParams({ limit: '1000' });
+      const p = new URLSearchParams({ limit: '100' });
       if (debouncedSrchInv)      p.set('search', debouncedSrchInv);
       if (filterSt !== 'all')   p.set('status', filterSt);
       if (filterMode !== 'all') p.set('mode', filterMode);
@@ -303,7 +303,7 @@ export default function SalesPage() {
       const targetDate = filterDate || new Date().toISOString().slice(0, 10);
       
       const salesKey = `/api/sales?${p}`;
-      const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=500`;
+      const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=100`;
 
       const [salesData, collData] = await Promise.all([
         fetchWithCache<Sale[]>(salesKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),

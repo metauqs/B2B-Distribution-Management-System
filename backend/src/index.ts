@@ -156,13 +156,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-import { recalculateAllClientsOnStartup } from './lib/recalculateAllClients';
-
 // Start server
 app.listen(Number(port), '0.0.0.0', () => {
   console.log(`🚀 Server running on http://127.0.0.1:${port}`);
-  // Defer non-critical background recalculations by 15s to keep startup instantaneous
-  setTimeout(() => {
-    recalculateAllClientsOnStartup().catch(err => console.error('[STARTUP RECALC ERROR]', err));
-  }, 15000);
 });

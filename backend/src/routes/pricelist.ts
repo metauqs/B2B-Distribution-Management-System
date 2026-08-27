@@ -154,10 +154,23 @@ function buildSynchronizedPriceListItems(
   return mergedItems;
 }
 
+// In-Memory cache for Price List queries (20s TTL)
+const PRICELIST_CACHE = new Map<string, { ts: number; data: any }>();
+const PRICELIST_CACHE_TTL = 20000;
+
+export function clearPriceListCache(): void {
+  PRICELIST_CACHE.clear();
+}
+
 // GET /api/pricelist/active — Get today's active Price List with Inventory buy rates & stock
 router.get('/active', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const cacheKey = `active_${branchId || 'all'}`;
+    const cached = PRICELIST_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < PRICELIST_CACHE_TTL) {
+      return res.json(cached.data);
+    }
 
     const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
 
@@ -206,8 +219,9 @@ router.get('/active', async (req: Request, res: Response) => {
       if (item.productId) rateMap[item.productId] = item.sellRate;
     });
 
+    let responsePayload: any;
     if (!list) {
-      return res.json({
+      responsePayload = {
         success: true,
         isToday: false,
         isDraft: true,
@@ -219,19 +233,23 @@ router.get('/active', async (req: Request, res: Response) => {
           items: synchronizedItems,
         },
         rateMap,
-      });
+      };
+    } else {
+      responsePayload = {
+        success: true,
+        isToday: true,
+        isDraft: false,
+        data: {
+          ...list,
+          items: synchronizedItems,
+        },
+        rateMap,
+      };
     }
 
-    return res.json({
-      success: true,
-      isToday: true,
-      isDraft: false,
-      data: {
-        ...list,
-        items: synchronizedItems,
-      },
-      rateMap,
-    });
+    if (PRICELIST_CACHE.size > 50) PRICELIST_CACHE.clear();
+    PRICELIST_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('Error in GET /api/pricelist/active:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load active price list' });
@@ -375,14 +393,6 @@ router.post('/duplicate', async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to duplicate price list' });
   }
 });
-
-// In-Memory cache for Price List queries (20s TTL)
-const PRICELIST_CACHE = new Map<string, { ts: number; data: any }>();
-const PRICELIST_CACHE_TTL = 20000;
-
-export function clearPriceListCache(): void {
-  PRICELIST_CACHE.clear();
-}
 
 // GET /api/pricelist — List or query price lists
 router.get('/', async (req: Request, res: Response) => {
