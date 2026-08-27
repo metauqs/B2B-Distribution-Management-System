@@ -48,9 +48,8 @@ import { memoryMonitorMiddleware, getMemoryStats } from './middleware/memoryMoni
 const app = express();
 const port = config.port;
 
-// Global memory telemetry and API rate limiting
+// Global memory telemetry
 app.use(memoryMonitorMiddleware);
-app.use('/api', apiRateLimiter);
 
 // CORS configuration - support cookies and cross-origin requests
 app.use(cors({

@@ -46,13 +46,13 @@ async function handleProxy(request: NextRequest, path: string[]) {
       body,
     });
 
-    const data = await res.arrayBuffer();
+    const resBody = Buffer.from(await res.arrayBuffer());
 
     const resHeaders = new Headers(res.headers);
     resHeaders.delete('content-encoding');
     resHeaders.delete('content-length');
 
-    return new NextResponse(data, {
+    return new NextResponse(resBody, {
       status: res.status,
       statusText: res.statusText,
       headers: resHeaders,
