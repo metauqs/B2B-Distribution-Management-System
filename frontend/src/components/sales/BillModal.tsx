@@ -89,7 +89,7 @@ export function BillModal({ sale, client, onClose, onDelete }: BillModalProps) {
 
           {/* Header */}
           <div className="va-bill-head" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px 20px' }}>
-            <img src="/logo.png" alt="Halal Vegg Supplies" width="160" height="48" loading="lazy" decoding="async" style={{ height: '48px', width: 'auto', objectFit: 'contain' }} />
+            <img src="/logo.avif" alt="Halal Vegg Supplies" width="160" height="48" loading="lazy" decoding="async" style={{ height: '48px', width: 'auto', objectFit: 'contain' }} />
           </div>
 
           {/* Invoice number bar */}

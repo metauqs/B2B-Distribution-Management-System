@@ -36,7 +36,7 @@ export function escapeHtml(str: string | null | undefined): string {
 export interface BrandConfig {
   companyName: string;    // "HALAL VEGG SUPPLIES"
   tagline: string;        // "FRESH FROM MANDI . DAILY DELIVERY"
-  logoUrl: string;        // "/logo-transparent.png"  (relative or absolute)
+  logoUrl: string;        // "/logo-transparent.avif"  (relative or absolute)
   primaryColor: string;   // "#1A3C28"  (dark forest green)
   accentColor: string;    // "#2D6A4F"  (medium green)
   lightBg: string;        // "#F4F8F0"  (very light green tint)
@@ -631,7 +631,7 @@ function buildHeader(
 ): string {
   const logoSrc = (b.logoUrl && (b.logoUrl.startsWith('data:') || b.logoUrl.startsWith('http')))
     ? b.logoUrl
-    : (b.logoUrl && b.logoUrl !== '/logo-transparent.png' ? `${origin}${b.logoUrl}` : DEFAULT_LOGO_BASE64);
+    : (b.logoUrl && b.logoUrl !== '/logo-transparent.avif' ? `${origin}${b.logoUrl}` : DEFAULT_LOGO_BASE64);
 
   return `
     <div class="doc-header">
@@ -795,7 +795,7 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
 
   const logoSrc = (brand.logoUrl && (brand.logoUrl.startsWith('data:') || brand.logoUrl.startsWith('http')))
     ? brand.logoUrl
-    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
+    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.avif' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
 
   // ── Header (Exact Reference Match) ──
   const header = `
@@ -1067,7 +1067,7 @@ export function generateStatementHTML(stmt: StatementData, brand: BrandConfig, o
 
   const logoSrc = (brand.logoUrl && (brand.logoUrl.startsWith('data:') || brand.logoUrl.startsWith('http')))
     ? brand.logoUrl
-    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
+    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.avif' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
 
   const clientPhone = stmt.phone ?? '';
   const whatsappLine = stmt.whatsapp && stmt.whatsapp !== stmt.phone ? ` · WA: ${stmt.whatsapp}` : '';
@@ -1347,7 +1347,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
 
   const logoSrc = (brand.logoUrl && (brand.logoUrl.startsWith('data:') || brand.logoUrl.startsWith('http')))
     ? brand.logoUrl
-    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : PRICELIST_LOGO_BASE64);
+    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.avif' ? `${origin}${brand.logoUrl}` : PRICELIST_LOGO_BASE64);
 
   const bodyContent = `
     <div style="max-width:780px;margin:0 auto;background:linear-gradient(180deg, #062315 0%, #082E1C 100%);border:4px double #E5A93C;border-radius:12px;padding:24px 28px 28px;color:#FFFFFF;box-sizing:border-box;">
@@ -1610,7 +1610,7 @@ export function generateOutstandingDueStatementHTML(data: OutstandingDueData, br
 
   const logoSrc = (brand.logoUrl && (brand.logoUrl.startsWith('data:') || brand.logoUrl.startsWith('http')))
     ? brand.logoUrl
-    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.png' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
+    : (brand.logoUrl && brand.logoUrl !== '/logo-transparent.avif' ? `${origin}${brand.logoUrl}` : DEFAULT_LOGO_BASE64);
 
   const clientPhone = data.phone ?? '';
   const whatsappLine = data.whatsapp && data.whatsapp !== data.phone ? ` · WA: ${data.whatsapp}` : '';

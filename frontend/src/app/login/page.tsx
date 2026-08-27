@@ -17,7 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [logoSrc] = useState<string>('/logo-transparent.png');
+  const [logoSrc] = useState<string>('/logo-transparent.avif');
 
   // Verify if valid session cookie exists when opening login page
   useEffect(() => {

@@ -8,28 +8,28 @@ export function getProductVisual(name: string): { type: 'emoji' | 'image'; value
 
   // 1. Uploaded Image Mappings (exact sequence matched from user prompt)
   if (n.includes('lady finger') || n.includes('okra') || n.includes('bhindi') || n === 'ladyfinger') {
-    return { type: 'image', value: '/ladyfinger.png', fallback: '🫛' };
+    return { type: 'image', value: '/ladyfinger.avif', fallback: '🫛' };
   }
   if (n.includes('guava') || n.includes('amrood')) {
-    return { type: 'image', value: '/guava.png', fallback: '🍏' };
+    return { type: 'image', value: '/guava.avif', fallback: '🍏' };
   }
   if (n.includes('papaya') || n.includes('papeeta') || n.includes('papiya')) {
-    return { type: 'image', value: '/papaya.png', fallback: '🍈' };
+    return { type: 'image', value: '/papaya.avif', fallback: '🍈' };
   }
   if (n.includes('pomegranate') || n.includes('anar')) {
-    return { type: 'image', value: '/pomegranate.png', fallback: '🍎' };
+    return { type: 'image', value: '/pomegranate.avif', fallback: '🍎' };
   }
   if (n.includes('turnip') || n.includes('shalgam')) {
-    return { type: 'image', value: '/turnip.png', fallback: '🫜' };
+    return { type: 'image', value: '/turnip.avif', fallback: '🫜' };
   }
   if (n.includes('radish') || n.includes('mooli')) {
-    return { type: 'image', value: '/radish.png', fallback: '🫜' };
+    return { type: 'image', value: '/radish.avif', fallback: '🫜' };
   }
   if (n.includes('beetroot') || n.includes('chukandar')) {
-    return { type: 'image', value: '/beetroot.png', fallback: '🫜' };
+    return { type: 'image', value: '/beetroot.avif', fallback: '🫜' };
   }
   if (n.includes('plum') || n.includes('alobukhara') || n.includes('alubukhara')) {
-    return { type: 'image', value: '/plum.png', fallback: '🍑' };
+    return { type: 'image', value: '/plum.avif', fallback: '🍑' };
   }
 
   // 2. Standardized Emojis according to the user's list
