@@ -45,6 +45,20 @@ export function createRateLimiter(options: RateLimitOptions) {
     // Determine client identifier (IP address, handling x-forwarded-for)
     const forwarded = req.headers['x-forwarded-for'];
     const ip = (typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : req.socket.remoteAddress) || 'unknown_ip';
+
+    // Always bypass rate limiting for internal proxy and loopback requests
+    if (
+      ip === '127.0.0.1' ||
+      ip === '::1' ||
+      ip === 'localhost' ||
+      ip === 'unknown_ip' ||
+      ip.includes('127.0.0.1') ||
+      req.headers['x-forwarded-host'] ||
+      req.headers['x-internal-proxy']
+    ) {
+      return next();
+    }
+
     const now = Date.now();
 
     let record = hits.get(ip);

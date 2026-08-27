@@ -16,12 +16,6 @@ function signAuthTokens(payload: { sub: string; email: string; role: string; bra
   return { accessToken, refreshToken };
 }
 
-import { authRateLimiter } from '../middleware/rateLimiter';
-
-// Apply auth rate limiter to login and refresh endpoints
-router.use('/login', authRateLimiter);
-router.use('/refresh', authRateLimiter);
-
 // In-Memory cache for /me endpoint (30s TTL) to eliminate query storms
 const ME_CACHE = new Map<string, { ts: number; user: any }>();
 const ME_CACHE_TTL = 30000;
