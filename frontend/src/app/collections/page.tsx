@@ -96,8 +96,8 @@ export default function CollectionsPage() {
   const [statementInvoices, setStatementInvoices] = useState<any[]>([]);
   const [statementMode, setStatementMode] = useState<'view' | 'share'>('view');
 
-  const loadDailyHistory = useCallback(async (dateVal?: string, empVal?: string, methodVal?: string, searchVal?: string) => {
-    setLoadingDaily(true);
+  const loadDailyHistory = useCallback(async (dateVal?: string, empVal?: string, methodVal?: string, searchVal?: string, isBackground = false) => {
+    if (!isBackground && !dailyData) setLoadingDaily(true);
     try {
       const targetDate = dateVal !== undefined ? dateVal : dailyDate;
       const targetEmp = empVal !== undefined ? empVal : dailyEmployee;
@@ -110,9 +110,9 @@ export default function CollectionsPage() {
       if (targetMethod && targetMethod !== 'all') params.append('method', targetMethod);
       if (targetSearch) params.append('search', targetSearch);
 
-      const res = await apiFetch(`/api/collections/daily-history?${params.toString()}`);
-      const json = await res.json();
-      if (res.ok && json.success) {
+      const cacheKey = `/api/collections/daily-history?${params.toString()}`;
+      const json = await fetchWithCache<any>(cacheKey, { ttl: TTL_SHORT, forceRefresh: isBackground });
+      if (json) {
         setDailyData(json);
       }
     } catch (err) {
@@ -120,7 +120,7 @@ export default function CollectionsPage() {
     } finally {
       setLoadingDaily(false);
     }
-  }, [dailyDate, dailyEmployee, dailyMethod, dailySearch]);
+  }, [dailyDate, dailyEmployee, dailyMethod, dailySearch, dailyData]);
 
   const handleViewDues = (clientId: string) => {
     const client = clients.find(c => c.id === clientId);

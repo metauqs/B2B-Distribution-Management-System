@@ -52,38 +52,28 @@ export default function SettingsPage() {
   });
   const [waSaved, setWaSaved] = useState(false);
 
-  const loadUsers = useCallback(async (forceRefresh = false) => {
+  const loadAllData = useCallback(async (forceRefresh = false) => {
     try {
-      const data = await fetchWithCache<any[]>('/api/settings/users', { ttl: TTL_LONG, forceRefresh });
-      if (data) setUsers(data);
+      const [uData, pData, waData] = await Promise.all([
+        fetchWithCache<any[]>('/api/settings/users', { ttl: TTL_LONG, forceRefresh }),
+        fetchWithCache<any[]>('/api/products', { ttl: TTL_LONG, forceRefresh }),
+        fetchWithCache<any>('/api/broadcasts/settings', { ttl: TTL_LONG, forceRefresh }),
+      ]);
+      if (uData) setUsers(uData);
+      if (pData) setProducts(pData);
+      if (waData) setWaSettings(waData);
     } catch (err) {
-      console.error('loadUsers error:', err);
+      console.error('loadAllData error:', err);
     }
   }, []);
 
-  const loadProducts = useCallback(async (forceRefresh = false) => {
-    try {
-      const data = await fetchWithCache<any[]>('/api/products', { ttl: TTL_LONG, forceRefresh });
-      if (data) setProducts(data);
-    } catch (err) {
-      console.error('loadProducts error:', err);
-    }
-  }, []);
-
-  const loadWaSettings = useCallback(async (forceRefresh = false) => {
-    try {
-      const data = await fetchWithCache<any>('/api/broadcasts/settings', { ttl: TTL_LONG, forceRefresh });
-      if (data) setWaSettings(data);
-    } catch (err) {
-      console.error('loadWaSettings error:', err);
-    }
-  }, []);
+  const loadUsers = useCallback((forceRefresh = false) => loadAllData(forceRefresh), [loadAllData]);
+  const loadProducts = useCallback((forceRefresh = false) => loadAllData(forceRefresh), [loadAllData]);
+  const loadWaSettings = useCallback((forceRefresh = false) => loadAllData(forceRefresh), [loadAllData]);
 
   useEffect(() => {
-    loadUsers();
-    loadProducts();
-    loadWaSettings();
-  }, [loadUsers, loadProducts, loadWaSettings]);
+    loadAllData();
+  }, [loadAllData]);
 
   const saveBranch = async (e: React.FormEvent) => {
     e.preventDefault();

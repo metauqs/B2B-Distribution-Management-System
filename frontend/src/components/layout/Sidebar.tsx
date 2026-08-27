@@ -20,6 +20,7 @@ import {
 import { useAppSelector } from '@/store';
 import { hasModuleAccess } from '@/utils/rbac';
 import { savePageState } from '@/utils/navigationStateStore';
+import { prefetchPageData } from '@/utils/dataPrefetch';
 
 interface SubItem {
   label: string;
@@ -265,6 +266,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <Link
                   href={href}
                   prefetch={true}
+                  onMouseEnter={() => prefetchPageData(href)}
+                  onTouchStart={() => prefetchPageData(href)}
                   onClick={onClose}
                   className={`va-nav-btn${active ? ' active' : ''}`}
                   style={categoryButtonStyle(active)}
@@ -338,6 +341,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                           <Link
                             href={sub.href}
                             prefetch={true}
+                            onMouseEnter={() => prefetchPageData(sub.href)}
+                            onTouchStart={() => prefetchPageData(sub.href)}
                             onClick={onClose}
                             className={`va-nav-btn${isActive(sub.href) ? ' active' : ''}`}
                             style={{
@@ -384,6 +389,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <Link
                   href={href}
                   prefetch={true}
+                  onMouseEnter={() => prefetchPageData(href)}
+                  onTouchStart={() => prefetchPageData(href)}
                   onClick={onClose}
                   className={`va-nav-btn${active ? ' active' : ''}`}
                   style={{
@@ -506,6 +513,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             <Link
                               href={sub.href}
                               prefetch={true}
+                              onMouseEnter={() => prefetchPageData(sub.href)}
+                              onTouchStart={() => prefetchPageData(sub.href)}
                               onClick={onClose}
                               className={`va-nav-btn${isActive(sub.href) ? ' active' : ''}`}
                               style={{
