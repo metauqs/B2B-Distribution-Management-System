@@ -42,21 +42,11 @@ import { idempotencyMiddleware } from './lib/idempotency';
 import prisma from './lib/prisma';
 
 import { config } from './config/env';
-import compression from 'compression';
 import { apiRateLimiter, renderRateLimiter } from './middleware/rateLimiter';
 import { memoryMonitorMiddleware, getMemoryStats } from './middleware/memoryMonitor';
 
 const app = express();
 const port = config.port;
-
-// Global HTTP payload compression (Gzip/Deflate)
-app.use(compression({
-  threshold: 1024, // only compress responses above 1KB
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) return false;
-    return compression.filter(req, res);
-  }
-}));
 
 // Global memory telemetry and API rate limiting
 app.use(memoryMonitorMiddleware);

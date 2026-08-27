@@ -118,8 +118,16 @@ async function getSharedBrowser() {
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--disable-software-rasterizer',
+      '--disable-threaded-scrolling',
+      '--disable-accelerated-2d-canvas',
+      '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-breakpad',
+      '--disable-ipc-flooding-protection',
+      '--disable-renderer-backgrounding',
       '--no-zygote',
-      '--single-process', // Low-memory single process mode saves ~150MB RAM
+      '--single-process', // Low-memory and low-CPU single process mode
       '--disable-extensions',
       '--disable-background-networking',
       '--disable-sync',
@@ -184,7 +192,7 @@ async function closePageSafely(page: any) {
   } catch {}
 }
 
-async function setupRenderPage(browser: any, width: number, scaleFactor = 1.5) {
+async function setupRenderPage(browser: any, width: number, scaleFactor = 1.2) {
   const page = await browser.newPage();
   const requestedWidth = Number(width) || 794;
   await page.setViewport({ width: requestedWidth, height: 1123, deviceScaleFactor: scaleFactor });
@@ -325,7 +333,7 @@ router.post('/jpeg', async (req, res) => {
 
     const t_page = Date.now();
     const requestedWidth = Number(width) || 794;
-    page = await setupRenderPage(browser, requestedWidth, 1.5);
+    page = await setupRenderPage(browser, requestedWidth, 1.2);
     const pageMs = Date.now() - t_page;
 
     const t_content = Date.now();
@@ -337,7 +345,7 @@ router.post('/jpeg', async (req, res) => {
     await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 600))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 300))]);
       }
       const images = Array.from(d.querySelectorAll('img')) as any[];
       if (images.length > 0) {
@@ -365,7 +373,7 @@ router.post('/jpeg', async (req, res) => {
               };
             });
           })),
-          new Promise((r) => setTimeout(r, 1200)),
+          new Promise((r) => setTimeout(r, 600)),
         ]);
       }
     });
@@ -375,7 +383,7 @@ router.post('/jpeg', async (req, res) => {
       const d = (globalThis as any).document;
       return d?.body?.scrollHeight || 1123;
     });
-    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.5 });
+    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.2 });
 
     const t_shot = Date.now();
     const jpegBuffer = await page.screenshot({
@@ -439,7 +447,7 @@ router.post('/png', async (req, res) => {
   const renderPromise = runInRenderQueue(async (): Promise<Buffer> => {
     const browser = await getSharedBrowser();
     const requestedWidth = Number(width) || 794;
-    page = await setupRenderPage(browser, requestedWidth, 1.5);
+    page = await setupRenderPage(browser, requestedWidth, 1.2);
 
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
@@ -447,7 +455,7 @@ router.post('/png', async (req, res) => {
     await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 600))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 300))]);
       }
       const images = Array.from(d.querySelectorAll('img')) as any[];
       if (images.length > 0) {
@@ -475,7 +483,7 @@ router.post('/png', async (req, res) => {
               };
             });
           })),
-          new Promise((r) => setTimeout(r, 1200)),
+          new Promise((r) => setTimeout(r, 600)),
         ]);
       }
     });
@@ -484,7 +492,7 @@ router.post('/png', async (req, res) => {
       const d = (globalThis as any).document;
       return d?.body?.scrollHeight || 1123;
     });
-    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.5 });
+    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.2 });
 
     const screenshot = await page.screenshot({ type: 'png', fullPage: true, timeout: 15000 });
     console.log(`📸 [PNG Render] ${Date.now() - startTime}ms`);
