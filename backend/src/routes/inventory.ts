@@ -15,41 +15,41 @@ router.get('/', async (req: Request, res: Response) => {
     }
     const { search } = req.query;
 
-    // 1. Fetch all active products from master catalog
-    const allProducts = await prisma.product.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      select: {
-        id: true,
-        name: true,
-        urduName: true,
-        emoji: true,
-        imageUrl: true,
-        category: true,
-        defaultUnit: true,
-        minStock: true,
-        availability: true,
-      },
-    });
-
-    // 2. Fetch existing inventory records for this branch
-    const existingInventory = await prisma.inventory.findMany({
-      where: { ...(branchId ? { branchId } : {}) },
-      include: {
-        product: {
-          select: {
-            id: true,
-            name: true,
-            urduName: true,
-            emoji: true,
-            imageUrl: true,
-            category: true,
-            defaultUnit: true,
-            minStock: true,
-            availability: true,
+    // 1. Fetch active products and branch inventory in parallel
+    const [allProducts, existingInventory] = await Promise.all([
+      prisma.product.findMany({
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: {
+          id: true,
+          name: true,
+          urduName: true,
+          emoji: true,
+          imageUrl: true,
+          category: true,
+          defaultUnit: true,
+          minStock: true,
+          availability: true,
+        },
+      }),
+      prisma.inventory.findMany({
+        where: { ...(branchId ? { branchId } : {}) },
+        include: {
+          product: {
+            select: {
+              id: true,
+              name: true,
+              urduName: true,
+              emoji: true,
+              imageUrl: true,
+              category: true,
+              defaultUnit: true,
+              minStock: true,
+              availability: true,
+            },
           },
         },
-      },
-    });
+      }),
+    ]);
 
     const inventoryMap = new Map(existingInventory.map(inv => [inv.productId, inv]));
 

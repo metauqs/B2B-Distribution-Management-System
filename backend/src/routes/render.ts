@@ -172,6 +172,18 @@ export async function warmBrowser(): Promise<void> {
 
 import { getProductFallbackEmoji, generateProductSvgFallback } from './products';
 
+async function closePageSafely(page: any) {
+  if (!page) return;
+  try {
+    if (typeof page.removeAllListeners === 'function') {
+      page.removeAllListeners();
+    }
+    if (typeof page.isClosed !== 'function' || !page.isClosed()) {
+      await page.close();
+    }
+  } catch {}
+}
+
 async function setupRenderPage(browser: any, width: number, scaleFactor = 1.5) {
   const page = await browser.newPage();
   const requestedWidth = Number(width) || 794;
@@ -393,9 +405,7 @@ router.post('/jpeg', async (req, res) => {
     return res.status(500).json({ success: false, error: err.message ?? 'Image generation failed' });
   } finally {
     inFlightRenders.delete(cacheKey);
-    if (page) {
-      try { await page.close(); } catch {}
-    }
+    await closePageSafely(page);
   }
 });
 
@@ -494,9 +504,7 @@ router.post('/png', async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   } finally {
     inFlightRenders.delete(cacheKey);
-    if (page) {
-      try { await page.close(); } catch {}
-    }
+    await closePageSafely(page);
   }
 });
 
@@ -530,9 +538,7 @@ router.post('/pdf', async (req, res) => {
     console.error('PDF render failed:', err);
     return res.status(500).json({ success: false, error: err.message });
   } finally {
-    if (page) {
-      try { await page.close(); } catch {}
-    }
+    await closePageSafely(page);
   }
 });
 

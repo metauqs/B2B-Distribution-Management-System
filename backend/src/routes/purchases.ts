@@ -12,16 +12,35 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { limit: limitQuery } = req.query;
-    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 50000) : 10000;
+    const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 500) : 100;
 
     const purchases = await prisma.purchase.findMany({
       where: { ...(branchId ? { branchId } : {}), deletedAt: null },
-      include: {
+      select: {
+        id: true,
+        date: true,
+        total: true,
+        paid: true,
+        transportCost: true,
+        notes: true,
+        supplierId: true,
+        createdAt: true,
         supplier: { select: { id: true, name: true } },
-        items: { include: { product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } } } }
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            itemName: true,
+            unit: true,
+            qty: true,
+            rate: true,
+            amount: true,
+            product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } },
+          },
+        },
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      ...(limit ? { take: limit } : {}),
+      take: limit,
     });
 
     return res.json({ success: true, data: purchases });

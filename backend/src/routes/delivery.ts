@@ -130,6 +130,7 @@ router.get('/', async (req: Request, res: Response) => {
         employee: { select: { id: true, name: true, phone: true, whatsapp: true } },
       },
       orderBy: { date: 'asc' },
+      take: 200,
     });
 
     return res.json({ success: true, data: deliveries });
