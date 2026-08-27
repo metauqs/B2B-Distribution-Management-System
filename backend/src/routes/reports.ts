@@ -314,6 +314,9 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       })),
     };
 
+    if (DASHBOARD_CACHE.size >= 20) {
+      DASHBOARD_CACHE.clear();
+    }
     DASHBOARD_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
 
     return res.json({
