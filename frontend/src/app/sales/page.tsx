@@ -679,8 +679,8 @@ export default function SalesPage() {
           window.dispatchEvent(new Event('app-revalidate'));
           showToast(`✅ Invoice #${data.data.invoiceNo} updated successfully`);
           setEditingSale(null);
-          await loadSales(true);
           openDetail(data.data);
+          loadSales(true);
         } else {
           showToast('❌ ' + (data.error ?? 'Failed to edit invoice'));
         }
@@ -714,8 +714,8 @@ export default function SalesPage() {
           invalidateCache('/api/reports');
           window.dispatchEvent(new Event('app-revalidate'));
           showToast(`✅ Invoice ${data.data.invoiceNo} ${data.replayed ? 'retrieved (already created)' : 'created'}`);
-          await loadSales(true);
           openDetail(data.data);
+          loadSales(true);
         } else if (res.status === 409 && data.inProgress) {
           // Invoice is currently being generated — do NOT show error, do NOT allow retry
           // The useIdempotentSubmit inFlightRef is already blocking further clicks.
@@ -733,11 +733,16 @@ export default function SalesPage() {
 
   const handleSubmit = () => executeSubmitInvoice();
 
-  // ── Open detail ───────────────────────────────────────────────────────────────
+  // ── Open detail (Instant UI transition) ───────────────────────────────────────
   const openDetail = async (s: Sale) => {
-    setDetailSale(getCachedData(`/api/sales/${s.id}`));
+    if (s && s.items && s.items.length > 0) {
+      setDetailSale(s);
+      setDetailLoad(false);
+    } else {
+      setDetailSale(getCachedData(`/api/sales/${s.id}`) || s);
+      setDetailLoad(true);
+    }
     setAddPayAmt(0);
-    setDetailLoad(true);
     setView('detail');
     try {
       const data = await fetchWithCache<Sale>(`/api/sales/${s.id}`, { ttl: TTL_SHORT });

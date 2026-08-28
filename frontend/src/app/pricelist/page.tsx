@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate, compressProductImage } from '@/utils/formatters';
 import { fmtBusinessDate } from '@/utils/businessDate';
-import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
@@ -587,12 +587,22 @@ export default function PriceListPage() {
       }
       setShowShareOptionsModal(false);
       setShowPreviewModal(false);
-      setWaShareModal({
-        jpgBase64: base64Img,
-        whatsappUrl: 'https://wa.me/',
-        filename: `${filenamePrefix}_${targetDate}.jpg`,
-        displayPhone: 'WhatsApp',
-      });
+      const res = await shareDocumentAsImageOnWhatsApp(
+        {
+          jpgBase64: base64Img,
+          filename: `${filenamePrefix}_${targetDate}.jpg`,
+          phone: '',
+        },
+        (msg) => { if (msg) showToast(msg); }
+      );
+      if (res.method === 'modal' && res.jpgBase64) {
+        setWaShareModal({
+          jpgBase64: res.jpgBase64,
+          whatsappUrl: res.whatsappUrl || 'https://wa.me/',
+          filename: `${filenamePrefix}_${targetDate}.jpg`,
+          displayPhone: 'WhatsApp',
+        });
+      }
     } catch (err: any) {
       showToast('❌ Unable to prepare WhatsApp share image.');
     } finally {
@@ -601,7 +611,23 @@ export default function PriceListPage() {
   };
 
   const downloadPriceListJpg = async () => {
-    await openWhatsAppDownloadModal('PriceList');
+    if (isGeneratingImage) return;
+    setIsGeneratingImage(true);
+    showToast('⏳ Generating Price List image...');
+    try {
+      const base64Img = await generateBroadcastImageBase64();
+      if (!base64Img) {
+        showToast('❌ Unable to generate Price List image.');
+        return;
+      }
+      setShowShareOptionsModal(false);
+      setShowPreviewModal(false);
+      await downloadImage(base64Img, `PriceList_${targetDate}.jpg`, showToast);
+    } catch (err: any) {
+      showToast('❌ Download failed.');
+    } finally {
+      setIsGeneratingImage(false);
+    }
   };
 
   const shareWhatsAppStatus = async () => {

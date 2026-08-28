@@ -139,18 +139,23 @@ export function DueStatementModal({ client, invoices, mode, onClose, onToast }: 
       const cleanName = (client.name || 'Client').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
       const filename = `Due_Statement_${cleanName}_${dateStr}.jpg`;
 
-      const phone = client.whatsapp || client.phone || '';
-      let ph = phone.replace(/[^0-9]/g, '');
-      if (ph.startsWith('0') && ph.length === 11) ph = `92${ph.slice(1)}`;
-      else if (ph.length === 10) ph = `92${ph}`;
-      const whatsappUrl = ph ? `https://wa.me/${ph}` : 'https://wa.me/';
+      const result = await shareDocumentAsImageOnWhatsApp(
+        {
+          jpgBase64: url,
+          filename,
+          phone: client.whatsapp || client.phone || '',
+        },
+        (msg) => { if (msg) showToast(msg); }
+      );
 
-      setWaShareModal({
-        jpgBase64: url,
-        whatsappUrl,
-        filename,
-        displayPhone: client.whatsapp || client.phone || undefined,
-      });
+      if (result.method === 'modal' && result.jpgBase64) {
+        setWaShareModal({
+          jpgBase64: result.jpgBase64,
+          whatsappUrl: result.whatsappUrl || 'https://wa.me/',
+          filename,
+          displayPhone: client.whatsapp || client.phone || undefined,
+        });
+      }
     } catch (err) {
       console.error('handleSendWhatsApp error:', err);
       showToast('❌ Unable to share. Please try again.');
