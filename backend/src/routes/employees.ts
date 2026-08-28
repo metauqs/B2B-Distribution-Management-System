@@ -37,11 +37,26 @@ router.get('/generate-id', async (req: Request, res: Response) => {
   }
 });
 
+// ── In-Memory cache for employees (60s TTL) ───────────────────────────────
+const EMPLOYEE_CACHE = new Map<string, { ts: number; data: any }>();
+const EMPLOYEE_CACHE_TTL = 60000;
+
+export function clearEmployeeCache(): void {
+  EMPLOYEE_CACHE.clear();
+}
+
 // GET /api/employees
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { activeOnly } = req.query;
+
+    const cacheKey = `list_${branchId || 'all'}_${activeOnly || 'all'}`;
+    const cached = EMPLOYEE_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < EMPLOYEE_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
 
     const where: any = {
       ...(branchId ? { branchId } : {}),
@@ -73,6 +88,9 @@ router.get('/', async (req: Request, res: Response) => {
       }
     });
 
+    if (EMPLOYEE_CACHE.size >= 50) EMPLOYEE_CACHE.clear();
+    EMPLOYEE_CACHE.set(cacheKey, { ts: Date.now(), data: employees });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: employees });
   } catch (err: any) {
     console.error('[GET /api/employees]', err);
@@ -84,6 +102,13 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+
+    const cacheKey = `profile_${id}`;
+    const cached = EMPLOYEE_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < EMPLOYEE_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
 
     const employee = await prisma.employee.findFirst({
       where: {
@@ -128,6 +153,9 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
 
+    if (EMPLOYEE_CACHE.size >= 50) EMPLOYEE_CACHE.clear();
+    EMPLOYEE_CACHE.set(cacheKey, { ts: Date.now(), data: employee });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: employee });
   } catch (err: any) {
     console.error('[GET /api/employees/:id]', err);
@@ -214,6 +242,7 @@ router.post('/', async (req: Request, res: Response) => {
     });
 
     const { password: _p, ...safeEmployee } = employee;
+    clearEmployeeCache();
     return res.status(201).json({ success: true, data: safeEmployee });
   } catch (err: any) {
     console.error('[POST /api/employees]', err);
@@ -250,6 +279,7 @@ router.post('/clear-all', async (req: Request, res: Response) => {
       newData: { action: 'CLEAR_ALL_EMPLOYEES' },
     });
 
+    clearEmployeeCache();
     return res.json({
       success: true,
       message: 'All employee profiles and login data have been permanently deleted.'
@@ -366,6 +396,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     });
 
     const { password: _p, ...safeEmployee } = updated;
+    clearEmployeeCache();
     return res.json({ success: true, data: safeEmployee });
   } catch (err: any) {
     console.error(`[PUT /api/employees/${id}] Update error:`, err);
@@ -400,6 +431,7 @@ router.patch('/:id/toggle', async (req: Request, res: Response) => {
       data: { isActive: !original.isActive },
     });
 
+    clearEmployeeCache();
     return res.json({
       success: true,
       data: updated,
@@ -458,6 +490,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       oldData: { name: original.name, role: original.role },
     });
 
+    clearEmployeeCache();
     return res.json({ success: true, message: `Employee "${original.name}" permanently deleted.` });
   } catch (err: any) {
     console.error('[DELETE /api/employees/:id]', err);

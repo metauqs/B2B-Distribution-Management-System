@@ -137,6 +137,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const cacheKey = `${branchId || 'all'}_${businessDateStr}`;
     const cached = DASHBOARD_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < DASHBOARD_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
       return res.json({ success: true, data: cached.data });
     }
 
@@ -145,7 +146,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
 
     const dbStart = Date.now();
     const [
-      salesByMode,
+      todaySalesRecords,
       todayPurchasesAgg,
       todayExpensesAgg,
       todayCollectionsAgg,
@@ -158,18 +159,29 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       deliveryStatusAgg,
       inventoryItems,
       atRiskClients,
-      recentSales,
       l30Sales,
       l30Purchases,
       l30Expenses,
       attentionRaw,
-      todaySaleItems
     ] = await Promise.all([
-      prisma.sale.groupBy({
-        by: ['paymentMode'],
+      prisma.sale.findMany({
         where: { ...tWhere, status: { not: 'CANCELLED' } },
-        _sum: { total: true, subtotal: true, discount: true, paid: true },
-        _count: true,
+        select: {
+          id: true,
+          subtotal: true,
+          total: true,
+          discount: true,
+          paid: true,
+          paymentMode: true,
+          status: true,
+          date: true,
+          invoiceNo: true,
+          client: { select: { name: true } },
+          items: {
+            select: { qty: true, costPrice: true, returnedQty: true, rate: true }
+          }
+        },
+        orderBy: { date: 'desc' },
       }),
       prisma.purchase.aggregate({ where: tWhere, _sum: { total: true } }),
       prisma.expense.aggregate({ where: tWhere, _sum: { amount: true } }),
@@ -190,28 +202,45 @@ router.get('/dashboard', async (req: Request, res: Response) => {
         select: { qty: true, avgCost: true, currentBuyPrice: true, product: { select: { minStock: true } } },
       }),
       prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
-      prisma.sale.findMany({ where: { ...tWhere }, include: { client: { select: { name: true } } }, orderBy: { date: 'desc' }, take: 5 }),
       prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, status: { not: 'CANCELLED' }, deletedAt: null }, _sum: { total: true } }),
       prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
       prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
       prisma.client.findMany({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, select: { id: true, name: true, currentBalance: true }, orderBy: { currentBalance: 'desc' }, take: 5 }),
-      prisma.saleItem.findMany({
-        where: { sale: { ...tWhere, status: { not: 'CANCELLED' } } },
-        select: { qty: true, costPrice: true, returnedQty: true, rate: true },
-      }),
     ]);
     const dbDuration = Date.now() - dbStart;
 
     const completedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'DELIVERED')?._count ?? 0;
     const failedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'FAILED')?._count ?? 0;
 
-    const todaySales = salesByMode.reduce((s, r) => s + (r._sum.total ?? 0), 0);
-    const grossSales = salesByMode.reduce((s, r) => s + (r._sum.subtotal ?? 0), 0);
-    const todayDiscounts = salesByMode.reduce((s, r) => s + (r._sum.discount ?? 0), 0);
-    const todaySalesPaid = salesByMode.reduce((s, r) => s + (r._sum.paid ?? 0), 0);
-    const todaySalesCount = salesByMode.reduce((s, r) => s + r._count, 0);
-    const cashSales = salesByMode.find(r => r.paymentMode === 'CASH')?._sum.total ?? 0;
-    const creditSales = salesByMode.find(r => r.paymentMode === 'CREDIT')?._sum.total ?? 0;
+    let todaySales = 0;
+    let grossSales = 0;
+    let todayDiscounts = 0;
+    let todaySalesPaid = 0;
+    let cashSales = 0;
+    let creditSales = 0;
+    let totalCogs = 0;
+    let returnedProductsToday = 0;
+    let returnValueToday = 0;
+
+    for (const s of todaySalesRecords) {
+      todaySales += s.total;
+      grossSales += s.subtotal;
+      todayDiscounts += s.discount;
+      todaySalesPaid += s.paid;
+      if (s.paymentMode === 'CASH') cashSales += s.total;
+      else if (s.paymentMode === 'CREDIT') creditSales += s.total;
+
+      for (const item of s.items) {
+        const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
+        totalCogs += item.qty * effectiveCost;
+        if (item.returnedQty > 0) {
+          returnedProductsToday += item.returnedQty;
+          returnValueToday += item.returnedQty * item.rate;
+        }
+      }
+    }
+    const todaySalesCount = todaySalesRecords.length;
+    const recentSales = todaySalesRecords.slice(0, 5);
 
     const todayPurchases = todayPurchasesAgg._sum.total ?? 0;
     const todayExpenses = todayExpensesAgg._sum.amount ?? 0;
@@ -223,18 +252,6 @@ router.get('/dashboard', async (req: Request, res: Response) => {
 
     // ── Gross Profit: same formula as Reports module (financialEngine.ts) ─────────
     const netSales = Math.max(0, grossSales - todayDiscounts);
-
-    let totalCogs = 0;
-    let returnedProductsToday = 0;
-    let returnValueToday = 0;
-    for (const item of todaySaleItems) {
-      const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
-      totalCogs += item.qty * effectiveCost;
-      if (item.returnedQty > 0) {
-        returnedProductsToday += item.returnedQty;
-        returnValueToday += item.returnedQty * item.rate;
-      }
-    }
 
     const grossProfit = netSales - totalCogs;
     const netProfit = grossProfit - todayExpenses;
