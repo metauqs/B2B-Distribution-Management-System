@@ -11,9 +11,11 @@ const router = Router();
 // In-memory cache for Dashboard & Report endpoints (30-second TTL)
 const DASHBOARD_CACHE = new Map<string, { ts: number; data: any }>();
 const DASHBOARD_CACHE_TTL = 30000;
+const DASHBOARD_IN_FLIGHT = new Map<string, Promise<any>>();
 
 const REPORT_CACHE = new Map<string, { ts: number; data: any }>();
 const REPORT_CACHE_TTL = 30000;
+const REPORT_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearReportCache(): void {
   DASHBOARD_CACHE.clear();
@@ -27,7 +29,7 @@ export function clearReportCache(): void {
 async function getHistoricalReceivables(branchId?: string, targetEnd?: Date, isToday?: boolean): Promise<{ receivables: number; clientCount: number }> {
   const bWhere = branchId ? { branchId, deletedAt: null } : { deletedAt: null };
 
-  if (isToday) {
+  if (isToday || !targetEnd) {
     const [agg, clientsWithDuesCount] = await Promise.all([
       prisma.client.aggregate({
         where: { ...bWhere, currentBalance: { gt: 0 } },
@@ -141,211 +143,240 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const tWhere = { ...bWhere, date: { gte: todayStart, lte: todayEnd }, deletedAt: null };
-    const l30Start = new Date(Date.now() - 30 * 86400000);
+    if (DASHBOARD_IN_FLIGHT.has(cacheKey)) {
+      const coalescedData = await DASHBOARD_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalescedData });
+    }
 
-    const dbStart = Date.now();
-    const [
-      todaySalesRecords,
-      todayPurchasesAgg,
-      todayExpensesAgg,
-      todayCollectionsAgg,
-      todayWastageAgg,
-      receivablesData,
-      supplierPurchasesArr,
-      supplierPaymentsArr,
-      allSuppliers,
-      pendingDeliveries,
-      deliveryStatusAgg,
-      inventoryItems,
-      atRiskClients,
-      l30Sales,
-      l30Purchases,
-      l30Expenses,
-      attentionRaw,
-    ] = await Promise.all([
-      prisma.sale.findMany({
-        where: { ...tWhere, status: { not: 'CANCELLED' } },
-        select: {
-          id: true,
-          subtotal: true,
-          total: true,
-          discount: true,
-          paid: true,
-          paymentMode: true,
-          status: true,
-          date: true,
-          invoiceNo: true,
-          client: { select: { name: true } },
-          items: {
-            select: { qty: true, costPrice: true, returnedQty: true, rate: true }
+    const fetchDashboardPromise = (async () => {
+      const tWhere = { ...bWhere, date: { gte: todayStart, lte: todayEnd }, deletedAt: null };
+      const l30Start = new Date(Date.now() - 30 * 86400000);
+
+      const dbStart = Date.now();
+      const [
+        todaySalesRecords,
+        todayPurchasesAgg,
+        todayExpensesAgg,
+        todayCollectionsAgg,
+        todayWastageAgg,
+        receivablesData,
+        supplierPurchasesArr,
+        supplierPaymentsArr,
+        allSuppliers,
+        pendingDeliveries,
+        deliveryStatusAgg,
+        inventoryItems,
+        atRiskClients,
+        l30Sales,
+        l30Purchases,
+        l30Expenses,
+        attentionRaw,
+      ] = await Promise.all([
+        prisma.sale.findMany({
+          where: { ...tWhere, status: { not: 'CANCELLED' } },
+          select: {
+            id: true,
+            subtotal: true,
+            total: true,
+            discount: true,
+            paid: true,
+            paymentMode: true,
+            status: true,
+            date: true,
+            invoiceNo: true,
+            client: { select: { name: true } },
+            items: {
+              select: { qty: true, costPrice: true, returnedQty: true, rate: true }
+            }
+          },
+          orderBy: { date: 'desc' },
+        }),
+        prisma.purchase.aggregate({ where: tWhere, _sum: { total: true } }),
+        prisma.expense.aggregate({ where: tWhere, _sum: { amount: true } }),
+        prisma.collection.aggregate({ where: tWhere, _sum: { amount: true } }),
+        prisma.wastage.aggregate({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } }, _sum: { qty: true }, _count: true }),
+        getHistoricalReceivables(branchId, todayEnd, isToday),
+        prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
+        prisma.supplierPayment.groupBy({ by: ['supplierId'], where: branchId ? { branchId } : {}, _sum: { amount: true } }),
+        prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } }),
+        prisma.delivery.count({ where: { ...bWhere, status: { notIn: ['DELIVERED', 'FAILED'] } } }),
+        prisma.delivery.groupBy({
+          by: ['status'],
+          where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } },
+          _count: true,
+        }),
+        prisma.inventory.findMany({
+          where: bWhere,
+          select: { qty: true, avgCost: true, currentBuyPrice: true, product: { select: { minStock: true } } },
+        }),
+        prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
+        prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, status: { not: 'CANCELLED' }, deletedAt: null }, _sum: { total: true } }),
+        prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
+        prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
+        prisma.client.findMany({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, select: { id: true, name: true, currentBalance: true }, orderBy: { currentBalance: 'desc' }, take: 5 }),
+      ]);
+      const dbDuration = Date.now() - dbStart;
+
+      const completedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'DELIVERED')?._count ?? 0;
+      const failedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'FAILED')?._count ?? 0;
+
+      let todaySales = 0;
+      let grossSales = 0;
+      let todayDiscounts = 0;
+      let todaySalesPaid = 0;
+      let cashSales = 0;
+      let creditSales = 0;
+      let totalCogs = 0;
+      let returnedProductsToday = 0;
+      let returnValueToday = 0;
+
+      for (const s of todaySalesRecords) {
+        todaySales += s.total;
+        grossSales += s.subtotal;
+        todayDiscounts += s.discount;
+        todaySalesPaid += s.paid;
+        if (s.paymentMode === 'CASH') cashSales += s.total;
+        else if (s.paymentMode === 'CREDIT') creditSales += s.total;
+
+        for (const item of s.items) {
+          const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
+          totalCogs += item.qty * effectiveCost;
+          if (item.returnedQty > 0) {
+            returnedProductsToday += item.returnedQty;
+            returnValueToday += item.returnedQty * item.rate;
           }
-        },
-        orderBy: { date: 'desc' },
-      }),
-      prisma.purchase.aggregate({ where: tWhere, _sum: { total: true } }),
-      prisma.expense.aggregate({ where: tWhere, _sum: { amount: true } }),
-      prisma.collection.aggregate({ where: tWhere, _sum: { amount: true } }),
-      prisma.wastage.aggregate({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } }, _sum: { qty: true }, _count: true }),
-      getHistoricalReceivables(branchId, todayEnd, isToday),
-      prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
-      prisma.supplierPayment.groupBy({ by: ['supplierId'], where: branchId ? { branchId } : {}, _sum: { amount: true } }),
-      prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } }),
-      prisma.delivery.count({ where: { ...bWhere, status: { notIn: ['DELIVERED', 'FAILED'] } } }),
-      prisma.delivery.groupBy({
-        by: ['status'],
-        where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } },
-        _count: true,
-      }),
-      prisma.inventory.findMany({
-        where: bWhere,
-        select: { qty: true, avgCost: true, currentBuyPrice: true, product: { select: { minStock: true } } },
-      }),
-      prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
-      prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, status: { not: 'CANCELLED' }, deletedAt: null }, _sum: { total: true } }),
-      prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
-      prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
-      prisma.client.findMany({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, select: { id: true, name: true, currentBalance: true }, orderBy: { currentBalance: 'desc' }, take: 5 }),
-    ]);
-    const dbDuration = Date.now() - dbStart;
-
-    const completedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'DELIVERED')?._count ?? 0;
-    const failedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'FAILED')?._count ?? 0;
-
-    let todaySales = 0;
-    let grossSales = 0;
-    let todayDiscounts = 0;
-    let todaySalesPaid = 0;
-    let cashSales = 0;
-    let creditSales = 0;
-    let totalCogs = 0;
-    let returnedProductsToday = 0;
-    let returnValueToday = 0;
-
-    for (const s of todaySalesRecords) {
-      todaySales += s.total;
-      grossSales += s.subtotal;
-      todayDiscounts += s.discount;
-      todaySalesPaid += s.paid;
-      if (s.paymentMode === 'CASH') cashSales += s.total;
-      else if (s.paymentMode === 'CREDIT') creditSales += s.total;
-
-      for (const item of s.items) {
-        const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
-        totalCogs += item.qty * effectiveCost;
-        if (item.returnedQty > 0) {
-          returnedProductsToday += item.returnedQty;
-          returnValueToday += item.returnedQty * item.rate;
         }
       }
+      const todaySalesCount = todaySalesRecords.length;
+      const recentSales = todaySalesRecords.slice(0, 5);
+
+      const todayPurchases = todayPurchasesAgg._sum.total ?? 0;
+      const todayExpenses = todayExpensesAgg._sum.amount ?? 0;
+      const dbCollectionsSum = todayCollectionsAgg._sum.amount ?? 0;
+      // Collections = standalone collection entries + checkout cash paid at invoice
+      const todayCollections = todaySalesPaid > dbCollectionsSum ? todaySalesPaid : dbCollectionsSum;
+      const totalReceivables = receivablesData.receivables;
+      const clientCount = receivablesData.clientCount;
+
+      // ── Gross Profit: same formula as Reports module (financialEngine.ts) ─────────
+      const netSales = Math.max(0, grossSales - todayDiscounts);
+
+      const grossProfit = netSales - totalCogs;
+      const netProfit = grossProfit - todayExpenses;
+      const todayProfit = netProfit;
+      const cashPosition = todayCollections - todayExpenses - todayPurchases;
+      const netSalesToday = netSales; // expose netSales (after discounts) not gross
+
+      const purMap: Record<string, number> = {};
+      for (const p of supplierPurchasesArr) {
+        if (p.supplierId) purMap[p.supplierId] = (purMap[p.supplierId] ?? 0) + (p._sum.total ?? 0);
+      }
+      const payMap: Record<string, number> = {};
+      for (const p of supplierPaymentsArr) {
+        if (p.supplierId) payMap[p.supplierId] = (payMap[p.supplierId] ?? 0) + (p._sum.amount ?? 0);
+      }
+
+      let totalPayables = 0;
+      for (const supp of allSuppliers) {
+        const opening = supp.openingBalance ?? 0;
+        const purchases = purMap[supp.id] ?? 0;
+        const payments = payMap[supp.id] ?? 0;
+        const balance = opening + purchases - payments;
+        if (balance > 0) totalPayables += balance;
+      }
+
+      let totalInventoryValue = 0;
+      let lowStockCount = 0;
+      for (const inv of inventoryItems) {
+        const cost = inv.avgCost > 0 ? inv.avgCost : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
+        totalInventoryValue += Math.max(0, inv.qty) * cost;
+        const min = inv.product?.minStock ?? 0;
+        if (inv.qty <= min) lowStockCount++;
+      }
+
+      const l30Rev = l30Sales._sum.total ?? 0;
+      const l30Pur = l30Purchases._sum.total ?? 0;
+      const l30Exp = l30Expenses._sum.amount ?? 0;
+      const l30Profit = l30Rev - l30Pur - l30Exp;
+      const marginScore = l30Rev > 0 ? Math.max(0, Math.min(100, (l30Profit / l30Rev) * 100)) : 0;
+      const collectionScore = l30Rev > 0 ? Math.max(0, Math.min(100, (totalReceivables / l30Rev) * -50 + 100)) : 80;
+      const healthScore = Math.round(marginScore * 0.5 + collectionScore * 0.5);
+
+      const attention = attentionRaw.map(c => ({
+        id: c.id,
+        name: c.name,
+        balance: c.currentBalance,
+      }));
+
+      const duration = Date.now() - start;
+      if (duration > 1500) {
+        console.warn(`⚠️ [SLOW DASHBOARD] ReqId: ${requestId} - DB: ${dbDuration}ms | Total: ${duration}ms`);
+      }
+
+      return {
+        selectedBusinessDate: businessDateStr,
+        isToday,
+        today: {
+          sales: todaySales,
+          salesCount: todaySalesCount,
+          cashSales,
+          creditSales,
+          avgOrderValue: todaySalesCount > 0 ? Math.round(todaySales / todaySalesCount) : 0,
+          purchases: todayPurchases,
+          expenses: todayExpenses,
+          collections: todayCollections,
+          grossProfit,
+          netProfit,
+          profit: todayProfit,
+          cashPosition,
+          completedDeliveries: completedDeliveriesCount,
+          failedDeliveries: failedDeliveriesCount,
+          pendingDeliveries: pendingDeliveries,
+          returnedProducts: returnedProductsToday,
+          returnValue: returnValueToday,
+          netSales: netSalesToday,
+          wastageCount: todayWastageAgg._count,
+          wastageQty: todayWastageAgg._sum.qty ?? 0,
+        },
+        inventory: {
+          totalValue: totalInventoryValue,
+          lowStockCount,
+        },
+        totals: {
+          receivables: totalReceivables,
+          payables: totalPayables,
+          healthScore,
+          clientCount,
+          atRiskClients,
+        },
+        attention,
+        recentSales: recentSales.map(s => ({
+          id: s.id,
+          invoiceNo: s.invoiceNo,
+          clientName: s.client?.name ?? '—',
+          total: s.total,
+          status: s.status,
+          date: s.date.toISOString(),
+        })),
+      };
+    })();
+
+    DASHBOARD_IN_FLIGHT.set(cacheKey, fetchDashboardPromise);
+    try {
+      const responsePayload = await fetchDashboardPromise;
+      if (DASHBOARD_CACHE.size >= 20) {
+        DASHBOARD_CACHE.clear();
+      }
+      DASHBOARD_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({
+        success: true,
+        data: responsePayload,
+      });
+    } finally {
+      DASHBOARD_IN_FLIGHT.delete(cacheKey);
     }
-    const todaySalesCount = todaySalesRecords.length;
-    const recentSales = todaySalesRecords.slice(0, 5);
-
-    const todayPurchases = todayPurchasesAgg._sum.total ?? 0;
-    const todayExpenses = todayExpensesAgg._sum.amount ?? 0;
-    const dbCollectionsSum = todayCollectionsAgg._sum.amount ?? 0;
-    // Collections = standalone collection entries + checkout cash paid at invoice
-    const todayCollections = todaySalesPaid > dbCollectionsSum ? todaySalesPaid : dbCollectionsSum;
-    const totalReceivables = receivablesData.receivables;
-    const clientCount = receivablesData.clientCount;
-
-    // ── Gross Profit: same formula as Reports module (financialEngine.ts) ─────────
-    const netSales = Math.max(0, grossSales - todayDiscounts);
-
-    const grossProfit = netSales - totalCogs;
-    const netProfit = grossProfit - todayExpenses;
-    const todayProfit = netProfit;
-    const cashPosition = todayCollections - todayExpenses - todayPurchases;
-    const netSalesToday = netSales; // expose netSales (after discounts) not gross
-
-    const suppPurchMap = Object.fromEntries(supplierPurchasesArr.map(x => [x.supplierId, x._sum.total ?? 0]));
-    const suppPayMap = Object.fromEntries(supplierPaymentsArr.map(x => [x.supplierId, x._sum.amount ?? 0]));
-    const totalPayables = allSuppliers.reduce((s, sup) => {
-      const bal = sup.openingBalance + (suppPurchMap[sup.id] ?? 0) - (suppPayMap[sup.id] ?? 0);
-      return s + Math.max(0, bal);
-    }, 0);
-
-    const lowStockCount = inventoryItems.filter(inv => inv.qty <= (inv.product?.minStock ?? 0)).length;
-    const totalInventoryValue = inventoryItems.reduce((s, inv) => {
-      const rate = inv.avgCost > 0 ? inv.avgCost : inv.currentBuyPrice;
-      return s + (Math.max(0, inv.qty) * rate);
-    }, 0);
-
-    const l30Rev = l30Sales._sum.total ?? 0;
-    const l30Cost = (l30Purchases._sum.total ?? 0) + (l30Expenses._sum.amount ?? 0);
-    const l30Profit = l30Rev - l30Cost;
-    const marginScore = l30Rev > 0 ? Math.max(0, Math.min(100, (l30Profit / l30Rev) * 100)) : 0;
-    const collectionScore = l30Rev > 0 ? Math.max(0, Math.min(100, (totalReceivables / l30Rev) * -50 + 100)) : 80;
-    const healthScore = Math.round(marginScore * 0.5 + collectionScore * 0.5);
-
-    const attention = attentionRaw.map(c => ({
-      id: c.id,
-      name: c.name,
-      balance: c.currentBalance,
-    }));
-
-    const duration = Date.now() - start;
-    if (duration > 1500) {
-      console.warn(`⚠️ [SLOW DASHBOARD] ReqId: ${requestId} - DB: ${dbDuration}ms | Total: ${duration}ms`);
-    }
-
-    const responsePayload = {
-      selectedBusinessDate: businessDateStr,
-      isToday,
-      today: {
-        sales: todaySales,
-        salesCount: todaySalesCount,
-        cashSales,
-        creditSales,
-        avgOrderValue: todaySalesCount > 0 ? Math.round(todaySales / todaySalesCount) : 0,
-        purchases: todayPurchases,
-        expenses: todayExpenses,
-        collections: todayCollections,
-        grossProfit,
-        netProfit,
-        profit: todayProfit,
-        cashPosition,
-        completedDeliveries: completedDeliveriesCount,
-        failedDeliveries: failedDeliveriesCount,
-        pendingDeliveries: pendingDeliveries,
-        returnedProducts: returnedProductsToday,
-        returnValue: returnValueToday,
-        netSales: netSalesToday,
-        wastageCount: todayWastageAgg._count,
-        wastageQty: todayWastageAgg._sum.qty ?? 0,
-      },
-      inventory: {
-        totalValue: totalInventoryValue,
-        lowStockCount,
-      },
-      totals: {
-        receivables: totalReceivables,
-        payables: totalPayables,
-        healthScore,
-        clientCount,
-        atRiskClients,
-      },
-      attention,
-      recentSales: recentSales.map(s => ({
-        id: s.id,
-        invoiceNo: s.invoiceNo,
-        clientName: s.client?.name ?? '—',
-        total: s.total,
-        status: s.status,
-        date: s.date.toISOString(),
-      })),
-    };
-
-    if (DASHBOARD_CACHE.size >= 20) {
-      DASHBOARD_CACHE.clear();
-    }
-    DASHBOARD_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
-
-    return res.json({
-      success: true,
-      data: responsePayload,
-    });
   } catch (err: any) {
     const duration = Date.now() - start;
     const errType = err.constructor?.name || 'Error';

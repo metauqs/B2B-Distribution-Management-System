@@ -19,6 +19,7 @@ function signAuthTokens(payload: { sub: string; email: string; role: string; bra
 // In-Memory cache for /me endpoint (60s TTL) to eliminate query storms
 const ME_CACHE = new Map<string, { ts: number; user: any }>();
 const ME_CACHE_TTL = 60000;
+const AUTH_ME_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function invalidateMeCache(userId?: string) {
   if (userId) ME_CACHE.delete(userId);
@@ -302,21 +303,40 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.user });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId, deletedAt: null },
-      include: { branch: { select: { id: true, name: true } } },
-    });
-
-    if (!user || !user.isActive) {
-      ME_CACHE.delete(userId);
-      return res.status(401).json({ success: false, error: 'User not found or inactive' });
+    if (AUTH_ME_IN_FLIGHT.has(userId)) {
+      const coalesced = await AUTH_ME_IN_FLIGHT.get(userId);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
     }
 
-    const { password: _pwd, ...safeUser } = user;
-    if (ME_CACHE.size > 50) ME_CACHE.clear();
-    ME_CACHE.set(userId, { ts: Date.now(), user: safeUser });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: safeUser });
+    const fetchMePromise = (async () => {
+      const user = await prisma.user.findUnique({
+        where: { id: userId, deletedAt: null },
+        include: { branch: { select: { id: true, name: true } } },
+      });
+
+      if (!user || !user.isActive) {
+        ME_CACHE.delete(userId);
+        return null;
+      }
+
+      const { password: _pwd, ...safeUser } = user;
+      return safeUser;
+    })();
+
+    AUTH_ME_IN_FLIGHT.set(userId, fetchMePromise);
+    try {
+      const safeUser = await fetchMePromise;
+      if (!safeUser) {
+        return res.status(401).json({ success: false, error: 'User not found or inactive' });
+      }
+      if (ME_CACHE.size > 50) ME_CACHE.clear();
+      ME_CACHE.set(userId, { ts: Date.now(), user: safeUser });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: safeUser });
+    } finally {
+      AUTH_ME_IN_FLIGHT.delete(userId);
+    }
   } catch (error) {
     console.error('[me]', error);
     return res.status(500).json({ success: false, error: 'Internal server error' });

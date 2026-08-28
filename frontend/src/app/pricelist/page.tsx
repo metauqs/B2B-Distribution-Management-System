@@ -446,14 +446,23 @@ export default function PriceListPage() {
     return '🥬';
   };
 
-  // ─── WhatsApp Image Broadcast Actions ──────────────────────────────────────
+  // ─── WhatsApp Image Broadcast Actions & Deterministic Cache ──────────────────
+  const BROADCAST_IMG_CACHE = useRef<Map<string, { base64: string; imageUrl?: string }>>(new Map());
   
   const generateBroadcastImageBase64 = async (): Promise<string | null> => {
     try {
       const items = editItems.filter(i => i.sellRate > 0);
       if (items.length === 0) return null;
-      const brand = await loadBrandConfigWithLogo();
+
       const dateStr = fmtBusinessDate(targetDate) || fmtDate(targetDate);
+      const versionKey = `${dateStr}_${items.map(it => `${it.productId || it.itemName}:${it.sellRate}:${it.unit}`).join('|')}_${listNotes || ''}`;
+      
+      const cached = BROADCAST_IMG_CACHE.current.get(versionKey);
+      if (cached?.base64) {
+        return cached.base64;
+      }
+
+      const brand = await loadBrandConfigWithLogo();
       const html = generatePriceListHTML(
         {
           dateStr,
@@ -475,7 +484,11 @@ export default function PriceListPage() {
         brand,
         window.location.origin,
       );
-      return await generateTemplateJpgBase64(html);
+      const base64 = await generateTemplateJpgBase64(html);
+      if (base64) {
+        BROADCAST_IMG_CACHE.current.set(versionKey, { base64 });
+      }
+      return base64;
     } catch (err) {
       console.error('generateBroadcastImageBase64 error:', err);
       return null;
@@ -485,26 +498,39 @@ export default function PriceListPage() {
   const startBroadcast = async () => {
     setIsBroadcasting(true);
     try {
-      const base64Img = await generateBroadcastImageBase64();
-      if (!base64Img) {
-        showToast('❌ Image generation failed');
-        setIsBroadcasting(false);
-        return;
-      }
+      const items = editItems.filter(i => i.sellRate > 0);
+      const dateStr = fmtBusinessDate(targetDate) || fmtDate(targetDate);
+      const versionKey = `${dateStr}_${items.map(it => `${it.productId || it.itemName}:${it.sellRate}:${it.unit}`).join('|')}_${listNotes || ''}`;
 
-      const uploadRes = await apiFetch('/api/broadcasts/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: base64Img,
-          filename: `broadcast_${targetDate}.jpg`
-        })
-      });
-      const uploadData = await uploadRes.json();
-      if (!uploadData.success || !uploadData.imageUrl) {
-        showToast('❌ Failed to upload broadcast image');
-        setIsBroadcasting(false);
-        return;
+      let uploadedImageUrl = BROADCAST_IMG_CACHE.current.get(versionKey)?.imageUrl;
+
+      if (!uploadedImageUrl) {
+        const base64Img = await generateBroadcastImageBase64();
+        if (!base64Img) {
+          showToast('❌ Image generation failed');
+          setIsBroadcasting(false);
+          return;
+        }
+
+        const uploadRes = await apiFetch('/api/broadcasts/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64: base64Img,
+            filename: `broadcast_${targetDate}.jpg`
+          })
+        });
+        const uploadData = await uploadRes.json();
+        if (!uploadData.success || !uploadData.imageUrl) {
+          showToast('❌ Failed to upload broadcast image');
+          setIsBroadcasting(false);
+          return;
+        }
+        uploadedImageUrl = uploadData.imageUrl;
+        const entry = BROADCAST_IMG_CACHE.current.get(versionKey);
+        if (entry) {
+          entry.imageUrl = uploadedImageUrl;
+        }
       }
 
       let targetClientIds: string[] = [];
@@ -530,7 +556,7 @@ export default function PriceListPage() {
           categories: selectedCategories,
           selectedClientIds: targetClientIds,
           customMessage: broadcastGreeting,
-          imageUrl: uploadData.imageUrl
+          imageUrl: uploadedImageUrl
         })
       });
 

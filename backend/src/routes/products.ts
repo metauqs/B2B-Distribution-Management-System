@@ -13,6 +13,7 @@ import { clearPriceListCache, clearActiveProductsCache } from './pricelist';
 // In-Memory cache for Product catalog queries (60s TTL)
 const PRODUCT_CACHE = new Map<string, { ts: number; data: any }>();
 const PRODUCT_CACHE_TTL = 60000;
+const PRODUCTS_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearProductCache(): void {
   PRODUCT_CACHE.clear();
@@ -31,44 +32,59 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const where: any = {};
-    if (category) where.category = category;
-
-    if (availability === 'ALL') {
-      // no filter
-    } else if (availability) {
-      where.availability = availability;
-    } else {
-      where.availability = { in: ['AVAILABLE', 'SEASONAL'] };
-      where.isActive = true;
+    if (PRODUCTS_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await PRODUCTS_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
     }
 
-    const products = await prisma.product.findMany({
-      where,
-      select: {
-        id: true,
-        name: true,
-        urduName: true,
-        category: true,
-        defaultUnit: true,
-        minStock: true,
-        isActive: true,
-        availability: true,
-        sortOrder: true,
-        emoji: true,
-        imageUrl: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: [{ sortOrder: 'asc' }, { category: 'asc' }, { name: 'asc' }],
-    });
+    const fetchProductsPromise = (async () => {
+      const where: any = {};
+      if (category) where.category = category;
 
-    PRODUCT_CACHE.set(cacheKey, { ts: Date.now(), data: products });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: products });
+      if (availability === 'ALL') {
+        // no filter
+      } else if (availability) {
+        where.availability = availability;
+      } else {
+        where.availability = { in: ['AVAILABLE', 'SEASONAL'] };
+        where.isActive = true;
+      }
+
+      return await prisma.product.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          urduName: true,
+          category: true,
+          defaultUnit: true,
+          minStock: true,
+          isActive: true,
+          availability: true,
+          sortOrder: true,
+          emoji: true,
+          imageUrl: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: [{ sortOrder: 'asc' }, { category: 'asc' }, { name: 'asc' }],
+      });
+    })();
+
+    PRODUCTS_IN_FLIGHT.set(cacheKey, fetchProductsPromise);
+    try {
+      const products = await fetchProductsPromise;
+      if (PRODUCT_CACHE.size > 50) PRODUCT_CACHE.clear();
+      PRODUCT_CACHE.set(cacheKey, { ts: Date.now(), data: products });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: products });
+    } finally {
+      PRODUCTS_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error fetching products:', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load products', data: [] });
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to fetch products', data: [] });
   }
 });
 

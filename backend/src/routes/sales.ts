@@ -54,6 +54,7 @@ export async function findActiveEditableSale(clientId: string, branchId?: string
 // ── In-Memory cache for sales queries (20s TTL) ─────────────────────────────
 const SALES_CACHE = new Map<string, { ts: number; data: any }>();
 const SALES_CACHE_TTL = 20000;
+const SALES_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearSalesCache(): void {
   SALES_CACHE.clear();
@@ -73,82 +74,96 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
-    const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
-
-    if (dateFrom && isNaN(dateFrom.getTime())) {
-      return res.status(400).json({ success: false, error: 'Invalid from date', data: [] });
-    }
-    if (dateTo && isNaN(dateTo.getTime())) {
-      return res.status(400).json({ success: false, error: 'Invalid to date', data: [] });
+    if (SALES_IN_FLIGHT.has(cacheKey)) {
+      const coalescedSales = await SALES_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalescedSales });
     }
 
-    const where: any = {
-      deletedAt: null,
-      ...(branchId ? { branchId } : {}),
-      ...(clientId ? { clientId: String(clientId) } : {}),
-      ...(status && status !== 'all' ? { status: status as any } : { status: { not: 'CANCELLED' } }),
-      ...(mode && mode !== 'all' ? { paymentMode: mode as any } : {}),
-      ...(search ? {
-        OR: [
-          { invoiceNo: { contains: String(search), mode: 'insensitive' } },
-          { client: { name: { contains: String(search), mode: 'insensitive' } } },
-        ]
-      } : {}),
-      ...(dateFrom || dateTo ? {
-        date: {
-          ...(dateFrom ? { gte: dateFrom } : {}),
-          ...(dateTo ? { lte: dateTo } : {}),
-        },
-      } : {}),
-    };
+    const fetchSalesPromise = (async () => {
+      const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
+      const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
 
-    const sales = await prisma.sale.findMany({
-      where,
-      select: {
-        id: true,
-        invoiceNo: true,
-        clientId: true,
-        date: true,
-        subtotal: true,
-        discount: true,
-        deliveryCharge: true,
-        previousBalance: true,
-        total: true,
-        paid: true,
-        balance: true,
-        status: true,
-        paymentMode: true,
-        isLocked: true,
-        deliveryStatus: true,
-        notes: true,
-        createdAt: true,
-        client: { select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, type: true } },
-        items: {
-          select: {
-            id: true,
-            productId: true,
-            itemName: true,
-            unit: true,
-            qty: true,
-            rate: true,
-            amount: true,
-            costPrice: true,
-            returnedQty: true,
-            returnReason: true,
-            product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } },
+      if (dateFrom && isNaN(dateFrom.getTime())) {
+        throw new Error('Invalid from date');
+      }
+      if (dateTo && isNaN(dateTo.getTime())) {
+        throw new Error('Invalid to date');
+      }
+
+      const where: any = {
+        deletedAt: null,
+        ...(branchId ? { branchId } : {}),
+        ...(clientId ? { clientId: String(clientId) } : {}),
+        ...(status && status !== 'all' ? { status: status as any } : { status: { not: 'CANCELLED' } }),
+        ...(mode && mode !== 'all' ? { paymentMode: mode as any } : {}),
+        ...(search ? {
+          OR: [
+            { invoiceNo: { contains: String(search), mode: 'insensitive' } },
+            { client: { name: { contains: String(search), mode: 'insensitive' } } },
+          ]
+        } : {}),
+        ...(dateFrom || dateTo ? {
+          date: {
+            ...(dateFrom ? { gte: dateFrom } : {}),
+            ...(dateTo ? { lte: dateTo } : {}),
           },
-        },
-        employee: { select: { id: true, name: true, role: true, phone: true } },
-      },
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      take: limit,
-    });
+        } : {}),
+      };
 
-    if (SALES_CACHE.size >= 50) SALES_CACHE.clear();
-    SALES_CACHE.set(cacheKey, { ts: Date.now(), data: sales });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: sales });
+      return await prisma.sale.findMany({
+        where,
+        select: {
+          id: true,
+          invoiceNo: true,
+          clientId: true,
+          date: true,
+          subtotal: true,
+          discount: true,
+          deliveryCharge: true,
+          previousBalance: true,
+          total: true,
+          paid: true,
+          balance: true,
+          status: true,
+          paymentMode: true,
+          isLocked: true,
+          deliveryStatus: true,
+          notes: true,
+          createdAt: true,
+          client: { select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, type: true } },
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              itemName: true,
+              unit: true,
+              qty: true,
+              rate: true,
+              amount: true,
+              costPrice: true,
+              returnedQty: true,
+              returnReason: true,
+              product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } },
+            },
+          },
+          employee: { select: { id: true, name: true, role: true, phone: true } },
+        },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        take: limit,
+      });
+    })();
+
+    SALES_IN_FLIGHT.set(cacheKey, fetchSalesPromise);
+    try {
+      const sales = await fetchSalesPromise;
+      if (SALES_CACHE.size >= 50) SALES_CACHE.clear();
+      SALES_CACHE.set(cacheKey, { ts: Date.now(), data: sales });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: sales });
+    } finally {
+      SALES_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('[GET /api/sales]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load sales', data: [] });

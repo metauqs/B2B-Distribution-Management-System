@@ -10,6 +10,7 @@ const router = Router();
 // ── In-Memory Cache for Collections (20s TTL) ──────────────────────────────
 const COLLECTIONS_CACHE = new Map<string, { ts: number; data: any }>();
 const COLLECTIONS_CACHE_TTL = 20000;
+const COLLECTIONS_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearCollectionsCache(): void {
   COLLECTIONS_CACHE.clear();
@@ -196,125 +197,136 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json(cached.data);
     }
 
-    const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
-    const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
-
-    if (dateFrom && isNaN(dateFrom.getTime())) {
-      return res.status(400).json({ success: false, error: 'Invalid from date' });
-    }
-    if (dateTo && isNaN(dateTo.getTime())) {
-      return res.status(400).json({ success: false, error: 'Invalid to date' });
+    if (COLLECTIONS_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await COLLECTIONS_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json(coalesced);
     }
 
-    const where: any = {
-      deletedAt: null,
-      ...(branchId ? { branchId } : {}),
-      ...(clientId ? { clientId: String(clientId) } : {}),
-      ...(employeeId ? { receivedByUserId: String(employeeId) } : {}),
-      ...(method && method !== 'all' ? { method: String(method).toUpperCase() } : {}),
-      ...(search ? {
-        OR: [
-          { reference: { contains: String(search), mode: 'insensitive' } },
-          { notes: { contains: String(search), mode: 'insensitive' } },
-          { client: { name: { contains: String(search), mode: 'insensitive' } } },
-        ]
-      } : {}),
-      ...(dateFrom || dateTo ? {
-        date: {
-          ...(dateFrom ? { gte: dateFrom } : {}),
-          ...(dateTo ? { lte: dateTo } : {}),
-        }
-      } : {}),
-    };
+    const fetchCollectionsPromise = (async () => {
+      const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
+      const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
 
-    const collections = await prisma.collection.findMany({
-      where,
-      select: {
-        id: true,
-        clientId: true,
-        amount: true,
-        method: true,
-        cashAccountId: true,
-        bankAccountId: true,
-        receivedByUserId: true,
-        remainingBalance: true,
-        date: true,
-        reference: true,
-        notes: true,
-        branchId: true,
-        createdAt: true,
-        deletedAt: true,
-        client: { select: { id: true, name: true, clientId: true } },
-        receivedByUser: { select: { id: true, name: true, role: true } },
-        allocations: {
-          select: {
-            id: true,
-            collectionId: true,
-            saleId: true,
-            allocatedAmount: true,
-            sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
-          }
-        }
-      },
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      ...(limit ? { take: limit } : {}),
-    });
-
-    if (collections.length === 0) {
-      const emptyPayload = {
-        success: true,
-        data: [],
-        summary: { totalAmount: 0, count: 0, byMethod: {}, byEmployee: {} }
-      };
-      COLLECTIONS_CACHE.set(cacheKey, { ts: Date.now(), data: emptyPayload });
-      res.setHeader('X-Cache', 'MISS');
-      return res.json(emptyPayload);
-    }
-
-    const collectionIds = collections.map(c => c.id);
-    const ledgers = await prisma.customerLedger.findMany({
-      where: { referenceId: { in: collectionIds }, type: 'PAYMENT' },
-      select: { referenceId: true, balance: true }
-    });
-
-    const ledgerMap = Object.fromEntries(ledgers.map(l => [l.referenceId, l.balance]));
-
-    const data = collections.map(c => {
-      const rawRemBal = ledgerMap[c.id] ?? c.remainingBalance ?? null;
-      const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
-      return {
-        ...c,
-        remainingBalance: remBal,
-        runningBalance: remBal
-      };
-    });
-
-    const totalAmount = collections.reduce((sum, c) => sum + c.amount, 0);
-    const count = collections.length;
-    const byMethod: { [key: string]: number } = {};
-    const byEmployee: { [key: string]: number } = {};
-
-    collections.forEach(c => {
-      byMethod[c.method] = (byMethod[c.method] || 0) + c.amount;
-      const empName = c.receivedByUser?.name || 'Unrecorded (Historical)';
-      byEmployee[empName] = (byEmployee[empName] || 0) + c.amount;
-    });
-
-    const responsePayload = {
-      success: true,
-      data,
-      summary: {
-        totalAmount,
-        count,
-        byMethod,
-        byEmployee,
+      if (dateFrom && isNaN(dateFrom.getTime())) {
+        throw new Error('Invalid from date');
       }
-    };
+      if (dateTo && isNaN(dateTo.getTime())) {
+        throw new Error('Invalid to date');
+      }
 
-    if (COLLECTIONS_CACHE.size > 50) COLLECTIONS_CACHE.clear();
-    COLLECTIONS_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json(responsePayload);
+      const where: any = {
+        deletedAt: null,
+        ...(branchId ? { branchId } : {}),
+        ...(clientId ? { clientId: String(clientId) } : {}),
+        ...(employeeId ? { receivedByUserId: String(employeeId) } : {}),
+        ...(method && method !== 'all' ? { method: String(method).toUpperCase() } : {}),
+        ...(search ? {
+          OR: [
+            { reference: { contains: String(search), mode: 'insensitive' } },
+            { notes: { contains: String(search), mode: 'insensitive' } },
+            { client: { name: { contains: String(search), mode: 'insensitive' } } },
+          ]
+        } : {}),
+        ...(dateFrom || dateTo ? {
+          date: {
+            ...(dateFrom ? { gte: dateFrom } : {}),
+            ...(dateTo ? { lte: dateTo } : {}),
+          },
+        } : {}),
+      };
+
+      const collections = await prisma.collection.findMany({
+        where,
+        select: {
+          id: true,
+          clientId: true,
+          amount: true,
+          method: true,
+          cashAccountId: true,
+          bankAccountId: true,
+          receivedByUserId: true,
+          remainingBalance: true,
+          date: true,
+          reference: true,
+          notes: true,
+          branchId: true,
+          createdAt: true,
+          deletedAt: true,
+          client: { select: { id: true, name: true, clientId: true } },
+          receivedByUser: { select: { id: true, name: true, role: true } },
+          allocations: {
+            select: {
+              id: true,
+              collectionId: true,
+              saleId: true,
+              allocatedAmount: true,
+              sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
+            }
+          }
+        },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        ...(limit ? { take: limit } : {}),
+      });
+
+      if (collections.length === 0) {
+        return {
+          success: true,
+          data: [],
+          summary: { totalAmount: 0, count: 0, byMethod: {}, byEmployee: {} }
+        };
+      }
+
+      const collectionIds = collections.map(c => c.id);
+      const ledgers = await prisma.customerLedger.findMany({
+        where: { referenceId: { in: collectionIds }, type: 'PAYMENT' },
+        select: { referenceId: true, balance: true }
+      });
+
+      const ledgerMap = Object.fromEntries(ledgers.map(l => [l.referenceId, l.balance]));
+
+      const data = collections.map(c => {
+        const rawRemBal = ledgerMap[c.id] ?? c.remainingBalance ?? null;
+        const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
+        return {
+          ...c,
+          remainingBalance: remBal,
+          runningBalance: remBal
+        };
+      });
+
+      const totalAmount = collections.reduce((sum, c) => sum + c.amount, 0);
+      const count = collections.length;
+      const byMethod: { [key: string]: number } = {};
+      const byEmployee: { [key: string]: number } = {};
+
+      collections.forEach(c => {
+        byMethod[c.method] = (byMethod[c.method] || 0) + c.amount;
+        const empName = c.receivedByUser?.name || 'Unrecorded (Historical)';
+        byEmployee[empName] = (byEmployee[empName] || 0) + c.amount;
+      });
+
+      return {
+        success: true,
+        data,
+        summary: {
+          totalAmount,
+          count,
+          byMethod,
+          byEmployee,
+        }
+      };
+    })();
+
+    COLLECTIONS_IN_FLIGHT.set(cacheKey, fetchCollectionsPromise);
+    try {
+      const responsePayload = await fetchCollectionsPromise;
+      if (COLLECTIONS_CACHE.size > 50) COLLECTIONS_CACHE.clear();
+      COLLECTIONS_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json(responsePayload);
+    } finally {
+      COLLECTIONS_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error in GET /api/collections:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load collections' });

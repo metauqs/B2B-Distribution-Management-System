@@ -8,6 +8,7 @@ const router = Router();
 // ── In-Memory cache for inventory queries (30s TTL) ─────────────────────────
 const INVENTORY_CACHE = new Map<string, { ts: number; data: any }>();
 const INVENTORY_CACHE_TTL = 30000;
+const INVENTORY_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearInventoryCache(): void {
   INVENTORY_CACHE.clear();
@@ -30,129 +31,144 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json(cached.data);
     }
 
-    // 1. Fetch active products and branch inventory in parallel
-    const [allProducts, existingInventory] = await Promise.all([
-      prisma.product.findMany({
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-        select: {
-          id: true,
-          name: true,
-          urduName: true,
-          emoji: true,
-          imageUrl: true,
-          category: true,
-          defaultUnit: true,
-          minStock: true,
-          availability: true,
-        },
-      }),
-      prisma.inventory.findMany({
-        where: { ...(branchId ? { branchId } : {}) },
-        select: {
-          id: true,
-          productId: true,
-          branchId: true,
-          qty: true,
-          reservedQty: true,
-          avgCost: true,
-          currentBuyPrice: true,
-          previousBuyPrice: true,
-          lastPurchaseDate: true,
-          lastPurchaseQty: true,
-          updatedAt: true,
-        },
-      }),
-    ]);
+    if (INVENTORY_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await INVENTORY_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json(coalesced);
+    }
 
-    const inventoryMap = new Map(existingInventory.map(inv => [inv.productId, inv]));
+    const fetchInventoryPromise = (async () => {
+      // 1. Fetch active products and branch inventory in parallel
+      const [allProducts, existingInventory] = await Promise.all([
+        prisma.product.findMany({
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            urduName: true,
+            emoji: true,
+            imageUrl: true,
+            category: true,
+            defaultUnit: true,
+            minStock: true,
+            availability: true,
+          },
+        }),
+        prisma.inventory.findMany({
+          where: { ...(branchId ? { branchId } : {}) },
+          select: {
+            id: true,
+            productId: true,
+            branchId: true,
+            qty: true,
+            reservedQty: true,
+            avgCost: true,
+            currentBuyPrice: true,
+            previousBuyPrice: true,
+            lastPurchaseDate: true,
+            lastPurchaseQty: true,
+            updatedAt: true,
+          },
+        }),
+      ]);
 
-    // 3. Merge: Every product in master catalog gets an inventory entry
-    const mergedInventory = allProducts.map(prod => {
-      const inv = inventoryMap.get(prod.id);
-      if (inv) {
+      const inventoryMap = new Map(existingInventory.map(inv => [inv.productId, inv]));
+
+      // 3. Merge: Every product in master catalog gets an inventory entry
+      const mergedInventory = allProducts.map(prod => {
+        const inv = inventoryMap.get(prod.id);
+        if (inv) {
+          return {
+            ...inv,
+            product: prod,
+          };
+        }
         return {
-          ...inv,
+          id: `virtual-${prod.id}`,
+          productId: prod.id,
+          branchId: branchId ?? '',
+          qty: 0,
+          reservedQty: 0,
+          avgCost: 0,
+          currentBuyPrice: 0,
+          previousBuyPrice: 0,
+          lastPurchaseDate: null,
+          lastPurchaseQty: 0,
+          minStock: prod.minStock ?? 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
           product: prod,
-        };
-      }
-      return {
-        id: `virtual-${prod.id}`,
-        productId: prod.id,
-        branchId: branchId ?? '',
-        qty: 0,
-        reservedQty: 0,
-        avgCost: 0,
-        currentBuyPrice: 0,
-        previousBuyPrice: 0,
-        lastPurchaseDate: null,
-        lastPurchaseQty: 0,
-        minStock: prod.minStock ?? 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        product: prod,
-      };
-    });
-
-    const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
-
-    const todayMoves = await prisma.stockMovement.findMany({
-      where: {
-        ...(branchId ? { branchId } : {}),
-        date: { gte: todayStart, lte: todayEnd },
-      },
-      select: { type: true, qty: true },
-    });
-
-    const todayStockIn = todayMoves.filter(m => m.qty > 0).reduce((s, m) => s + m.qty, 0);
-    const todayStockOut = todayMoves.filter(m => m.qty < 0 && m.type !== 'WASTAGE').reduce((s, m) => s + Math.abs(m.qty), 0);
-    const todayWastage = todayMoves.filter(m => m.type === 'WASTAGE').reduce((s, m) => s + Math.abs(m.qty), 0);
-
-    const data = mergedInventory
-      .filter(inv => !search || inv.product?.name.toLowerCase().includes(String(search).toLowerCase()) || inv.product?.urduName?.includes(String(search)))
-      .map(inv => {
-        const availableQty = Math.max(0, inv.qty - (inv.reservedQty ?? 0));
-        const effectiveMinStock = ((inv as any).minStock && (inv as any).minStock > 0) ? (inv as any).minStock : (inv.product?.minStock ?? 0);
-        const stockStatus = inv.qty <= 0
-          ? 'OUT_OF_STOCK'
-          : inv.qty <= effectiveMinStock
-          ? 'LOW'
-          : 'OK';
-        
-        const avgBuyCost = (inv.avgCost && inv.avgCost > 0)
-          ? inv.avgCost
-          : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
-        const latestPurchasePrice = inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
-        const totalValue = Math.max(0, inv.qty) * avgBuyCost;
-
-        return {
-          ...inv,
-          avgCost: avgBuyCost,
-          currentBuyPrice: latestPurchasePrice,
-          latestPurchasePrice,
-          availableQty,
-          stockStatus,
-          effectiveMinStock,
-          totalValue,
         };
       });
 
-    const summary = {
-      totalProducts: data.length,
-      totalQty: data.reduce((s, i) => s + i.qty, 0),
-      totalAvailableQty: data.reduce((s, i) => s + i.availableQty, 0),
-      lowStockCount: data.filter(i => i.stockStatus === 'LOW').length,
-      outOfStockCount: data.filter(i => i.stockStatus === 'OUT_OF_STOCK').length,
-      totalValue: data.reduce((s, i) => s + i.totalValue, 0),
-      todayStockIn,
-      todayStockOut,
-      todayWastage,
-    };
+      const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
 
-    const responsePayload = { success: true, data, summary };
-    if (INVENTORY_CACHE.size > 50) INVENTORY_CACHE.clear();
-    INVENTORY_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json(responsePayload);
+      const todayMoves = await prisma.stockMovement.findMany({
+        where: {
+          ...(branchId ? { branchId } : {}),
+          date: { gte: todayStart, lte: todayEnd },
+        },
+        select: { type: true, qty: true },
+      });
+
+      const todayStockIn = todayMoves.filter(m => m.qty > 0).reduce((s, m) => s + m.qty, 0);
+      const todayStockOut = todayMoves.filter(m => m.qty < 0 && m.type !== 'WASTAGE').reduce((s, m) => s + Math.abs(m.qty), 0);
+      const todayWastage = todayMoves.filter(m => m.type === 'WASTAGE').reduce((s, m) => s + Math.abs(m.qty), 0);
+
+      const data = mergedInventory
+        .filter(inv => !search || inv.product?.name.toLowerCase().includes(String(search).toLowerCase()) || inv.product?.urduName?.includes(String(search)))
+        .map(inv => {
+          const availableQty = Math.max(0, inv.qty - (inv.reservedQty ?? 0));
+          const effectiveMinStock = ((inv as any).minStock && (inv as any).minStock > 0) ? (inv as any).minStock : (inv.product?.minStock ?? 0);
+          const stockStatus = inv.qty <= 0
+            ? 'OUT_OF_STOCK'
+            : inv.qty <= effectiveMinStock
+            ? 'LOW'
+            : 'OK';
+          
+          const avgBuyCost = (inv.avgCost && inv.avgCost > 0)
+            ? inv.avgCost
+            : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
+          const latestPurchasePrice = inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
+          const totalValue = Math.max(0, inv.qty) * avgBuyCost;
+
+          return {
+            ...inv,
+            avgCost: avgBuyCost,
+            currentBuyPrice: latestPurchasePrice,
+            latestPurchasePrice,
+            availableQty,
+            stockStatus,
+            effectiveMinStock,
+            totalValue,
+          };
+        });
+
+      const summary = {
+        totalProducts: data.length,
+        totalQty: data.reduce((s, i) => s + i.qty, 0),
+        totalAvailableQty: data.reduce((s, i) => s + i.availableQty, 0),
+        lowStockCount: data.filter(i => i.stockStatus === 'LOW').length,
+        outOfStockCount: data.filter(i => i.stockStatus === 'OUT_OF_STOCK').length,
+        totalValue: data.reduce((s, i) => s + i.totalValue, 0),
+        todayStockIn,
+        todayStockOut,
+        todayWastage,
+      };
+
+      return { success: true, data, summary };
+    })();
+
+    INVENTORY_IN_FLIGHT.set(cacheKey, fetchInventoryPromise);
+    try {
+      const responsePayload = await fetchInventoryPromise;
+      if (INVENTORY_CACHE.size > 50) INVENTORY_CACHE.clear();
+      INVENTORY_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json(responsePayload);
+    } finally {
+      INVENTORY_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('[GET /api/inventory]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load inventory' });

@@ -79,15 +79,15 @@ router.post('/', async (req: Request, res: Response) => {
       };
     });
 
-    const createdRecipients = [];
-    for (const r of recipientsData) {
-      const rec = await prisma.broadcastRecipient.create({
-        data: r
-      });
-      createdRecipients.push(rec);
-    }
+    await prisma.broadcastRecipient.createMany({
+      data: recipientsData
+    });
 
-    const invalidCount = createdRecipients.filter(r => r.status === 'FAILED').length;
+    const createdRecipients = await prisma.broadcastRecipient.findMany({
+      where: { broadcastId: broadcast.id }
+    });
+
+    const invalidCount = recipientsData.filter(r => r.status === 'FAILED').length;
     if (invalidCount > 0) {
       await prisma.priceBroadcast.update({
         where: { id: broadcast.id },
