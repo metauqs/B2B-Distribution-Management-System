@@ -10,9 +10,9 @@ const router = Router();
 
 import { clearPriceListCache, clearActiveProductsCache } from './pricelist';
 
-// In-Memory cache for Product catalog queries (30s TTL)
+// In-Memory cache for Product catalog queries (60s TTL)
 const PRODUCT_CACHE = new Map<string, { ts: number; data: any }>();
-const PRODUCT_CACHE_TTL = 30000;
+const PRODUCT_CACHE_TTL = 60000;
 
 export function clearProductCache(): void {
   PRODUCT_CACHE.clear();
@@ -27,6 +27,7 @@ router.get('/', async (req: Request, res: Response) => {
     const cacheKey = `${category || 'all'}_${availability || 'default'}`;
     const cached = PRODUCT_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < PRODUCT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
       return res.json({ success: true, data: cached.data });
     }
 
@@ -44,10 +45,26 @@ router.get('/', async (req: Request, res: Response) => {
 
     const products = await prisma.product.findMany({
       where,
+      select: {
+        id: true,
+        name: true,
+        urduName: true,
+        category: true,
+        defaultUnit: true,
+        minStock: true,
+        isActive: true,
+        availability: true,
+        sortOrder: true,
+        emoji: true,
+        imageUrl: true,
+        createdAt: true,
+        updatedAt: true,
+      },
       orderBy: [{ sortOrder: 'asc' }, { category: 'asc' }, { name: 'asc' }],
     });
 
     PRODUCT_CACHE.set(cacheKey, { ts: Date.now(), data: products });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: products });
   } catch (err: any) {
     console.error('Error fetching products:', err);

@@ -106,10 +106,24 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// ── In-Memory cache for Broadcast & Branding Settings (5 min TTL) ───────────
+const BROADCAST_SETTINGS_CACHE = new Map<string, { ts: number; data: any }>();
+const BROADCAST_SETTINGS_CACHE_TTL = 300000;
+
+export function clearBroadcastSettingsCache(): void {
+  BROADCAST_SETTINGS_CACHE.clear();
+}
+
 // GET /api/broadcasts/settings
 router.get('/settings', async (req: Request, res: Response) => {
   const branchId = req.headers['x-branch-id'] as string;
   if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
+
+  const cached = BROADCAST_SETTINGS_CACHE.get(branchId);
+  if (cached && (Date.now() - cached.ts) < BROADCAST_SETTINGS_CACHE_TTL) {
+    res.setHeader('X-Cache', 'HIT');
+    return res.json({ success: true, data: cached.data });
+  }
 
   try {
     let settings = await prisma.broadcastSettings.findUnique({
@@ -128,6 +142,8 @@ router.get('/settings', async (req: Request, res: Response) => {
       });
     }
 
+    BROADCAST_SETTINGS_CACHE.set(branchId, { ts: Date.now(), data: settings });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: settings });
   } catch (err: any) {
     console.error('[GET /api/broadcasts/settings]', err);
@@ -164,6 +180,7 @@ router.post('/settings', async (req: Request, res: Response) => {
       }
     });
 
+    BROADCAST_SETTINGS_CACHE.set(branchId, { ts: Date.now(), data: settings });
     return res.json({ success: true, data: settings });
   } catch (err: any) {
     console.error('[POST /api/broadcasts/settings]', err);

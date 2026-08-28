@@ -7,12 +7,14 @@ import { calculateCollectionBehaviour } from '../lib/collectionBehaviour';
 
 const router = Router();
 
-// In-Memory cache for client listings (20s TTL)
+// In-Memory cache for client listings and profiles (30s TTL)
 const CLIENT_CACHE = new Map<string, { ts: number; data: any }>();
-const CLIENT_CACHE_TTL = 20000;
+const CLIENT_PROFILE_CACHE = new Map<string, { ts: number; data: any }>();
+const CLIENT_CACHE_TTL = 30000;
 
 export function clearClientCache(): void {
   CLIENT_CACHE.clear();
+  CLIENT_PROFILE_CACHE.clear();
 }
 
 // GET /api/clients
@@ -25,6 +27,7 @@ router.get('/', async (req: Request, res: Response) => {
     const cacheKey = `${branchId || 'all'}_${type || ''}_${status || ''}_${rating || ''}_${search || ''}_${stats || ''}_${minimal || ''}_${archived || ''}`;
     const cached = CLIENT_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < CLIENT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
       return res.json({ success: true, data: cached.data });
     }
 
@@ -55,7 +58,9 @@ router.get('/', async (req: Request, res: Response) => {
         },
         orderBy: { name: 'asc' },
       });
+      if (CLIENT_CACHE.size > 50) CLIENT_CACHE.clear();
       CLIENT_CACHE.set(cacheKey, { ts: Date.now(), data: clients });
+      res.setHeader('X-Cache', 'MISS');
       return res.json({ success: true, data: clients });
     }
 
@@ -65,6 +70,8 @@ router.get('/', async (req: Request, res: Response) => {
     });
 
     if (clients.length === 0) {
+      CLIENT_CACHE.set(cacheKey, { ts: Date.now(), data: [] });
+      res.setHeader('X-Cache', 'MISS');
       return res.json({ success: true, data: [] });
     }
 
@@ -79,6 +86,9 @@ router.get('/', async (req: Request, res: Response) => {
         calculatedCreditLimit: 50000,
         effectiveCreditLimit: c.creditLimit && c.creditLimit > 0 ? c.creditLimit : 50000,
       }));
+      if (CLIENT_CACHE.size > 50) CLIENT_CACHE.clear();
+      CLIENT_CACHE.set(cacheKey, { ts: Date.now(), data });
+      res.setHeader('X-Cache', 'MISS');
       return res.json({ success: true, data });
     }
 
@@ -240,6 +250,13 @@ router.get('/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
 
+    const cacheKey = `profile_${branchId || 'all'}_${id}`;
+    const cached = CLIENT_PROFILE_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < CLIENT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
+
     const client = await prisma.client.findFirst({
       where: { id, ...(branchId ? { branchId } : {}) }
     });
@@ -324,31 +341,41 @@ router.get('/:id', async (req: Request, res: Response) => {
     const openingBalancePaid = openingBal > 0 ? Math.max(0, Math.round((openingBal - openingBalanceRemaining) * 100) / 100) : 0;
     const openingBalanceStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingBalanceRemaining < 0.99 ? 'CLEARED' : 'UNPAID';
 
-    return res.json({
-      success: true,
-      data: {
-        client: {
-          ...client,
-          openingBalanceRemaining,
-          openingBalancePaid,
-          openingBalanceStatus,
-        },
-        currentBalance: client.currentBalance,
-        totalSales,
-        totalCollected,
-        lastOrderDate,
-        outstandingInvoices,
-        invoiceOutstanding,
+    const [creditRisk, collectionBehaviour] = await Promise.all([
+      calculateClientCreditRisk(id),
+      calculateCollectionBehaviour(id),
+    ]);
+
+    const responsePayload = {
+      client: {
+        ...client,
         openingBalanceRemaining,
         openingBalancePaid,
         openingBalanceStatus,
-        sales,
-        collections,
-        deliveries,
-        ledger: finalLedger.reverse(), // newest first for ledger list
-        creditRisk: await calculateClientCreditRisk(id),
-        collectionBehaviour: await calculateCollectionBehaviour(id),
-      }
+      },
+      currentBalance: client.currentBalance,
+      totalSales,
+      totalCollected,
+      lastOrderDate,
+      outstandingInvoices,
+      invoiceOutstanding,
+      openingBalanceRemaining,
+      openingBalancePaid,
+      openingBalanceStatus,
+      sales,
+      collections,
+      deliveries,
+      ledger: finalLedger.reverse(), // newest first for ledger list
+      creditRisk,
+      collectionBehaviour,
+    };
+
+    if (CLIENT_PROFILE_CACHE.size > 50) CLIENT_PROFILE_CACHE.clear();
+    CLIENT_PROFILE_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    res.setHeader('X-Cache', 'MISS');
+    return res.json({
+      success: true,
+      data: responsePayload
     });
   } catch (err: any) {
     console.error('[GET /api/clients/:id]', err);

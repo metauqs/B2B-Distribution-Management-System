@@ -4,11 +4,25 @@ import { writeAuditLog, getValidUserId } from '../lib/business';
 
 const router = Router();
 
+// ── In-Memory cache for cash accounts (30s TTL) ─────────────────────────────
+const CASH_ACCOUNT_CACHE = new Map<string, { ts: number; data: any }>();
+const CASH_ACCOUNT_CACHE_TTL = 30000;
+
+export function clearCashAccountCache(): void {
+  CASH_ACCOUNT_CACHE.clear();
+}
+
 // GET /api/cash-accounts
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     if (!branchId) return res.status(400).json({ success: false, error: 'Missing branchId' });
+
+    const cached = CASH_ACCOUNT_CACHE.get(branchId);
+    if (cached && (Date.now() - cached.ts) < CASH_ACCOUNT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
 
     let cashAccounts = await prisma.cashAccount.findMany({
       where: { branchId },
@@ -27,6 +41,8 @@ router.get('/', async (req: Request, res: Response) => {
       cashAccounts = [defaultCash];
     }
 
+    CASH_ACCOUNT_CACHE.set(branchId, { ts: Date.now(), data: cashAccounts });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: cashAccounts });
   } catch (err: any) {
     console.error('Error in GET /api/cash-accounts:', err);
@@ -93,6 +109,7 @@ router.post('/deposit', async (req: Request, res: Response) => {
       return updated;
     }, { maxWait: 15000, timeout: 120000 });
 
+    clearCashAccountCache();
     return res.status(200).json({
       success: true,
       message: `Successfully added Rs ${depositAmount.toLocaleString()} to ${result.name}`,
@@ -140,6 +157,7 @@ router.post('/', async (req: Request, res: Response) => {
       return acc;
     }, { maxWait: 15000, timeout: 120000 });
 
+    clearCashAccountCache();
     return res.status(201).json({ success: true, data: newAcc });
   } catch (err: any) {
     console.error('Error in POST /api/cash-accounts:', err);

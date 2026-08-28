@@ -3,9 +3,9 @@ import prisma from '../lib/prisma';
 
 const router = Router();
 
-// In-Memory cache for suppliers (30s TTL)
+// In-Memory cache for suppliers (60s TTL)
 const SUPPLIER_CACHE = new Map<string, { ts: number; data: any }>();
-const SUPPLIER_CACHE_TTL = 30000;
+const SUPPLIER_CACHE_TTL = 60000;
 
 export function clearSupplierCache(): void {
   SUPPLIER_CACHE.clear();
@@ -18,12 +18,22 @@ router.get('/', async (req: Request, res: Response) => {
     const cacheKey = branchId || 'all';
     const cached = SUPPLIER_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < SUPPLIER_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
       return res.json({ success: true, data: cached.data });
     }
 
     const [suppliers, purchasesArr, paymentsArr] = await Promise.all([
       prisma.supplier.findMany({
         where: { ...(branchId ? { branchId } : {}), deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          address: true,
+          openingBalance: true,
+          branchId: true,
+          createdAt: true,
+        },
         orderBy: { createdAt: 'asc' },
       }),
       prisma.purchase.groupBy({
@@ -46,7 +56,9 @@ router.get('/', async (req: Request, res: Response) => {
       currentBalance: s.openingBalance + (purchMap[s.id] ?? 0) - (payMap[s.id] ?? 0),
     }));
 
+    if (SUPPLIER_CACHE.size > 50) SUPPLIER_CACHE.clear();
     SUPPLIER_CACHE.set(cacheKey, { ts: Date.now(), data });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data });
   } catch (err: any) {
     console.error('Error fetching suppliers:', err);
@@ -66,6 +78,7 @@ router.post('/', async (req: Request, res: Response) => {
     const supplier = await prisma.supplier.create({
       data: { name: name.trim(), phone, address, openingBalance: openingBalance ?? 0, branchId },
     });
+    clearSupplierCache();
     return res.status(201).json({ success: true, data: supplier });
   } catch (err: any) {
     console.error('Error creating supplier:', err);

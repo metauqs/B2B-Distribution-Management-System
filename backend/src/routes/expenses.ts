@@ -5,17 +5,36 @@ import { getBusinessDateRange, getCurrentBusinessDateRange, getBusinessDatePrese
 
 const router = Router();
 
+// ── In-Memory cache for expenses and summaries (20s TTL) ────────────────────
+const EXPENSE_CACHE = new Map<string, { ts: number; data: any }>();
+const EXPENSE_CACHE_TTL = 20000;
+
+export function clearExpenseCache(): void {
+  EXPENSE_CACHE.clear();
+}
+
 // GET /api/expenses/summary
 router.get('/summary', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
 
-    const { from, to } = req.query;
+    const { from, to, range } = req.query;
+    const cacheKey = `summary_${branchId}_${from || 'none'}_${to || 'none'}_${range || 'none'}`;
+    const cached = EXPENSE_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < EXPENSE_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
+
     const fromDate = from ? getBusinessDateRange(String(from)).start : undefined;
     const toDate = to ? getBusinessDateRange(String(to)).end : undefined;
 
     const summary = await ExpenseService.getExpenseSummary(branchId, fromDate, toDate);
+
+    if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
+    EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: summary });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: summary });
   } catch (err: any) {
     console.error('Error in GET /api/expenses/summary:', err);
@@ -29,11 +48,22 @@ router.get('/integrated', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
 
-    const { from, to } = req.query;
+    const { from, to, range } = req.query;
+    const cacheKey = `integrated_${branchId}_${from || 'none'}_${to || 'none'}_${range || 'none'}`;
+    const cached = EXPENSE_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < EXPENSE_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
+
     const fromDate = from ? getBusinessDateRange(String(from)).start : undefined;
     const toDate = to ? getBusinessDateRange(String(to)).end : undefined;
 
     const integrated = await ExpenseService.getIntegratedExpenses(branchId, fromDate, toDate);
+
+    if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
+    EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: integrated });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: integrated });
   } catch (err: any) {
     console.error('Error in GET /api/expenses/integrated:', err);
@@ -49,6 +79,13 @@ router.get('/', async (req: Request, res: Response) => {
       from, to, range, category, paidBy, cashAccountId, bankAccountId,
       employeeId, vehicleId, supplierId, search,
     } = req.query;
+
+    const cacheKey = `list_${branchId || 'all'}_${from || ''}_${to || ''}_${range || ''}_${category || ''}_${paidBy || ''}_${cashAccountId || ''}_${bankAccountId || ''}_${employeeId || ''}_${vehicleId || ''}_${supplierId || ''}_${search || ''}`;
+    const cached = EXPENSE_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < EXPENSE_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
 
     let dateFrom: Date | undefined = from ? getBusinessDateRange(String(from)).start : undefined;
     let dateTo: Date | undefined = to ? getBusinessDateRange(String(to)).end : undefined;
@@ -84,7 +121,18 @@ router.get('/', async (req: Request, res: Response) => {
 
     const expenses = await prisma.expense.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        reference: true,
+        category: true,
+        categoryRefId: true,
+        description: true,
+        amount: true,
+        date: true,
+        paidBy: true,
+        notes: true,
+        branchId: true,
+        createdAt: true,
         vehicle: { select: { id: true, plateNo: true, type: true } },
         employee: { select: { id: true, name: true, employeeId: true, role: true } },
         supplier: { select: { id: true, name: true, phone: true } },
@@ -97,6 +145,9 @@ router.get('/', async (req: Request, res: Response) => {
       take: 200,
     });
 
+    if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
+    EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: expenses });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: expenses });
   } catch (err: any) {
     console.error('Error in GET /api/expenses:', err);
@@ -112,7 +163,18 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     const expense = await prisma.expense.findFirst({
       where: { id, ...(branchId ? { branchId } : {}), deletedAt: null },
-      include: {
+      select: {
+        id: true,
+        reference: true,
+        category: true,
+        categoryRefId: true,
+        description: true,
+        amount: true,
+        date: true,
+        paidBy: true,
+        notes: true,
+        branchId: true,
+        createdAt: true,
         vehicle: { select: { id: true, plateNo: true, type: true } },
         employee: { select: { id: true, name: true, employeeId: true, role: true } },
         supplier: { select: { id: true, name: true, phone: true } },
@@ -144,6 +206,7 @@ router.post('/', async (req: Request, res: Response) => {
       userId,
     });
 
+    clearExpenseCache();
     return res.status(201).json({ success: true, data: expense });
   } catch (err: any) {
     console.error('Error in POST /api/expenses:', err);
@@ -161,6 +224,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
     const updated = await ExpenseService.updateExpense(id, req.body, branchId, userId);
 
+    clearExpenseCache();
     return res.json({ success: true, data: updated });
   } catch (err: any) {
     console.error('Error in PUT /api/expenses/:id:', err);
@@ -178,6 +242,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
     await ExpenseService.deleteExpense(id, branchId, userId);
 
+    clearExpenseCache();
     return res.json({ success: true, message: 'Expense deleted successfully' });
   } catch (err: any) {
     console.error('Error in DELETE /api/expenses/:id:', err);

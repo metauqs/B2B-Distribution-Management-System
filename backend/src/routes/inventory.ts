@@ -5,6 +5,14 @@ import { getCurrentBusinessDateRange, getBusinessDateRange } from '../lib/busine
 
 const router = Router();
 
+// ── In-Memory cache for inventory queries (30s TTL) ─────────────────────────
+const INVENTORY_CACHE = new Map<string, { ts: number; data: any }>();
+const INVENTORY_CACHE_TTL = 30000;
+
+export function clearInventoryCache(): void {
+  INVENTORY_CACHE.clear();
+}
+
 // GET /api/inventory
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -14,6 +22,13 @@ router.get('/', async (req: Request, res: Response) => {
       branchId = firstBranch?.id ?? '';
     }
     const { search } = req.query;
+
+    const cacheKey = `${branchId || 'all'}_${search || 'all'}`;
+    const cached = INVENTORY_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < INVENTORY_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
 
     // 1. Fetch active products and branch inventory in parallel
     const [allProducts, existingInventory] = await Promise.all([
@@ -135,7 +150,11 @@ router.get('/', async (req: Request, res: Response) => {
       todayWastage,
     };
 
-    return res.json({ success: true, data, summary });
+    const responsePayload = { success: true, data, summary };
+    if (INVENTORY_CACHE.size > 50) INVENTORY_CACHE.clear();
+    INVENTORY_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    res.setHeader('X-Cache', 'MISS');
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('[GET /api/inventory]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load inventory' });
@@ -208,6 +227,7 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }, { maxWait: 15000, timeout: 120000 });
 
+    clearInventoryCache();
     return res.status(201).json({ success: true, data: result });
   } catch (err: any) {
     console.error('[POST /api/inventory wastage]', err);
@@ -249,6 +269,7 @@ router.post('/adjust', async (req: Request, res: Response) => {
       });
     }, { maxWait: 15000, timeout: 120000 });
 
+    clearInventoryCache();
     return res.status(201).json({ success: true, data: result });
   } catch (err: any) {
     console.error('[POST /api/inventory/adjust]', err);
@@ -299,6 +320,7 @@ router.post('/reset', async (req: Request, res: Response) => {
       }
     }
 
+    clearInventoryCache();
     return res.json({
       success: true,
       message: `Inventory successfully reset. ${resetCount} items updated to 0 stock.`,
@@ -327,6 +349,7 @@ router.post('/reconcile', async (req: Request, res: Response) => {
       reconciledCount++;
     }
 
+    clearInventoryCache();
     return res.json({
       success: true,
       message: `Single Source of Truth Reconciliation complete. ${reconciledCount} product inventory records synchronized.`,

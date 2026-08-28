@@ -7,12 +7,27 @@ import { postPurchaseLedger } from '../lib/financialLedgerService';
 
 const router = Router();
 
+// ── In-Memory cache for purchases (20s TTL) ───────────────────────────────
+const PURCHASE_CACHE = new Map<string, { ts: number; data: any }>();
+const PURCHASE_CACHE_TTL = 20000;
+
+export function clearPurchaseCache(): void {
+  PURCHASE_CACHE.clear();
+}
+
 // GET /api/purchases
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { limit: limitQuery } = req.query;
     const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 500) : 100;
+
+    const cacheKey = `${branchId || 'all'}_${limit}`;
+    const cached = PURCHASE_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < PURCHASE_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
 
     const purchases = await prisma.purchase.findMany({
       where: { ...(branchId ? { branchId } : {}), deletedAt: null },
@@ -46,6 +61,9 @@ router.get('/', async (req: Request, res: Response) => {
       take: limit,
     });
 
+    if (PURCHASE_CACHE.size > 50) PURCHASE_CACHE.clear();
+    PURCHASE_CACHE.set(cacheKey, { ts: Date.now(), data: purchases });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: purchases });
   } catch (err: any) {
     console.error('Error in GET /api/purchases:', err);
@@ -207,6 +225,7 @@ router.post('/', async (req: Request, res: Response) => {
     }, { maxWait: 15000, timeout: 600000 });
 
     await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Purchase', entityId: purchase.id, newData: { supplierId: finalSupplierId, total } });
+    clearPurchaseCache();
     return res.status(201).json({ success: true, data: purchase });
   } catch (err: any) {
     console.error('Error in POST /api/purchases:', err);
@@ -423,7 +442,6 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
         include: { items: true, supplier: { select: { id: true, name: true } } },
       });
 
-      // 4. Recalculate avgCost from full history for all affected products
       for (const pid of allAffectedProductIds) {
         await recalcAvgCostFromHistory(tx, pid, branchId);
       }
@@ -441,6 +459,7 @@ const handleUpdatePurchase = async (req: Request, res: Response) => {
       newData: { total: updatedPurchase.total, supplierId: finalSupplierId }
     });
 
+    clearPurchaseCache();
     return res.json({ success: true, data: updatedPurchase });
   } catch (err: any) {
     console.error('Error in PATCH/PUT /api/purchases/:id:', err);
@@ -472,7 +491,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
     await prisma.$transaction(async tx => {
       const productIdsToRecalc: string[] = [];
 
-      // Revert stock for deleted items, remove price history, and recalc avgCost
       for (const item of purchase.items) {
         if (item.productId) {
           productIdsToRecalc.push(item.productId);
@@ -487,7 +505,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
             });
           }
 
-          // Create an offsetting movement to reverse the original purchase stock-in
           await tx.stockMovement.create({
             data: {
               productId: item.productId,
@@ -500,12 +517,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
             }
           });
 
-          // Remove price history entries for this purchase so avgCost recalculates correctly
           await tx.purchasePriceHistory.deleteMany({
             where: { purchaseId: id, productId: item.productId }
           });
 
-          // Also delete the original PURCHASE StockMovements
           await tx.stockMovement.deleteMany({
             where: { refType: 'purchase', refId: id, productId: item.productId }
           });
@@ -517,7 +532,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
         data: { deletedAt: new Date() }
       });
 
-      // Recalculate avgCost from remaining purchase history for all affected products
       await Promise.all(
         productIdsToRecalc.map(pid => recalcAvgCostFromHistory(tx, pid, branchId))
       );
@@ -532,6 +546,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       oldData: { total: purchase.total }
     });
 
+    clearPurchaseCache();
     return res.json({ success: true, message: 'Purchase deleted successfully' });
   } catch (err: any) {
     console.error('[DELETE /api/purchases/:id]', err);

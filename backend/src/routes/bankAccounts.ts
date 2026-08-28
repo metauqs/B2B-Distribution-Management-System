@@ -3,11 +3,25 @@ import prisma from '../lib/prisma';
 
 const router = Router();
 
+// ── In-Memory cache for bank accounts (30s TTL) ─────────────────────────────
+const BANK_ACCOUNT_CACHE = new Map<string, { ts: number; data: any }>();
+const BANK_ACCOUNT_CACHE_TTL = 30000;
+
+export function clearBankAccountCache(): void {
+  BANK_ACCOUNT_CACHE.clear();
+}
+
 // GET /api/bank-accounts
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     if (!branchId) return res.status(400).json({ success: false, error: 'Missing branchId' });
+
+    const cached = BANK_ACCOUNT_CACHE.get(branchId);
+    if (cached && (Date.now() - cached.ts) < BANK_ACCOUNT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
 
     let bankAccounts = await prisma.bankAccount.findMany({
       where: { branchId },
@@ -28,6 +42,8 @@ router.get('/', async (req: Request, res: Response) => {
       bankAccounts = [defaultBank];
     }
 
+    BANK_ACCOUNT_CACHE.set(branchId, { ts: Date.now(), data: bankAccounts });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: bankAccounts });
   } catch (err: any) {
     console.error('Error in GET /api/bank-accounts:', err);
