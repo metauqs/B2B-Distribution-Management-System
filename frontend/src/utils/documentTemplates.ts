@@ -1409,11 +1409,13 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
   `;
 
   const styles = buildDocStyles(brand);
+  const baseHref = origin || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="${baseHref}/">
   <title>Daily Price List — ${data.dateStr}</title>
   <style>
     ${styles}

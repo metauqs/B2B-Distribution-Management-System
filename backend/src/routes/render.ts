@@ -37,9 +37,11 @@ function resolveLocalAsset(urlStr: string): { body: Buffer; contentType: string 
     if (!contentType) return null;
 
     const searchDirs = [
+      path.resolve(process.cwd(), 'public/fonts'),
+      path.resolve(__dirname, '../../public/fonts'),
+      path.resolve(__dirname, '../public/fonts'),
       path.resolve(__dirname, '../../../frontend/public/fonts'),
       path.resolve(process.cwd(), '../frontend/public/fonts'),
-      path.resolve(process.cwd(), 'public/fonts'),
       path.resolve(__dirname, '../../uploads/products'),
       path.resolve(__dirname, '../uploads/products'),
       path.resolve(process.cwd(), 'uploads/products'),
@@ -65,7 +67,7 @@ function resolveLocalAsset(urlStr: string): { body: Buffer; contentType: string 
         try {
           const body = fs.readFileSync(candidate);
           const result = { body, contentType };
-          if (body.length < 2000000) ASSET_BUFFER_CACHE.set(filename, result);
+          if (body.length < 10000000) ASSET_BUFFER_CACHE.set(filename, result);
           return result;
         } catch {
           // ignore
@@ -260,6 +262,18 @@ async function setupRenderPage(browser: any, width: number, scaleFactor = 1.2) {
   return page;
 }
 
+function injectBaseUrlIfNeeded(html: string): string {
+  if (!html) return html;
+  if (html.includes('<base ') || html.includes('<base>')) return html;
+  if (html.includes('<head>')) {
+    return html.replace('<head>', '<head><base href="http://localhost:5000/">');
+  }
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, '$&<base href="http://localhost:5000/">');
+  }
+  return `<base href="http://localhost:5000/">` + html;
+}
+
 // ── In-Memory LRU Cache for Rendered JPGs / PNGs (Capped at 10 items) ─────────
 interface CachedImage {
   buffer: Buffer;
@@ -362,7 +376,7 @@ router.post('/jpeg', async (req, res) => {
     const pageMs = Date.now() - t_page;
 
     const t_content = Date.now();
-    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
+    await page.setContent(injectBaseUrlIfNeeded(html), { waitUntil: 'domcontentloaded', timeout: 10000 });
     const contentMs = Date.now() - t_content;
 
     // Robust font & image readiness check with decode() and natural dimension verification
@@ -370,7 +384,7 @@ router.post('/jpeg', async (req, res) => {
     await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 300))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 1500))]);
       }
       const images = Array.from(d.querySelectorAll('img')) as any[];
       if (images.length > 0) {
@@ -475,13 +489,13 @@ router.post('/png', async (req, res) => {
     const requestedWidth = Number(width) || 794;
     page = await setupRenderPage(browser, requestedWidth, 1.2);
 
-    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
+    await page.setContent(injectBaseUrlIfNeeded(html), { waitUntil: 'domcontentloaded', timeout: 10000 });
 
     // Robust font & image readiness check with decode() and natural dimension verification
     await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 300))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 1500))]);
       }
       const images = Array.from(d.querySelectorAll('img')) as any[];
       if (images.length > 0) {
@@ -556,7 +570,7 @@ router.post('/pdf', async (req, res) => {
       const requestedWidth = Number(width) || 794;
       page = await setupRenderPage(browser, requestedWidth, 1.2);
 
-      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      await page.setContent(injectBaseUrlIfNeeded(html), { waitUntil: 'domcontentloaded', timeout: 10000 });
 
       const buffer = await page.pdf({
         format: 'A4' as any,
