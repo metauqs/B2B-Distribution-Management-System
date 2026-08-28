@@ -7,11 +7,26 @@ import { postCollectionLedger } from '../lib/financialLedgerService';
 
 const router = Router();
 
+// ── In-Memory Cache for Collections (20s TTL) ──────────────────────────────
+const COLLECTIONS_CACHE = new Map<string, { ts: number; data: any }>();
+const COLLECTIONS_CACHE_TTL = 20000;
+
+export function clearCollectionsCache(): void {
+  COLLECTIONS_CACHE.clear();
+}
+
 // GET /api/collections/daily-history — Server-Side 5 AM Business Day Aggregation & Payment List
 router.get('/daily-history', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { date, employeeId, method, clientId, search } = req.query;
+
+    const cacheKey = `daily_${branchId || 'all'}_${date || 'all'}_${employeeId || 'all'}_${method || 'all'}_${clientId || 'all'}_${search || 'all'}`;
+    const cached = COLLECTIONS_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < COLLECTIONS_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
 
     const targetDateStr = date ? String(date) : undefined;
     const range = getBusinessDateRange(targetDateStr);
@@ -37,11 +52,29 @@ router.get('/daily-history', async (req: Request, res: Response) => {
 
     const collections = await prisma.collection.findMany({
       where,
-      include: {
-        client: { select: { id: true, name: true, clientId: true } },
+      select: {
+        id: true,
+        clientId: true,
+        amount: true,
+        method: true,
+        cashAccountId: true,
+        bankAccountId: true,
+        receivedByUserId: true,
+        remainingBalance: true,
+        date: true,
+        reference: true,
+        notes: true,
+        branchId: true,
+        createdAt: true,
+        deletedAt: true,
+        client: { select: { id: true, name: true, clientId: true, currentBalance: true } },
         receivedByUser: { select: { id: true, name: true, role: true } },
         allocations: {
-          include: {
+          select: {
+            id: true,
+            collectionId: true,
+            saleId: true,
+            allocatedAmount: true,
             sale: { select: { id: true, invoiceNo: true } }
           }
         }
@@ -51,7 +84,8 @@ router.get('/daily-history', async (req: Request, res: Response) => {
 
     const collectionIds = collections.map(c => c.id);
     const ledgers = collectionIds.length > 0 ? await prisma.customerLedger.findMany({
-      where: { referenceId: { in: collectionIds }, type: 'PAYMENT' }
+      where: { referenceId: { in: collectionIds }, type: 'PAYMENT' },
+      select: { referenceId: true, balance: true }
     }) : [];
 
     const ledgerMap = Object.fromEntries(ledgers.map(l => [l.referenceId, l.balance]));
@@ -121,7 +155,7 @@ router.get('/daily-history', async (req: Request, res: Response) => {
       };
     });
 
-    return res.json({
+    const responsePayload = {
       success: true,
       businessDate: range.businessDateStr,
       summary: {
@@ -136,7 +170,12 @@ router.get('/daily-history', async (req: Request, res: Response) => {
         byEmployee,
       },
       transactions: formattedTransactions,
-    });
+    };
+
+    if (COLLECTIONS_CACHE.size > 50) COLLECTIONS_CACHE.clear();
+    COLLECTIONS_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    res.setHeader('X-Cache', 'MISS');
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('Error in GET /api/collections/daily-history:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load daily payment history' });
@@ -149,6 +188,13 @@ router.get('/', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { clientId, employeeId, method, search, from, to, limit: limitQuery } = req.query;
     const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 1000) : (clientId || from || to ? 200 : 100);
+
+    const cacheKey = `list_${branchId || 'all'}_${clientId || 'all'}_${employeeId || 'all'}_${method || 'all'}_${search || 'all'}_${from || 'all'}_${to || 'all'}_${limit}`;
+    const cached = COLLECTIONS_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < COLLECTIONS_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
 
     const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
     const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
@@ -183,11 +229,29 @@ router.get('/', async (req: Request, res: Response) => {
 
     const collections = await prisma.collection.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        clientId: true,
+        amount: true,
+        method: true,
+        cashAccountId: true,
+        bankAccountId: true,
+        receivedByUserId: true,
+        remainingBalance: true,
+        date: true,
+        reference: true,
+        notes: true,
+        branchId: true,
+        createdAt: true,
+        deletedAt: true,
         client: { select: { id: true, name: true, clientId: true } },
         receivedByUser: { select: { id: true, name: true, role: true } },
         allocations: {
-          include: {
+          select: {
+            id: true,
+            collectionId: true,
+            saleId: true,
+            allocatedAmount: true,
             sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
           }
         }
@@ -197,16 +261,20 @@ router.get('/', async (req: Request, res: Response) => {
     });
 
     if (collections.length === 0) {
-      return res.json({
+      const emptyPayload = {
         success: true,
         data: [],
         summary: { totalAmount: 0, count: 0, byMethod: {}, byEmployee: {} }
-      });
+      };
+      COLLECTIONS_CACHE.set(cacheKey, { ts: Date.now(), data: emptyPayload });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json(emptyPayload);
     }
 
     const collectionIds = collections.map(c => c.id);
     const ledgers = await prisma.customerLedger.findMany({
-      where: { referenceId: { in: collectionIds }, type: 'PAYMENT' }
+      where: { referenceId: { in: collectionIds }, type: 'PAYMENT' },
+      select: { referenceId: true, balance: true }
     });
 
     const ledgerMap = Object.fromEntries(ledgers.map(l => [l.referenceId, l.balance]));
@@ -232,7 +300,7 @@ router.get('/', async (req: Request, res: Response) => {
       byEmployee[empName] = (byEmployee[empName] || 0) + c.amount;
     });
 
-    return res.json({
+    const responsePayload = {
       success: true,
       data,
       summary: {
@@ -241,7 +309,12 @@ router.get('/', async (req: Request, res: Response) => {
         byMethod,
         byEmployee,
       }
-    });
+    };
+
+    if (COLLECTIONS_CACHE.size > 50) COLLECTIONS_CACHE.clear();
+    COLLECTIONS_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    res.setHeader('X-Cache', 'MISS');
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('Error in GET /api/collections:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load collections' });
@@ -539,6 +612,8 @@ router.post('/', async (req: Request, res: Response) => {
       newData: { clientId, amount: numAmount, summary: result.summary, allocationsCount: result.allocations.length }
     });
 
+    clearCollectionsCache();
+
     return res.status(201).json({
       success: true,
       data: {
@@ -581,6 +656,8 @@ router.post('/reconcile-all', async (req: Request, res: Response) => {
         reconciledAllocations: outcome.reconciledAllocations
       });
     }
+
+    clearCollectionsCache();
 
     return res.json({
       success: true,
@@ -639,6 +716,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
       entityId: id,
       oldData: { clientId, amount: collection.amount, reference: collection.reference }
     });
+
+    clearCollectionsCache();
 
     return res.json({
       success: true,
