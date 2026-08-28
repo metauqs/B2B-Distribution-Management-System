@@ -28,9 +28,7 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
 
   const [
     salesAgg,
-    grossSalesSummary,
-    cashSalesAgg,
-    creditSalesAgg,
+    paymentModeAgg,
     purchasesAgg,
     expensesAgg,
     collectionsAgg,
@@ -43,9 +41,7 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
     saleItemsAgg,
   ] = await Promise.all([
     prisma.sale.aggregate({ where: saleWhere, _sum: { total: true, subtotal: true, discount: true, deliveryCharge: true, paid: true }, _count: true }),
-    getAuthoritativeGrossSales(saleWhere),
-    prisma.sale.aggregate({ where: { ...saleWhere, paymentMode: 'CASH' }, _sum: { total: true } }),
-    prisma.sale.aggregate({ where: { ...saleWhere, paymentMode: 'CREDIT' }, _sum: { total: true } }),
+    prisma.sale.groupBy({ by: ['paymentMode'], where: saleWhere, _sum: { total: true } }),
     prisma.purchase.aggregate({ where: purchaseWhere, _sum: { total: true, subtotal: true, transportCost: true }, _count: true }),
     prisma.expense.aggregate({ where: expenseWhere, _sum: { amount: true }, _count: true }),
     prisma.collection.aggregate({ where: collectionWhere, _sum: { amount: true }, _count: true }),
@@ -71,14 +67,15 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
     }),
   ]);
 
-  // Financial Calculations (using single authoritative gross sales service)
-  const grossSales = grossSalesSummary.grossSales;
-  const discounts = grossSalesSummary.discounts;
-  const deliveryCharge = grossSalesSummary.deliveryCharges;
-  const netSales = grossSalesSummary.netSales;
-  const totalRevenue = grossSalesSummary.totalRevenue;
-  const cashSales = cashSalesAgg._sum.total ?? 0;
-  const creditSales = creditSalesAgg._sum.total ?? 0;
+  // Financial Calculations (using single authoritative gross sales calculation)
+  const grossSales = Math.round(salesAgg._sum.subtotal ?? 0);
+  const discounts = Math.round(salesAgg._sum.discount ?? 0);
+  const deliveryCharge = Math.round(salesAgg._sum.deliveryCharge ?? 0);
+  const netSales = Math.max(0, grossSales - discounts);
+  const totalRevenue = Math.round(salesAgg._sum.total ?? 0);
+  const payModeMap = Object.fromEntries(paymentModeAgg.map(x => [x.paymentMode, x._sum.total ?? 0]));
+  const cashSales = payModeMap['CASH'] ?? 0;
+  const creditSales = payModeMap['CREDIT'] ?? 0;
 
   let totalCogs = 0;
   let returnedProductsQty = 0;

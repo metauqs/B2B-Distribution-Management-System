@@ -64,11 +64,11 @@ export function clearSalesCache(): void {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
-    const { clientId, status, mode, search, from, to, limit: limitQuery } = req.query;
+    const { clientId, status, mode, search, from, to, limit: limitQuery, page } = req.query;
     const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 1000) : (clientId || from || to ? 200 : 100);
     const normFrom = from ? getBusinessDateString(getBusinessDateRange(String(from)).start) : 'all';
     const normTo = to ? getBusinessDateString(getBusinessDateRange(String(to)).end) : 'all';
-    const cacheKey = `${branchId || 'all'}_${clientId || 'all'}_${status || 'all'}_${mode || 'all'}_${search ? String(search).trim().toLowerCase() : 'all'}_${normFrom}_${normTo}_${limit}`;
+    const cacheKey = `${branchId || 'all'}_${clientId || 'all'}_${status || 'all'}_${mode || 'all'}_${search ? String(search).trim().toLowerCase() : 'all'}_${normFrom}_${normTo}_${limit}_${page || '1'}`;
     const cached = SALES_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < SALES_CACHE_TTL) {
       res.setHeader('X-Cache', 'HIT');

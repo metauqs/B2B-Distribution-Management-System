@@ -40,9 +40,11 @@ router.get('/generate-id', async (req: Request, res: Response) => {
 // ── In-Memory cache for employees (60s TTL) ───────────────────────────────
 const EMPLOYEE_CACHE = new Map<string, { ts: number; data: any }>();
 const EMPLOYEE_CACHE_TTL = 60000;
+const EMPLOYEE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearEmployeeCache(): void {
   EMPLOYEE_CACHE.clear();
+  EMPLOYEE_IN_FLIGHT.clear();
 }
 
 // GET /api/employees
@@ -58,40 +60,54 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const where: any = {
-      ...(branchId ? { branchId } : {}),
-      ...(activeOnly === 'true' ? { isActive: true } : {}),
-    };
+    if (EMPLOYEE_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await EMPLOYEE_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
 
-    const employees = await prisma.employee.findMany({
-      where,
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        employeeId: true,
-        name: true,
-        role: true,
-        phone: true,
-        salary: true,
-        joiningDate: true,
-        isActive: true,
-        branchId: true,
-        fatherName: true,
-        cnic: true,
-        address: true,
-        whatsapp: true,
-        email: true,
-        paymentStructure: true,
-        notes: true,
-        photoUrl: true,
-        createdAt: true,
-      }
-    });
+    const fetchEmployeesPromise = (async () => {
+      const where: any = {
+        ...(branchId ? { branchId } : {}),
+        ...(activeOnly === 'true' ? { isActive: true } : {}),
+      };
 
-    if (EMPLOYEE_CACHE.size >= 50) EMPLOYEE_CACHE.clear();
-    EMPLOYEE_CACHE.set(cacheKey, { ts: Date.now(), data: employees });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: employees });
+      return await prisma.employee.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          employeeId: true,
+          name: true,
+          role: true,
+          phone: true,
+          salary: true,
+          joiningDate: true,
+          isActive: true,
+          branchId: true,
+          fatherName: true,
+          cnic: true,
+          address: true,
+          whatsapp: true,
+          email: true,
+          paymentStructure: true,
+          notes: true,
+          photoUrl: true,
+          createdAt: true,
+        }
+      });
+    })();
+
+    EMPLOYEE_IN_FLIGHT.set(cacheKey, fetchEmployeesPromise);
+    try {
+      const employees = await fetchEmployeesPromise;
+      if (EMPLOYEE_CACHE.size >= 50) EMPLOYEE_CACHE.clear();
+      EMPLOYEE_CACHE.set(cacheKey, { ts: Date.now(), data: employees });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: employees });
+    } finally {
+      EMPLOYEE_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('[GET /api/employees]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load employees', data: [] });

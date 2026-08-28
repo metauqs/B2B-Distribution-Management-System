@@ -371,9 +371,7 @@ export class ExpenseService {
       weekAgg,
       monthAgg,
       totalAgg,
-      cashAgg,
-      bankAgg,
-      onlineAgg,
+      paidByGroup,
       categoryGroup,
       purchasesAgg,
       salesAgg,
@@ -399,23 +397,10 @@ export class ExpenseService {
         },
         _sum: { amount: true }, _count: true,
       }),
-      prisma.expense.aggregate({
+      prisma.expense.groupBy({
+        by: ['paidBy'],
         where: {
-          ...bWhere, paidBy: 'CASH',
-          ...(dateFilter ? { date: dateFilter } : {}),
-        },
-        _sum: { amount: true },
-      }),
-      prisma.expense.aggregate({
-        where: {
-          ...bWhere, paidBy: 'BANK',
-          ...(dateFilter ? { date: dateFilter } : {}),
-        },
-        _sum: { amount: true },
-      }),
-      prisma.expense.aggregate({
-        where: {
-          ...bWhere, paidBy: 'ONLINE',
+          ...bWhere,
           ...(dateFilter ? { date: dateFilter } : {}),
         },
         _sum: { amount: true },
@@ -452,10 +437,11 @@ export class ExpenseService {
           ...(branchId ? { branchId } : {}),
           ...(dateFilter ? { date: dateFilter } : {}),
         },
-        include: {
+        select: {
+          qty: true,
           product: {
-            include: {
-              inventory: branchId ? { where: { branchId } } : true,
+            select: {
+              inventory: branchId ? { where: { branchId }, select: { avgCost: true, currentBuyPrice: true } } : { select: { avgCost: true, currentBuyPrice: true } },
             },
           },
         },
@@ -468,6 +454,11 @@ export class ExpenseService {
         _count: true,
       }),
     ]);
+
+    const payMap = Object.fromEntries(paidByGroup.map(g => [g.paidBy, g._sum.amount ?? 0]));
+    const cash = payMap['CASH'] ?? 0;
+    const bank = payMap['BANK'] ?? 0;
+    const online = payMap['ONLINE'] ?? 0;
 
     // Calculate wastage financial loss
     const wastageLoss = wastageList.reduce((sum, w) => {
@@ -527,9 +518,9 @@ export class ExpenseService {
       thisMonthCount: monthAgg._count ?? 0,
       total: manualExpensesTotal,
       totalCount: totalAgg._count ?? 0,
-      cash: cashAgg._sum.amount ?? 0,
-      bank: bankAgg._sum.amount ?? 0,
-      online: onlineAgg._sum.amount ?? 0,
+      cash,
+      bank,
+      online,
       // Automated Cross-Module Analytics
       purchasesTotal,
       purchasesCount: purchasesAgg._count ?? 0,
@@ -561,12 +552,19 @@ export class ExpenseService {
           ...bWhere,
           ...(dateFilter ? { date: dateFilter } : {}),
         },
-        include: {
-          vehicle: { select: { id: true, plateNo: true, type: true } },
-          employee: { select: { id: true, name: true, employeeId: true, role: true } },
-          supplier: { select: { id: true, name: true, phone: true } },
-          cashAccount: { select: { id: true, name: true, balance: true } },
-          bankAccount: { select: { id: true, name: true, bankName: true, accountNo: true, balance: true } },
+        select: {
+          id: true,
+          reference: true,
+          category: true,
+          amount: true,
+          date: true,
+          description: true,
+          paidBy: true,
+          cashAccount: { select: { name: true } },
+          bankAccount: { select: { name: true } },
+          vehicle: { select: { plateNo: true } },
+          employee: { select: { name: true } },
+          supplier: { select: { name: true } },
         },
         orderBy: { date: 'desc' },
       }),
@@ -575,9 +573,13 @@ export class ExpenseService {
           ...(branchId ? { branchId } : {}),
           ...(dateFilter ? { date: dateFilter } : {}),
         },
-        include: {
+        select: {
+          id: true,
+          total: true,
+          paid: true,
+          date: true,
           supplier: { select: { id: true, name: true } },
-          items: true,
+          _count: { select: { items: true } },
         },
         orderBy: { date: 'desc' },
       }),
@@ -586,10 +588,16 @@ export class ExpenseService {
           ...(branchId ? { branchId } : {}),
           ...(dateFilter ? { date: dateFilter } : {}),
         },
-        include: {
+        select: {
+          id: true,
+          qty: true,
+          date: true,
+          reason: true,
           product: {
-            include: {
-              inventory: branchId ? { where: { branchId } } : true,
+            select: {
+              name: true,
+              defaultUnit: true,
+              inventory: branchId ? { where: { branchId }, select: { avgCost: true, currentBuyPrice: true } } : { select: { avgCost: true, currentBuyPrice: true } },
             },
           },
         },
@@ -624,7 +632,7 @@ export class ExpenseService {
         category: 'PURCHASE',
         amount: p.total,
         date: p.date.toISOString(),
-        description: `Mandi / Supplier Purchase (${p.items?.length ?? 0} items)`,
+        description: `Mandi / Supplier Purchase (${p._count?.items ?? 0} items)`,
         paidBy: p.paid > 0 ? 'CASH/CREDIT' : 'CREDIT',
         accountName: p.supplier?.name ?? 'Supplier',
         entityName: p.supplier?.name ? `🏪 ${p.supplier.name}` : null,

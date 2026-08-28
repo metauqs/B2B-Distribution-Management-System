@@ -10,8 +10,15 @@ const INVENTORY_CACHE = new Map<string, { ts: number; data: any }>();
 const INVENTORY_CACHE_TTL = 30000;
 const INVENTORY_IN_FLIGHT = new Map<string, Promise<any>>();
 
+const MOVEMENTS_CACHE = new Map<string, { ts: number; data: any }>();
+const MOVEMENTS_CACHE_TTL = 15000;
+const MOVEMENTS_IN_FLIGHT = new Map<string, Promise<any>>();
+
 export function clearInventoryCache(): void {
   INVENTORY_CACHE.clear();
+  INVENTORY_IN_FLIGHT.clear();
+  MOVEMENTS_CACHE.clear();
+  MOVEMENTS_IN_FLIGHT.clear();
 }
 
 // GET /api/inventory
@@ -450,54 +457,78 @@ router.post('/buy-price', async (req: Request, res: Response) => {
 router.get('/movements', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) ?? undefined;
-    const { productId, type, from, to, limit: limitQuery } = req.query;
+    const { productId, type, from, to, limit: limitQuery, page } = req.query;
     const limit = Math.min(parseInt(String(limitQuery ?? '200')), 500);
 
-    const where: any = {
-      ...(branchId ? { branchId } : {}),
-      ...(productId ? { productId: String(productId) } : {}),
-      ...(type && type !== 'all' ? { type: type as any } : {}),
-    };
-
-    if (from || to) {
-      where.date = {
-        ...(from ? { gte: getBusinessDateRange(String(from)).start } : {}),
-        ...(to ? { lte: getBusinessDateRange(String(to)).end } : {}),
-      };
+    const cacheKey = `${branchId || 'all'}_${productId || ''}_${type || ''}_${from || ''}_${to || ''}_${limit}_${page || '1'}`;
+    const cached = MOVEMENTS_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < MOVEMENTS_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
     }
 
-    const movements = await prisma.stockMovement.findMany({
-      where,
-      include: {
-        product: { select: { id: true, name: true, urduName: true, defaultUnit: true, imageUrl: true, emoji: true } },
-        user: { select: { id: true, name: true } },
-      },
-      orderBy: [{ createdAt: 'desc' }, { date: 'desc' }],
-      take: limit,
-    });
+    if (MOVEMENTS_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await MOVEMENTS_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
 
-    const data = movements.map(m => ({
-      id: m.id,
-      date: m.createdAt || m.date,
-      productId: m.productId,
-      productName: m.product?.name ?? '—',
-      productUrdu: m.product?.urduName ?? '',
-      imageUrl: m.product?.imageUrl ?? null,
-      emoji: m.product?.emoji ?? null,
-      unit: m.product?.defaultUnit ?? 'KG',
-      type: m.type,
-      qty: m.qty,
-      previousStock: m.previousStock,
-      newStock: m.newStock,
-      stockIn: m.qty > 0 ? m.qty : 0,
-      stockOut: m.qty < 0 ? Math.abs(m.qty) : 0,
-      refType: m.refType ?? '',
-      refId: m.refId ?? '',
-      userName: m.user?.name ?? 'System',
-      note: m.note ?? '',
-    }));
+    const fetchMovementsPromise = (async () => {
+      const where: any = {
+        ...(branchId ? { branchId } : {}),
+        ...(productId ? { productId: String(productId) } : {}),
+        ...(type && type !== 'all' ? { type: type as any } : {}),
+      };
 
-    return res.json({ success: true, data });
+      if (from || to) {
+        where.date = {
+          ...(from ? { gte: getBusinessDateRange(String(from)).start } : {}),
+          ...(to ? { lte: getBusinessDateRange(String(to)).end } : {}),
+        };
+      }
+
+      const movements = await prisma.stockMovement.findMany({
+        where,
+        include: {
+          product: { select: { id: true, name: true, urduName: true, defaultUnit: true, imageUrl: true, emoji: true } },
+          user: { select: { id: true, name: true } },
+        },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        take: limit,
+      });
+
+      return movements.map(m => ({
+        id: m.id,
+        date: m.createdAt || m.date,
+        productId: m.productId,
+        productName: m.product?.name ?? '—',
+        productUrdu: m.product?.urduName ?? '',
+        imageUrl: m.product?.imageUrl ?? null,
+        emoji: m.product?.emoji ?? null,
+        unit: m.product?.defaultUnit ?? 'KG',
+        type: m.type,
+        qty: m.qty,
+        previousStock: m.previousStock,
+        newStock: m.newStock,
+        stockIn: m.qty > 0 ? m.qty : 0,
+        stockOut: m.qty < 0 ? Math.abs(m.qty) : 0,
+        refType: m.refType ?? '',
+        refId: m.refId ?? '',
+        userName: m.user?.name ?? 'System',
+        note: m.note ?? '',
+      }));
+    })();
+
+    MOVEMENTS_IN_FLIGHT.set(cacheKey, fetchMovementsPromise);
+    try {
+      const data = await fetchMovementsPromise;
+      if (MOVEMENTS_CACHE.size > 50) MOVEMENTS_CACHE.clear();
+      MOVEMENTS_CACHE.set(cacheKey, { ts: Date.now(), data });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data });
+    } finally {
+      MOVEMENTS_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('[GET /api/inventory/movements]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load movements' });

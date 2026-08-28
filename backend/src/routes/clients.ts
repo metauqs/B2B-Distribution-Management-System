@@ -11,10 +11,14 @@ const router = Router();
 const CLIENT_CACHE = new Map<string, { ts: number; data: any }>();
 const CLIENT_PROFILE_CACHE = new Map<string, { ts: number; data: any }>();
 const CLIENT_CACHE_TTL = 30000;
+const CLIENT_IN_FLIGHT = new Map<string, Promise<any>>();
+const CLIENT_PROFILE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearClientCache(): void {
   CLIENT_CACHE.clear();
   CLIENT_PROFILE_CACHE.clear();
+  CLIENT_IN_FLIGHT.clear();
+  CLIENT_PROFILE_IN_FLIGHT.clear();
 }
 
 // GET /api/clients
@@ -31,141 +35,142 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const where: any = { 
-      ...(isArchived ? { deletedAt: { not: null } } : { deletedAt: null }),
-      ...(branchId ? { branchId } : {}) 
-    };
-    if (type) where.type = type;
-    if (status) where.status = status;
-    if (rating) where.rating = rating;
-    if (search) {
-      const searchStr = String(search);
-      where.OR = [
-        { name: { contains: searchStr, mode: 'insensitive' } },
-        { ownerName: { contains: searchStr, mode: 'insensitive' } },
-        { phone: { contains: searchStr } },
-        { address: { contains: searchStr, mode: 'insensitive' } },
-      ];
+    if (CLIENT_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await CLIENT_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
     }
 
-    if (minimal === 'true') {
+    const fetchClientsPromise = (async () => {
+      const where: any = { 
+        ...(isArchived ? { deletedAt: { not: null } } : { deletedAt: null }),
+        ...(branchId ? { branchId } : {}) 
+      };
+      if (type) where.type = type;
+      if (status) where.status = status;
+      if (rating) where.rating = rating;
+      if (search) {
+        const searchStr = String(search);
+        where.OR = [
+          { name: { contains: searchStr, mode: 'insensitive' } },
+          { ownerName: { contains: searchStr, mode: 'insensitive' } },
+          { phone: { contains: searchStr } },
+          { address: { contains: searchStr, mode: 'insensitive' } },
+        ];
+      }
+
+      if (minimal === 'true') {
+        return await prisma.client.findMany({
+          where,
+          select: {
+            id: true, clientId: true, name: true, currentBalance: true, rating: true,
+            phone: true, whatsapp: true, address: true, deliveryLocation: true,
+            type: true, creditLimit: true, paymentTerms: true, openingBalance: true
+          },
+          orderBy: { name: 'asc' },
+        });
+      }
+
       const clients = await prisma.client.findMany({
         where,
-        select: {
-          id: true, clientId: true, name: true, currentBalance: true, rating: true,
-          phone: true, whatsapp: true, address: true, deliveryLocation: true,
-          type: true, creditLimit: true, paymentTerms: true, openingBalance: true
-        },
         orderBy: { name: 'asc' },
       });
-      if (CLIENT_CACHE.size > 50) CLIENT_CACHE.clear();
-      CLIENT_CACHE.set(cacheKey, { ts: Date.now(), data: clients });
-      res.setHeader('X-Cache', 'MISS');
-      return res.json({ success: true, data: clients });
-    }
 
-    const clients = await prisma.client.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
+      if (clients.length === 0) {
+        return [];
+      }
 
-    if (clients.length === 0) {
-      CLIENT_CACHE.set(cacheKey, { ts: Date.now(), data: [] });
-      res.setHeader('X-Cache', 'MISS');
-      return res.json({ success: true, data: [] });
-    }
+      if (stats !== 'true') {
+        return clients.map(c => ({
+          ...c,
+          totalSales: 0,
+          salesCount: 0,
+          lastOrderDate: null,
+          totalCollected: 0,
+          averageOrderValue: 0,
+          calculatedCreditLimit: 50000,
+          effectiveCreditLimit: c.creditLimit && c.creditLimit > 0 ? c.creditLimit : 50000,
+        }));
+      }
 
-    if (stats !== 'true') {
-      const data = clients.map(c => ({
-        ...c,
-        totalSales: 0,
-        salesCount: 0,
-        lastOrderDate: null,
-        totalCollected: 0,
-        averageOrderValue: 0,
-        calculatedCreditLimit: 50000,
-        effectiveCreditLimit: c.creditLimit && c.creditLimit > 0 ? c.creditLimit : 50000,
-      }));
+      const clientIds = clients.map(c => c.id);
+
+      const [salesArr, collectionsArr, activeSalesArr] = await Promise.all([
+        prisma.sale.groupBy({
+          by: ['clientId'],
+          where: { 
+            ...(branchId ? { branchId } : {}), 
+            deletedAt: null,
+            clientId: { in: clientIds }
+          },
+          _sum: { total: true },
+          _count: { id: true },
+          _max: { date: true },
+        }),
+        prisma.collection.groupBy({
+          by: ['clientId'],
+          where: { 
+            ...(branchId ? { branchId } : {}), 
+            deletedAt: null,
+            clientId: { in: clientIds }
+          },
+          _sum: { amount: true },
+        }),
+        prisma.sale.groupBy({
+          by: ['clientId'],
+          where: { 
+            ...(branchId ? { branchId } : {}), 
+            deletedAt: null,
+            status: { not: 'CANCELLED' },
+            clientId: { in: clientIds }
+          },
+          _sum: { total: true },
+          _count: { id: true },
+        }),
+      ]);
+
+      const salesMap = Object.fromEntries(salesArr.map(x => [x.clientId, x]));
+      const collectionsMap = Object.fromEntries(collectionsArr.map(x => [x.clientId, x]));
+      const activeSalesMap = Object.fromEntries(activeSalesArr.map(x => [x.clientId, x]));
+
+      return clients.map(c => {
+        const s = salesMap[c.id];
+        const col = collectionsMap[c.id];
+        const activeS = activeSalesMap[c.id];
+
+        const totalSales = s?._sum.total ?? 0;
+        const totalCollected = col?._sum.amount ?? 0;
+        const salesCount = activeS?._count.id ?? 0;
+        const averageOrderValue = salesCount > 0 ? Math.round(totalSales / salesCount) : 0;
+        const calculatedLimit = Math.max(50000, Math.round(averageOrderValue * 3));
+        const effectiveLimit = c.creditLimit && c.creditLimit > 0 ? c.creditLimit : calculatedLimit;
+
+        return {
+          ...c,
+          totalSales,
+          salesCount,
+          lastOrderDate: s?._max.date ? s._max.date.toISOString() : null,
+          totalCollected,
+          averageOrderValue,
+          calculatedCreditLimit: calculatedLimit,
+          effectiveCreditLimit: effectiveLimit,
+        };
+      });
+    })();
+
+    CLIENT_IN_FLIGHT.set(cacheKey, fetchClientsPromise);
+    try {
+      const data = await fetchClientsPromise;
       if (CLIENT_CACHE.size > 50) CLIENT_CACHE.clear();
       CLIENT_CACHE.set(cacheKey, { ts: Date.now(), data });
       res.setHeader('X-Cache', 'MISS');
       return res.json({ success: true, data });
+    } finally {
+      CLIENT_IN_FLIGHT.delete(cacheKey);
     }
-
-    const clientIds = clients.map(c => c.id);
-
-    const [salesArr, collectionsArr, activeSalesArr] = await Promise.all([
-      prisma.sale.groupBy({
-        by: ['clientId'],
-        where: { 
-          ...(branchId ? { branchId } : {}), 
-          deletedAt: null,
-          clientId: { in: clientIds }
-        },
-        _sum: { total: true },
-        _count: { id: true },
-        _max: { date: true },
-      }),
-      prisma.collection.groupBy({
-        by: ['clientId'],
-        where: { 
-          ...(branchId ? { branchId } : {}), 
-          deletedAt: null,
-          clientId: { in: clientIds }
-        },
-        _sum: { amount: true },
-      }),
-      prisma.sale.groupBy({
-        by: ['clientId'],
-        where: {
-          ...(branchId ? { branchId } : {}),
-          deletedAt: null,
-          status: { not: 'CANCELLED' },
-          clientId: { in: clientIds }
-        },
-        _sum: { balance: true }
-      })
-    ]);
-
-    const salesMap = Object.fromEntries(salesArr.map(x => [x.clientId, { total: x._sum.total ?? 0, count: x._count.id, lastDate: x._max.date }]));
-    const collectionsMap = Object.fromEntries(collectionsArr.map(x => [x.clientId, x._sum.amount ?? 0]));
-    const activeSalesMap = Object.fromEntries(activeSalesArr.map(x => [x.clientId, x._sum.balance ?? 0]));
-
-    const data = clients.map(c => {
-      const sCount = salesMap[c.id]?.count ?? 0;
-      const sTotal = salesMap[c.id]?.total ?? 0;
-      const aov = sCount > 0 ? Math.round(sTotal / sCount) : 0;
-      const calcLimit = aov > 0 ? Math.round(aov * 3) : 50000;
-      const effLimit = (c.creditLimit && c.creditLimit > 0) ? c.creditLimit : calcLimit;
-
-      const invDue = activeSalesMap[c.id] ?? 0;
-      const openingBal = c.openingBalance ?? 0;
-      const openingRem = openingBal > 0 ? Math.max(0, Math.round(((c.currentBalance ?? 0) - invDue) * 100) / 100) : 0;
-      const openingPaid = openingBal > 0 ? Math.max(0, Math.round((openingBal - openingRem) * 100) / 100) : 0;
-      const openingStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingRem < 0.99 ? 'CLEARED' : 'UNPAID';
-
-      return {
-        ...c,
-        totalSales: sTotal,
-        salesCount: sCount,
-        lastOrderDate: salesMap[c.id]?.lastDate ?? null,
-        totalCollected: collectionsMap[c.id] ?? 0,
-        currentBalance: c.currentBalance,
-        activeInvoiceDue: invDue,
-        openingBalanceRemaining: openingRem,
-        openingBalancePaid: openingPaid,
-        openingBalanceStatus: openingStatus,
-        averageOrderValue: aov,
-        calculatedCreditLimit: calcLimit,
-        effectiveCreditLimit: effLimit,
-      };
-    });
-
-    CLIENT_CACHE.set(cacheKey, { ts: Date.now(), data });
-    return res.json({ success: true, data });
   } catch (err: any) {
-    console.error('[GET /api/clients]', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load clients' });
+    console.error('Error fetching clients:', err);
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load clients', data: [] });
   }
 });
 
@@ -257,128 +262,175 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const client = await prisma.client.findFirst({
-      where: { id, ...(branchId ? { branchId } : {}) }
-    });
-
-    if (!client) {
-      return res.status(404).json({ success: false, error: 'Client not found' });
+    if (CLIENT_PROFILE_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await CLIENT_PROFILE_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
     }
 
-    const [sales, collections, deliveries, ledger] = await Promise.all([
-      // Sales
-      prisma.sale.findMany({
-        where: { clientId: id, deletedAt: null },
-        include: { items: { include: { product: true } } },
-        orderBy: { date: 'desc' },
-      }),
-      // Collections
-      prisma.collection.findMany({
-        where: { clientId: id, deletedAt: null },
-        include: {
-          receivedByUser: { select: { id: true, name: true, role: true } },
-          allocations: {
-            include: {
-              sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
+    const fetchProfilePromise = (async () => {
+      const client = await prisma.client.findFirst({
+        where: { id, ...(branchId ? { branchId } : {}) }
+      });
+
+      if (!client) {
+        return null;
+      }
+
+      const [sales, collections, deliveries, ledger] = await Promise.all([
+        // Sales
+        prisma.sale.findMany({
+          where: { clientId: id, deletedAt: null },
+          select: {
+            id: true,
+            invoiceNo: true,
+            date: true,
+            subtotal: true,
+            discount: true,
+            deliveryCharge: true,
+            total: true,
+            paid: true,
+            balance: true,
+            status: true,
+            paymentMode: true,
+            items: {
+              select: {
+                id: true,
+                itemName: true,
+                qty: true,
+                unit: true,
+                rate: true,
+                amount: true,
+              },
+            },
+          },
+          orderBy: { date: 'desc' },
+          take: 100,
+        }),
+        // Collections
+        prisma.collection.findMany({
+          where: { clientId: id, deletedAt: null },
+          include: {
+            receivedByUser: { select: { id: true, name: true, role: true } },
+            allocations: {
+              include: {
+                sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
+              }
             }
-          }
+          },
+          orderBy: { date: 'desc' },
+          take: 100,
+        }),
+        // Deliveries
+        prisma.delivery.findMany({
+          where: { sale: { clientId: id } },
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            notes: true,
+            sale: { select: { invoiceNo: true } },
+            driver: { select: { id: true, name: true, phone: true } },
+            vehicle: { select: { id: true, plateNo: true, type: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+        }),
+        // Ledger
+        prisma.customerLedger.findMany({
+          where: { clientId: id },
+          orderBy: { date: 'asc' },
+          take: 500,
+        }),
+      ]);
+
+      const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
+      const totalCollected = collections.reduce((sum, c) => sum + c.amount, 0);
+      const lastOrderDate = sales[0]?.date ?? null;
+      const outstandingInvoices = sales.filter(s => s.balance > 0 && s.status !== 'CANCELLED');
+
+      // Build ledger entries formatted for UI from DB customerLedger
+      const sortedDbLedger = ledger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      const mappedLedger = sortedDbLedger.map(entry => ({
+        id: entry.id,
+        type: entry.type.toLowerCase(),
+        date: entry.date.toISOString(),
+        description: entry.description,
+        ref: entry.referenceNo || '—',
+        debit: entry.debit,
+        credit: entry.credit,
+        runningBalance: entry.balance,
+      }));
+
+      let finalLedger = mappedLedger;
+      if (mappedLedger.length === 0 && client.openingBalance !== 0) {
+        finalLedger = [{
+          id: 'opening-bal',
+          type: 'opening',
+          date: client.createdAt.toISOString(),
+          description: 'Opening Balance',
+          ref: '—',
+          debit: client.openingBalance > 0 ? client.openingBalance : 0,
+          credit: client.openingBalance < 0 ? Math.abs(client.openingBalance) : 0,
+          runningBalance: client.openingBalance,
+        }];
+      }
+
+      const invoiceOutstanding = sales.filter(s => s.status !== 'CANCELLED').reduce((sum, s) => sum + (s.balance ?? 0), 0);
+      const openingBal = client.openingBalance ?? 0;
+      const openingBalanceRemaining = openingBal > 0 ? Math.max(0, Math.round((client.currentBalance - invoiceOutstanding) * 100) / 100) : 0;
+      const openingBalancePaid = openingBal > 0 ? Math.max(0, Math.round((openingBal - openingBalanceRemaining) * 100) / 100) : 0;
+      const openingBalanceStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingBalanceRemaining < 0.99 ? 'CLEARED' : 'UNPAID';
+
+      const [creditRisk, collectionBehaviour] = await Promise.all([
+        calculateClientCreditRisk(id),
+        calculateCollectionBehaviour(id),
+      ]);
+
+      return {
+        client: {
+          ...client,
+          openingBalanceRemaining,
+          openingBalancePaid,
+          openingBalanceStatus,
         },
-        orderBy: { date: 'desc' },
-      }),
-      // Deliveries
-      prisma.delivery.findMany({
-        where: { sale: { clientId: id } },
-        include: {
-          sale: { select: { invoiceNo: true } },
-          driver: true,
-          vehicle: true,
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-      // Ledger
-      prisma.customerLedger.findMany({
-        where: { clientId: id },
-        orderBy: { date: 'asc' },
-      }),
-    ]);
-
-    const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
-    const totalCollected = collections.reduce((sum, c) => sum + c.amount, 0);
-    const lastOrderDate = sales[0]?.date ?? null;
-    const outstandingInvoices = sales.filter(s => s.balance > 0 && s.status !== 'CANCELLED');
-
-    // Build ledger entries formatted for UI from DB customerLedger
-    const sortedDbLedger = ledger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    const mappedLedger = sortedDbLedger.map(entry => ({
-      id: entry.id,
-      type: entry.type.toLowerCase(),
-      date: entry.date.toISOString(),
-      description: entry.description,
-      ref: entry.referenceNo || '—',
-      debit: entry.debit,
-      credit: entry.credit,
-      runningBalance: entry.balance,
-    }));
-
-    let finalLedger = mappedLedger;
-    if (mappedLedger.length === 0 && client.openingBalance !== 0) {
-      finalLedger = [{
-        id: 'opening-bal',
-        type: 'opening',
-        date: client.createdAt.toISOString(),
-        description: 'Opening Balance',
-        ref: '—',
-        debit: client.openingBalance > 0 ? client.openingBalance : 0,
-        credit: client.openingBalance < 0 ? Math.abs(client.openingBalance) : 0,
-        runningBalance: client.openingBalance,
-      }];
-    }
-
-    const invoiceOutstanding = sales.filter(s => s.status !== 'CANCELLED').reduce((sum, s) => sum + (s.balance ?? 0), 0);
-    const openingBal = client.openingBalance ?? 0;
-    const openingBalanceRemaining = openingBal > 0 ? Math.max(0, Math.round((client.currentBalance - invoiceOutstanding) * 100) / 100) : 0;
-    const openingBalancePaid = openingBal > 0 ? Math.max(0, Math.round((openingBal - openingBalanceRemaining) * 100) / 100) : 0;
-    const openingBalanceStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingBalanceRemaining < 0.99 ? 'CLEARED' : 'UNPAID';
-
-    const [creditRisk, collectionBehaviour] = await Promise.all([
-      calculateClientCreditRisk(id),
-      calculateCollectionBehaviour(id),
-    ]);
-
-    const responsePayload = {
-      client: {
-        ...client,
+        currentBalance: client.currentBalance,
+        totalSales,
+        totalCollected,
+        lastOrderDate,
+        outstandingInvoices,
+        invoiceOutstanding,
         openingBalanceRemaining,
         openingBalancePaid,
         openingBalanceStatus,
-      },
-      currentBalance: client.currentBalance,
-      totalSales,
-      totalCollected,
-      lastOrderDate,
-      outstandingInvoices,
-      invoiceOutstanding,
-      openingBalanceRemaining,
-      openingBalancePaid,
-      openingBalanceStatus,
-      sales,
-      collections,
-      deliveries,
-      ledger: finalLedger.reverse(), // newest first for ledger list
-      creditRisk,
-      collectionBehaviour,
-    };
+        sales,
+        collections,
+        deliveries,
+        ledger: finalLedger.reverse(), // newest first for ledger list
+        creditRisk,
+        collectionBehaviour,
+      };
+    })();
 
-    if (CLIENT_PROFILE_CACHE.size > 50) CLIENT_PROFILE_CACHE.clear();
-    CLIENT_PROFILE_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({
-      success: true,
-      data: responsePayload
-    });
+    CLIENT_PROFILE_IN_FLIGHT.set(cacheKey, fetchProfilePromise);
+    try {
+      const responsePayload = await fetchProfilePromise;
+      if (!responsePayload) {
+        return res.status(404).json({ success: false, error: 'Client not found' });
+      }
+      if (CLIENT_PROFILE_CACHE.size > 50) CLIENT_PROFILE_CACHE.clear();
+      CLIENT_PROFILE_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({
+        success: true,
+        data: responsePayload
+      });
+    } finally {
+      CLIENT_PROFILE_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
-    console.error('[GET /api/clients/:id]', err);
+    console.error('Error fetching client profile:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load client profile' });
   }
 });

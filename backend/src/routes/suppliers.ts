@@ -6,9 +6,11 @@ const router = Router();
 // In-Memory cache for suppliers (60s TTL)
 const SUPPLIER_CACHE = new Map<string, { ts: number; data: any }>();
 const SUPPLIER_CACHE_TTL = 60000;
+const SUPPLIER_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearSupplierCache(): void {
   SUPPLIER_CACHE.clear();
+  SUPPLIER_IN_FLIGHT.clear();
 }
 
 // GET /api/suppliers
@@ -22,44 +24,58 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const [suppliers, purchasesArr, paymentsArr] = await Promise.all([
-      prisma.supplier.findMany({
-        where: { ...(branchId ? { branchId } : {}), deletedAt: null },
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-          address: true,
-          openingBalance: true,
-          branchId: true,
-          createdAt: true,
-        },
-        orderBy: { createdAt: 'asc' },
-      }),
-      prisma.purchase.groupBy({
-        by: ['supplierId'],
-        where: { ...(branchId ? { branchId } : {}), deletedAt: null },
-        _sum: { total: true },
-      }),
-      prisma.supplierPayment.groupBy({
-        by: ['supplierId'],
-        where: branchId ? { branchId } : {},
-        _sum: { amount: true },
-      }),
-    ]);
+    if (SUPPLIER_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await SUPPLIER_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
 
-    const purchMap = Object.fromEntries(purchasesArr.map(x => [x.supplierId, x._sum.total ?? 0]));
-    const payMap = Object.fromEntries(paymentsArr.map(x => [x.supplierId, x._sum.amount ?? 0]));
+    const fetchSuppliersPromise = (async () => {
+      const [suppliers, purchasesArr, paymentsArr] = await Promise.all([
+        prisma.supplier.findMany({
+          where: { ...(branchId ? { branchId } : {}), deletedAt: null },
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            address: true,
+            openingBalance: true,
+            branchId: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        }),
+        prisma.purchase.groupBy({
+          by: ['supplierId'],
+          where: { ...(branchId ? { branchId } : {}), deletedAt: null },
+          _sum: { total: true },
+        }),
+        prisma.supplierPayment.groupBy({
+          by: ['supplierId'],
+          where: branchId ? { branchId } : {},
+          _sum: { amount: true },
+        }),
+      ]);
 
-    const data = suppliers.map(s => ({
-      ...s,
-      currentBalance: s.openingBalance + (purchMap[s.id] ?? 0) - (payMap[s.id] ?? 0),
-    }));
+      const purchMap = Object.fromEntries(purchasesArr.map(x => [x.supplierId, x._sum.total ?? 0]));
+      const payMap = Object.fromEntries(paymentsArr.map(x => [x.supplierId, x._sum.amount ?? 0]));
 
-    if (SUPPLIER_CACHE.size > 50) SUPPLIER_CACHE.clear();
-    SUPPLIER_CACHE.set(cacheKey, { ts: Date.now(), data });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data });
+      return suppliers.map(s => ({
+        ...s,
+        currentBalance: s.openingBalance + (purchMap[s.id] ?? 0) - (payMap[s.id] ?? 0),
+      }));
+    })();
+
+    SUPPLIER_IN_FLIGHT.set(cacheKey, fetchSuppliersPromise);
+    try {
+      const data = await fetchSuppliersPromise;
+      if (SUPPLIER_CACHE.size > 50) SUPPLIER_CACHE.clear();
+      SUPPLIER_CACHE.set(cacheKey, { ts: Date.now(), data });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data });
+    } finally {
+      SUPPLIER_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error fetching suppliers:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load suppliers', data: [] });

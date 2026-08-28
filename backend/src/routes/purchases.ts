@@ -21,10 +21,10 @@ export function clearPurchaseCache(): void {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
-    const { limit: limitQuery } = req.query;
+    const { limit: limitQuery, page } = req.query;
     const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 500) : 100;
 
-    const cacheKey = `${branchId || 'all'}_${limit}`;
+    const cacheKey = `${branchId || 'all'}_${limit}_${page || '1'}`;
     const cached = PURCHASE_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < PURCHASE_CACHE_TTL) {
       res.setHeader('X-Cache', 'HIT');

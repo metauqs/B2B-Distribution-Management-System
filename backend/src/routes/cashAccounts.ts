@@ -7,9 +7,11 @@ const router = Router();
 // ── In-Memory cache for cash accounts (30s TTL) ─────────────────────────────
 const CASH_ACCOUNT_CACHE = new Map<string, { ts: number; data: any }>();
 const CASH_ACCOUNT_CACHE_TTL = 30000;
+const CASH_ACCOUNT_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearCashAccountCache(): void {
   CASH_ACCOUNT_CACHE.clear();
+  CASH_ACCOUNT_IN_FLIGHT.clear();
 }
 
 // GET /api/cash-accounts
@@ -24,26 +26,43 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    let cashAccounts = await prisma.cashAccount.findMany({
-      where: { branchId },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    // Auto-create default Main Cash account if none exists for branch
-    if (cashAccounts.length === 0) {
-      const defaultCash = await prisma.cashAccount.create({
-        data: {
-          name: 'Main Cash Account',
-          balance: 0,
-          branchId,
-        },
-      });
-      cashAccounts = [defaultCash];
+    if (CASH_ACCOUNT_IN_FLIGHT.has(branchId)) {
+      const coalesced = await CASH_ACCOUNT_IN_FLIGHT.get(branchId);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
     }
 
-    CASH_ACCOUNT_CACHE.set(branchId, { ts: Date.now(), data: cashAccounts });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: cashAccounts });
+    const fetchCashAccountsPromise = (async () => {
+      let cashAccounts = await prisma.cashAccount.findMany({
+        where: { branchId },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Auto-create default Main Cash account if none exists for branch
+      if (cashAccounts.length === 0) {
+        const defaultCash = await prisma.cashAccount.create({
+          data: {
+            name: 'Main Cash Account',
+            balance: 0,
+            branchId,
+          },
+        });
+        cashAccounts = [defaultCash];
+      }
+
+      return cashAccounts;
+    })();
+
+    CASH_ACCOUNT_IN_FLIGHT.set(branchId, fetchCashAccountsPromise);
+    try {
+      const cashAccounts = await fetchCashAccountsPromise;
+      if (CASH_ACCOUNT_CACHE.size >= 50) CASH_ACCOUNT_CACHE.clear();
+      CASH_ACCOUNT_CACHE.set(branchId, { ts: Date.now(), data: cashAccounts });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: cashAccounts });
+    } finally {
+      CASH_ACCOUNT_IN_FLIGHT.delete(branchId);
+    }
   } catch (err: any) {
     console.error('Error in GET /api/cash-accounts:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load cash accounts', data: [] });

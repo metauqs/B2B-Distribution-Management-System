@@ -8,9 +8,11 @@ const router = Router();
 // ── In-Memory cache for expenses and summaries (20s TTL) ────────────────────
 const EXPENSE_CACHE = new Map<string, { ts: number; data: any }>();
 const EXPENSE_CACHE_TTL = 20000;
+const EXPENSE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearExpenseCache(): void {
   EXPENSE_CACHE.clear();
+  EXPENSE_IN_FLIGHT.clear();
 }
 
 // GET /api/expenses/summary
@@ -27,15 +29,28 @@ router.get('/summary', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const fromDate = from ? getBusinessDateRange(String(from)).start : undefined;
-    const toDate = to ? getBusinessDateRange(String(to)).end : undefined;
+    if (EXPENSE_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await EXPENSE_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
 
-    const summary = await ExpenseService.getExpenseSummary(branchId, fromDate, toDate);
+    const fetchSummaryPromise = (async () => {
+      const fromDate = from ? getBusinessDateRange(String(from)).start : undefined;
+      const toDate = to ? getBusinessDateRange(String(to)).end : undefined;
+      return await ExpenseService.getExpenseSummary(branchId, fromDate, toDate);
+    })();
 
-    if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
-    EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: summary });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: summary });
+    EXPENSE_IN_FLIGHT.set(cacheKey, fetchSummaryPromise);
+    try {
+      const summary = await fetchSummaryPromise;
+      if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
+      EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: summary });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: summary });
+    } finally {
+      EXPENSE_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error in GET /api/expenses/summary:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load expense summary' });
@@ -56,15 +71,28 @@ router.get('/integrated', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const fromDate = from ? getBusinessDateRange(String(from)).start : undefined;
-    const toDate = to ? getBusinessDateRange(String(to)).end : undefined;
+    if (EXPENSE_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await EXPENSE_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
 
-    const integrated = await ExpenseService.getIntegratedExpenses(branchId, fromDate, toDate);
+    const fetchIntegratedPromise = (async () => {
+      const fromDate = from ? getBusinessDateRange(String(from)).start : undefined;
+      const toDate = to ? getBusinessDateRange(String(to)).end : undefined;
+      return await ExpenseService.getIntegratedExpenses(branchId, fromDate, toDate);
+    })();
 
-    if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
-    EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: integrated });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: integrated });
+    EXPENSE_IN_FLIGHT.set(cacheKey, fetchIntegratedPromise);
+    try {
+      const integrated = await fetchIntegratedPromise;
+      if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
+      EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: integrated });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: integrated });
+    } finally {
+      EXPENSE_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error in GET /api/expenses/integrated:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load integrated expenses' });
@@ -87,68 +115,82 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    let dateFrom: Date | undefined = from ? getBusinessDateRange(String(from)).start : undefined;
-    let dateTo: Date | undefined = to ? getBusinessDateRange(String(to)).end : undefined;
-
-    // Range helpers
-    if (range) {
-      const presetRange = getBusinessDatePresetRange(String(range));
-      dateFrom = presetRange.start;
-      dateTo = presetRange.end;
+    if (EXPENSE_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await EXPENSE_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
     }
 
-    const where: any = {
-      ...(branchId ? { branchId } : {}),
-      deletedAt: null,
-      ...(dateFrom || dateTo ? { date: { ...(dateFrom ? { gte: dateFrom } : {}), ...(dateTo ? { lte: dateTo } : {}) } } : {}),
-      ...(category && category !== 'ALL' && category !== 'all' ? { category: String(category).toUpperCase() } : {}),
-      ...(paidBy && paidBy !== 'ALL' && paidBy !== 'all' ? { paidBy: String(paidBy).toUpperCase() } : {}),
-      ...(cashAccountId && cashAccountId !== 'ALL' ? { cashAccountId: String(cashAccountId) } : {}),
-      ...(bankAccountId && bankAccountId !== 'ALL' ? { bankAccountId: String(bankAccountId) } : {}),
-      ...(employeeId && employeeId !== 'ALL' ? { employeeId: String(employeeId) } : {}),
-      ...(vehicleId && vehicleId !== 'ALL' ? { vehicleId: String(vehicleId) } : {}),
-      ...(supplierId && supplierId !== 'ALL' ? { supplierId: String(supplierId) } : {}),
-    };
+    const fetchExpensesPromise = (async () => {
+      let dateFrom: Date | undefined = from ? getBusinessDateRange(String(from)).start : undefined;
+      let dateTo: Date | undefined = to ? getBusinessDateRange(String(to)).end : undefined;
 
-    if (search && String(search).trim()) {
-      const q = String(search).trim();
-      where.OR = [
-        { description: { contains: q, mode: 'insensitive' } },
-        { reference: { contains: q, mode: 'insensitive' } },
-        { notes: { contains: q, mode: 'insensitive' } },
-      ];
+      // Range helpers
+      if (range) {
+        const presetRange = getBusinessDatePresetRange(String(range));
+        dateFrom = presetRange.start;
+        dateTo = presetRange.end;
+      }
+
+      const where: any = {
+        ...(branchId ? { branchId } : {}),
+        deletedAt: null,
+        ...(dateFrom || dateTo ? { date: { ...(dateFrom ? { gte: dateFrom } : {}), ...(dateTo ? { lte: dateTo } : {}) } } : {}),
+        ...(category && category !== 'ALL' && category !== 'all' ? { category: String(category).toUpperCase() } : {}),
+        ...(paidBy && paidBy !== 'ALL' && paidBy !== 'all' ? { paidBy: String(paidBy).toUpperCase() } : {}),
+        ...(cashAccountId && cashAccountId !== 'ALL' ? { cashAccountId: String(cashAccountId) } : {}),
+        ...(bankAccountId && bankAccountId !== 'ALL' ? { bankAccountId: String(bankAccountId) } : {}),
+        ...(employeeId && employeeId !== 'ALL' ? { employeeId: String(employeeId) } : {}),
+        ...(vehicleId && vehicleId !== 'ALL' ? { vehicleId: String(vehicleId) } : {}),
+        ...(supplierId && supplierId !== 'ALL' ? { supplierId: String(supplierId) } : {}),
+      };
+
+      if (search && String(search).trim()) {
+        const q = String(search).trim();
+        where.OR = [
+          { description: { contains: q, mode: 'insensitive' } },
+          { reference: { contains: q, mode: 'insensitive' } },
+          { notes: { contains: q, mode: 'insensitive' } },
+        ];
+      }
+
+      return await prisma.expense.findMany({
+        where,
+        select: {
+          id: true,
+          reference: true,
+          category: true,
+          categoryRefId: true,
+          description: true,
+          amount: true,
+          date: true,
+          paidBy: true,
+          notes: true,
+          branchId: true,
+          createdAt: true,
+          vehicle: { select: { id: true, plateNo: true, type: true } },
+          employee: { select: { id: true, name: true, employeeId: true, role: true } },
+          supplier: { select: { id: true, name: true, phone: true } },
+          cashAccount: { select: { id: true, name: true, balance: true } },
+          bankAccount: { select: { id: true, name: true, bankName: true, accountNo: true, balance: true } },
+          createdBy: { select: { id: true, name: true, email: true } },
+          branch: { select: { id: true, name: true } },
+        },
+        orderBy: { date: 'desc' },
+        take: 200,
+      });
+    })();
+
+    EXPENSE_IN_FLIGHT.set(cacheKey, fetchExpensesPromise);
+    try {
+      const expenses = await fetchExpensesPromise;
+      if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
+      EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: expenses });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: expenses });
+    } finally {
+      EXPENSE_IN_FLIGHT.delete(cacheKey);
     }
-
-    const expenses = await prisma.expense.findMany({
-      where,
-      select: {
-        id: true,
-        reference: true,
-        category: true,
-        categoryRefId: true,
-        description: true,
-        amount: true,
-        date: true,
-        paidBy: true,
-        notes: true,
-        branchId: true,
-        createdAt: true,
-        vehicle: { select: { id: true, plateNo: true, type: true } },
-        employee: { select: { id: true, name: true, employeeId: true, role: true } },
-        supplier: { select: { id: true, name: true, phone: true } },
-        cashAccount: { select: { id: true, name: true, balance: true } },
-        bankAccount: { select: { id: true, name: true, bankName: true, accountNo: true, balance: true } },
-        createdBy: { select: { id: true, name: true, email: true } },
-        branch: { select: { id: true, name: true } },
-      },
-      orderBy: { date: 'desc' },
-      take: 200,
-    });
-
-    if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
-    EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: expenses });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: expenses });
   } catch (err: any) {
     console.error('Error in GET /api/expenses:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load expenses' });

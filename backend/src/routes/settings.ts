@@ -4,6 +4,16 @@ import prisma from '../lib/prisma';
 
 const router = Router();
 
+// ── In-Memory cache for settings users (30s TTL) ───────────────────────────
+const SETTINGS_CACHE = new Map<string, { ts: number; data: any }>();
+const SETTINGS_CACHE_TTL = 30000;
+const SETTINGS_IN_FLIGHT = new Map<string, Promise<any>>();
+
+export function clearSettingsCache(): void {
+  SETTINGS_CACHE.clear();
+  SETTINGS_IN_FLIGHT.clear();
+}
+
 // GET /api/settings/users
 router.get('/users', async (req: Request, res: Response) => {
   const role = req.headers['x-user-role'] as string;
@@ -13,12 +23,36 @@ router.get('/users', async (req: Request, res: Response) => {
 
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
-    const users = await prisma.user.findMany({
+    const cacheKey = `users_${branchId || 'all'}`;
+
+    const cached = SETTINGS_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < SETTINGS_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
+
+    if (SETTINGS_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await SETTINGS_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
+
+    const fetchUsersPromise = prisma.user.findMany({
       where: { branchId, deletedAt: null },
       select: { id: true, name: true, email: true, role: true, isActive: true, lastLoginAt: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     });
-    return res.json({ success: true, data: users });
+
+    SETTINGS_IN_FLIGHT.set(cacheKey, fetchUsersPromise);
+    try {
+      const users = await fetchUsersPromise;
+      if (SETTINGS_CACHE.size >= 50) SETTINGS_CACHE.clear();
+      SETTINGS_CACHE.set(cacheKey, { ts: Date.now(), data: users });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: users });
+    } finally {
+      SETTINGS_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error fetching users:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load users' });

@@ -3,21 +3,53 @@ import prisma from '../lib/prisma';
 
 const router = Router();
 
+// ── In-Memory cache for broadcasts (30s TTL) ────────────────────────────────
+const BROADCAST_CACHE = new Map<string, { ts: number; data: any }>();
+const BROADCAST_CACHE_TTL = 30000;
+const BROADCAST_IN_FLIGHT = new Map<string, Promise<any>>();
+
+export function clearBroadcastCache(): void {
+  BROADCAST_CACHE.clear();
+  BROADCAST_IN_FLIGHT.clear();
+}
+
 // GET /api/broadcasts
 router.get('/', async (req: Request, res: Response) => {
   const branchId = req.headers['x-branch-id'] as string;
   if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
 
   try {
-    const broadcasts = await prisma.priceBroadcast.findMany({
+    const cached = BROADCAST_CACHE.get(branchId);
+    if (cached && (Date.now() - cached.ts) < BROADCAST_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
+
+    if (BROADCAST_IN_FLIGHT.has(branchId)) {
+      const coalesced = await BROADCAST_IN_FLIGHT.get(branchId);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
+
+    const fetchBroadcastsPromise = prisma.priceBroadcast.findMany({
       where: { branchId },
       include: {
         sentByUser: { select: { name: true } }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'desc' },
+      take: 50,
     });
 
-    return res.json({ success: true, data: broadcasts });
+    BROADCAST_IN_FLIGHT.set(branchId, fetchBroadcastsPromise);
+    try {
+      const broadcasts = await fetchBroadcastsPromise;
+      if (BROADCAST_CACHE.size >= 50) BROADCAST_CACHE.clear();
+      BROADCAST_CACHE.set(branchId, { ts: Date.now(), data: broadcasts });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: broadcasts });
+    } finally {
+      BROADCAST_IN_FLIGHT.delete(branchId);
+    }
   } catch (err: any) {
     console.error('[GET /api/broadcasts]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Internal server error' });
