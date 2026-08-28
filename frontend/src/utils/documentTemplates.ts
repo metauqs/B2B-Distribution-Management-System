@@ -2497,58 +2497,44 @@ export async function generateTemplateImageBase64(html: string): Promise<string>
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // ── Step 1: PDF → pdfjs-dist → canvas ──────────────────────────────────────
+  // ── Step 1: Direct High-Speed JPEG Render from Backend Puppeteer ─────────────
   try {
-    const pdfRes = await fetch('/api/render/pdf', {
+    const res = await fetch('/api/render/jpeg', {
       method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify({ html, width: TARGET_WIDTH }),
-      signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ html, width: TARGET_WIDTH, quality: 90 }),
+      signal: AbortSignal.timeout(15000),
     });
 
-    if (pdfRes.ok) {
-      const pdfBytes = new Uint8Array(await pdfRes.arrayBuffer());
-      const pdfjs = await import('pdfjs-dist');
-      pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-
-      const pdfDoc = await pdfjs.getDocument({ data: pdfBytes }).promise;
-      const page = await pdfDoc.getPage(1);
-
-      // 3.5x Retina scale (2779px width)
-      const SCALE = 3.5;
-      const viewport = page.getViewport({ scale: SCALE });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
-        return canvas.toDataURL('image/png');
-      }
+    if (res.ok) {
+      const blob = await res.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
     }
-  } catch (pdfErr) {
-    console.warn('PDF→pdfjs pipeline fallback:', pdfErr);
+  } catch (err) {
+    console.warn('Backend JPEG render fallback:', err);
   }
 
-  // ── Step 2: Direct PNG screenshot from backend Puppeteer ───────────────────
+  // ── Step 2: Direct PNG Render Fallback ──────────────────────────────────────
   try {
     const pngRes = await fetch('/api/render/png', {
       method: 'POST',
       headers,
       credentials: 'include',
       body: JSON.stringify({ html, width: TARGET_WIDTH }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (pngRes.ok) {
       const blob = await pngRes.blob();
       return await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
+        reader.onloadend = () => resolve((reader.result as string) || '');
         reader.onerror = reject;
         reader.readAsDataURL(blob);
       });

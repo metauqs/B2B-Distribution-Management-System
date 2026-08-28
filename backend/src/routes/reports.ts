@@ -894,80 +894,147 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
   }
 });
 
+// In-Memory cache for reports (20s TTL)
+const REPORT_CACHE = new Map<string, { ts: number; data: any }>();
+const REPORT_CACHE_TTL = 20000;
+
+export function clearReportCache(): void {
+  REPORT_CACHE.clear();
+}
+
 // GET /api/reports/sales/customers — Customer Profitability Report
 router.get('/sales/customers', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { from, to } = req.query;
 
+    const cacheKey = `cust_prof_${branchId || 'all'}_${from || ''}_${to || ''}`;
+    const cached = REPORT_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < REPORT_CACHE_TTL) {
+      return res.json({ success: true, data: cached.data });
+    }
+
     const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
     const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
 
-    const clients = await prisma.client.findMany({
-      where: { ...(branchId ? { branchId } : {}), deletedAt: null },
-      include: {
-        sales: {
-          where: { status: { not: 'CANCELLED' }, deletedAt: null, date: { gte: fromDate, lte: toDate } },
-          include: {
-            items: {
-              include: {
-                product: {
-                  select: {
-                    id: true,
-                    inventory: { select: { avgCost: true, currentBuyPrice: true } },
-                  },
+    const sales = await prisma.sale.findMany({
+      where: {
+        ...(branchId ? { branchId } : {}),
+        status: { not: 'CANCELLED' },
+        deletedAt: null,
+        date: { gte: fromDate, lte: toDate },
+      },
+      select: {
+        id: true,
+        clientId: true,
+        subtotal: true,
+        discount: true,
+        deliveryCharge: true,
+        client: {
+          select: {
+            id: true,
+            clientId: true,
+            name: true,
+            type: true,
+            rating: true,
+            currentBalance: true,
+          },
+        },
+        items: {
+          select: {
+            qty: true,
+            rate: true,
+            costPrice: true,
+            product: {
+              select: {
+                inventory: {
+                  where: { ...(branchId ? { branchId } : {}) },
+                  select: { avgCost: true, currentBuyPrice: true },
+                  take: 1,
                 },
               },
             },
           },
         },
       },
+      take: 2000,
     });
 
-    const rows = clients.map(client => {
-      let grossSales = 0;
-      let discounts = 0;
-      let deliveryCharges = 0;
-      let totalCogs = 0;
+    const clientMap: Record<string, {
+      clientId: string;
+      clientCode: string;
+      clientName: string;
+      type: string;
+      rating: string;
+      invoiceCount: number;
+      grossSales: number;
+      discounts: number;
+      deliveryCharges: number;
+      totalCogs: number;
+      currentBalance: number;
+    }> = {};
 
-      for (const sale of client.sales) {
-        grossSales += sale.subtotal;
-        discounts += sale.discount;
-        deliveryCharges += sale.deliveryCharge;
-        for (const item of sale.items) {
-          const inv = (item as any).product?.inventory?.[0];
-          const fallbackCost = (inv?.avgCost && inv.avgCost > 0)
-            ? inv.avgCost
-            : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : item.rate * 0.75);
-          const cost = (item as any).costPrice > 0 ? (item as any).costPrice : fallbackCost;
-          totalCogs += (item.qty * cost);
-        }
+    for (const sale of sales) {
+      const cid = sale.clientId;
+      if (!clientMap[cid]) {
+        clientMap[cid] = {
+          clientId: cid,
+          clientCode: sale.client?.clientId ?? '—',
+          clientName: sale.client?.name ?? '—',
+          type: sale.client?.type ?? 'RETAIL',
+          rating: sale.client?.rating ?? 'A',
+          invoiceCount: 0,
+          grossSales: 0,
+          discounts: 0,
+          deliveryCharges: 0,
+          totalCogs: 0,
+          currentBalance: sale.client?.currentBalance ?? 0,
+        };
       }
 
-      const netSales = Math.max(0, grossSales - discounts);
-      const grossProfit = netSales - totalCogs;
+      clientMap[cid].invoiceCount += 1;
+      clientMap[cid].grossSales += Number(sale.subtotal);
+      clientMap[cid].discounts += Number(sale.discount);
+      clientMap[cid].deliveryCharges += Number(sale.deliveryCharge);
+
+      for (const item of sale.items) {
+        const inv = item.product?.inventory?.[0];
+        const fallbackCost = (inv?.avgCost && inv.avgCost > 0)
+          ? inv.avgCost
+          : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : item.rate * 0.75);
+        const cost = Number(item.costPrice) > 0 ? Number(item.costPrice) : fallbackCost;
+        clientMap[cid].totalCogs += (Number(item.qty) * cost);
+      }
+    }
+
+    const rows = Object.values(clientMap).map(c => {
+      const netSales = Math.max(0, c.grossSales - c.discounts);
+      const grossProfit = netSales - c.totalCogs;
       const grossMarginPct = netSales > 0 ? (grossProfit / netSales) * 100 : 0;
-      const contributionProfit = grossProfit - deliveryCharges;
+      const contributionProfit = grossProfit - c.deliveryCharges;
       const contributionMarginPct = netSales > 0 ? (contributionProfit / netSales) * 100 : 0;
 
       return {
-        clientId: client.id,
-        clientCode: client.clientId ?? '—',
-        clientName: client.name,
-        type: client.type,
-        rating: client.rating,
-        invoiceCount: client.sales.length,
-        grossSales,
-        discounts,
+        clientId: c.clientId,
+        clientCode: c.clientCode,
+        clientName: c.clientName,
+        type: c.type,
+        rating: c.rating,
+        invoiceCount: c.invoiceCount,
+        grossSales: c.grossSales,
+        discounts: c.discounts,
         netSales,
-        cogs: totalCogs,
+        cogs: c.totalCogs,
         grossProfit,
         grossMarginPct: Number(grossMarginPct.toFixed(2)),
         contributionProfit,
         contributionMarginPct: Number(contributionMarginPct.toFixed(2)),
-        currentBalance: client.currentBalance,
+        currentBalance: c.currentBalance,
       };
-    }).filter(c => c.invoiceCount > 0 || c.currentBalance > 0).sort((a, b) => b.netSales - a.netSales);
+    }).sort((a, b) => b.netSales - a.netSales);
+
+    if (REPORT_CACHE.size >= 50) REPORT_CACHE.clear();
+    REPORT_CACHE.set(cacheKey, { ts: Date.now(), data: rows });
 
     return res.json({ success: true, data: rows });
   } catch (err: any) {
@@ -982,6 +1049,12 @@ router.get('/sales/products', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { from, to, category } = req.query;
 
+    const cacheKey = `prod_prof_${branchId || 'all'}_${from || ''}_${to || ''}_${category || 'ALL'}`;
+    const cached = REPORT_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < REPORT_CACHE_TTL) {
+      return res.json({ success: true, data: cached.data });
+    }
+
     const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
     const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
 
@@ -995,9 +1068,17 @@ router.get('/sales/products', async (req: Request, res: Response) => {
         },
         ...(category && category !== 'ALL' ? { product: { category: category as any } } : {}),
       },
-      include: {
+      select: {
+        productId: true,
+        itemName: true,
+        qty: true,
+        unit: true,
+        rate: true,
+        amount: true,
+        costPrice: true,
         product: { select: { id: true, name: true, category: true, defaultUnit: true } },
       },
+      take: 5000,
     });
 
     const prodMap: Record<string, {
@@ -1024,10 +1105,10 @@ router.get('/sales/products', async (req: Request, res: Response) => {
         };
       }
 
-      const cost = (item as any).costPrice > 0 ? (item as any).costPrice : (item.rate * 0.75);
-      prodMap[pid].totalQty += item.qty;
-      prodMap[pid].grossRevenue += item.amount;
-      prodMap[pid].totalCogs += (item.qty * cost);
+      const cost = Number(item.costPrice) > 0 ? Number(item.costPrice) : (Number(item.rate) * 0.75);
+      prodMap[pid].totalQty += Number(item.qty);
+      prodMap[pid].grossRevenue += Number(item.amount);
+      prodMap[pid].totalCogs += (Number(item.qty) * cost);
     }
 
     const rows = Object.values(prodMap).map(p => {
@@ -1044,6 +1125,9 @@ router.get('/sales/products', async (req: Request, res: Response) => {
         avgUnitCost: Number(avgUnitCost.toFixed(2)),
       };
     }).sort((a, b) => b.grossRevenue - a.grossRevenue);
+
+    if (REPORT_CACHE.size >= 50) REPORT_CACHE.clear();
+    REPORT_CACHE.set(cacheKey, { ts: Date.now(), data: rows });
 
     return res.json({ success: true, data: rows });
   } catch (err: any) {

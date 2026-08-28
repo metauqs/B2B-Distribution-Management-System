@@ -8,11 +8,17 @@ import { findImageFile } from './products';
 const router = Router();
 
 // ── Local Asset Resolver for Puppeteer Headless Rendering ──────────────────────
-function resolveLocalAsset(urlStr: string): { filePath: string; contentType: string } | null {
+// ── In-Memory Fast Cache for Local Font/Asset Buffers (< 5MB RAM) ─────────────
+const ASSET_BUFFER_CACHE = new Map<string, { body: Buffer; contentType: string }>();
+
+function resolveLocalAsset(urlStr: string): { body: Buffer; contentType: string } | null {
   try {
     const cleanUrl = urlStr.split('?')[0].split('#')[0];
     const filename = path.basename(cleanUrl);
     if (!filename) return null;
+
+    const cached = ASSET_BUFFER_CACHE.get(filename);
+    if (cached) return cached;
 
     const ext = path.extname(filename).toLowerCase();
     const mimeTypes: Record<string, string> = {
@@ -22,21 +28,18 @@ function resolveLocalAsset(urlStr: string): { filePath: string; contentType: str
       '.webp':  'image/webp',
       '.svg':   'image/svg+xml',
       '.gif':   'image/gif',
-      // ── Fonts (critical: Puppeteer must serve these from disk) ──────────────
       '.woff2': 'font/woff2',
       '.woff':  'font/woff',
       '.ttf':   'font/ttf',
       '.otf':   'font/otf',
     };
     const contentType = mimeTypes[ext];
-    if (!contentType) return null; // Unknown extension — abort rather than continue
+    if (!contentType) return null;
 
     const searchDirs = [
-      // ── Font search paths ───────────────────────────────────────────────────
       path.resolve(__dirname, '../../../frontend/public/fonts'),
       path.resolve(process.cwd(), '../frontend/public/fonts'),
       path.resolve(process.cwd(), 'public/fonts'),
-      // ── Product image search paths ──────────────────────────────────────────
       path.resolve(__dirname, '../../uploads/products'),
       path.resolve(__dirname, '../uploads/products'),
       path.resolve(process.cwd(), 'uploads/products'),
@@ -46,11 +49,13 @@ function resolveLocalAsset(urlStr: string): { filePath: string; contentType: str
       path.resolve(process.cwd(), 'public'),
     ];
 
-    // ── Check product upload directories via findImageFile ──────────────────
     if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp' || ext === '.svg' || ext === '.gif') {
       const productImageFile = findImageFile(filename);
       if (productImageFile && fs.existsSync(productImageFile)) {
-        return { filePath: productImageFile, contentType };
+        const body = fs.readFileSync(productImageFile);
+        const result = { body, contentType };
+        if (body.length < 500000) ASSET_BUFFER_CACHE.set(filename, result);
+        return result;
       }
     }
 
@@ -58,13 +63,12 @@ function resolveLocalAsset(urlStr: string): { filePath: string; contentType: str
       const candidate = path.join(dir, filename);
       if (fs.existsSync(candidate)) {
         try {
-          const stats = fs.statSync(candidate);
-          if (ext !== '.woff2' && ext !== '.woff' && ext !== '.ttf' && ext !== '.otf' && stats.size < 200) {
-            continue;
-          }
-          return { filePath: candidate, contentType };
+          const body = fs.readFileSync(candidate);
+          const result = { body, contentType };
+          if (body.length < 2000000) ASSET_BUFFER_CACHE.set(filename, result);
+          return result;
         } catch {
-          return { filePath: candidate, contentType };
+          // ignore
         }
       }
     }
@@ -77,7 +81,7 @@ function resolveLocalAsset(urlStr: string): { filePath: string; contentType: str
 // ── Shared Singleton Puppeteer Browser Instance ────────────────────────────────
 let sharedBrowser: Browser | null = null;
 let idleCloseTimer: NodeJS.Timeout | null = null;
-const IDLE_BROWSER_TIMEOUT_MS = 15000; // 15s after last render, close browser to free 100% RAM
+const IDLE_BROWSER_TIMEOUT_MS = 20000; // 20s idle timeout to reclaim memory
 let browserStarting: Promise<any> | null = null;
 
 export function scheduleBrowserIdleClose() {
@@ -96,7 +100,7 @@ export function scheduleBrowserIdleClose() {
 
 /**
  * Returns a reusable Puppeteer Browser instance.
- * Launches on-demand with ultra-low memory flags and auto-closes when idle.
+ * Launches on-demand in isolated process with ultra-low memory flags and auto-closes when idle.
  */
 async function getSharedBrowser(): Promise<Browser> {
   if (idleCloseTimer) {
@@ -104,17 +108,14 @@ async function getSharedBrowser(): Promise<Browser> {
     idleCloseTimer = null;
   }
 
-  // If we already have a healthy browser, reuse it
   if (sharedBrowser && (sharedBrowser.connected || (sharedBrowser as any).isConnected?.())) {
     return sharedBrowser;
   }
 
-  // If a launch is already in progress (concurrent callers), await it
   if (browserStarting) {
     return await browserStarting;
   }
 
-  // Auto-discover Chromium/Chrome binary if available
   let executablePath: string | undefined = process.env.PUPPETEER_EXECUTABLE_PATH;
   if (!executablePath) {
     try {
@@ -139,7 +140,6 @@ async function getSharedBrowser(): Promise<Browser> {
 
   console.log(`🚀 [Puppeteer] Launching Chrome executable: ${executablePath || 'default-managed'}`);
 
-  // Launch a new browser instance with low-memory single-process flags
   browserStarting = puppeteer.launch({
     headless: true,
     ...(executablePath ? { executablePath } : {}),
@@ -149,9 +149,7 @@ async function getSharedBrowser(): Promise<Browser> {
       '--disable-web-security',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--disable-software-rasterizer',
       '--disable-threaded-scrolling',
-      '--disable-accelerated-2d-canvas',
       '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess',
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
@@ -159,7 +157,6 @@ async function getSharedBrowser(): Promise<Browser> {
       '--disable-ipc-flooding-protection',
       '--disable-renderer-backgrounding',
       '--no-zygote',
-      '--single-process', // Low-memory and low-CPU single process mode
       '--disable-extensions',
       '--disable-background-networking',
       '--disable-sync',
@@ -171,7 +168,7 @@ async function getSharedBrowser(): Promise<Browser> {
       '--font-render-hinting=none',
       '--enable-font-antialiasing',
       '--lang=en-GB',
-      '--js-flags="--max-old-space-size=64"', // Bound Chromium V8 heap to 64MB
+      '--js-flags="--max-old-space-size=64"',
     ],
   }).then(browser => {
     sharedBrowser = browser;
@@ -230,19 +227,18 @@ async function setupRenderPage(browser: any, width: number, scaleFactor = 1.2) {
   page.on('request', (req: any) => {
     const url = req.url();
 
-    // ── 1. Serve local assets (fonts + product images) from disk ───────────────
+    // ── 1. Serve local assets (fonts + product images) from cache/disk ───────
     const asset = resolveLocalAsset(url);
     if (asset) {
       try {
-        const body = fs.readFileSync(asset.filePath);
         return req.respond({
           status: 200,
           contentType: asset.contentType,
           headers: { 'Access-Control-Allow-Origin': '*' },
-          body,
+          body: asset.body,
         });
       } catch (e) {
-        console.warn(`[Puppeteer Intercept] Failed to read ${asset.filePath}:`, e);
+        console.warn(`[Puppeteer Intercept] Failed to serve local asset:`, e);
       }
     }
 
