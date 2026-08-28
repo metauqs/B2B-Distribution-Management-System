@@ -102,7 +102,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <div className="va-main">
         <Topbar onMenuToggle={() => setIsSidebarOpen(true)} />
         <div className="va-content" id="va-content">
-          {children}
+          <div className="va-page-flow">
+            {children}
+          </div>
         </div>
       </div>
       <ToastContainer />
