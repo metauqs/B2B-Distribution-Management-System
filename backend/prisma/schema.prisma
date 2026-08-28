@@ -96,6 +96,8 @@ model Product {
   @@index([name])
   @@index([category])
   @@index([availability])
+  @@index([availability, isActive])
+  @@index([isActive, sortOrder])
   @@map("products")
 }
 
@@ -524,6 +526,8 @@ model PriceList {
   @@unique([date, branchId])
   @@index([branchId])
   @@index([date])
+  @@index([branchId, date, isActive])
+  @@index([date, isActive])
   @@map("price_lists")
 }
 
@@ -545,6 +549,7 @@ model PriceItem {
   @@unique([priceListId, productId])
   @@index([priceListId])
   @@index([productId])
+  @@index([priceListId, itemName])
   @@map("price_items")
 }
 

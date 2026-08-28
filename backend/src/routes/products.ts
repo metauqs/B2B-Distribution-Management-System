@@ -8,12 +8,16 @@ import fs from 'fs';
 
 const router = Router();
 
+import { clearPriceListCache, clearActiveProductsCache } from './pricelist';
+
 // In-Memory cache for Product catalog queries (30s TTL)
 const PRODUCT_CACHE = new Map<string, { ts: number; data: any }>();
 const PRODUCT_CACHE_TTL = 30000;
 
 export function clearProductCache(): void {
   PRODUCT_CACHE.clear();
+  clearPriceListCache();
+  clearActiveProductsCache();
 }
 
 // GET /api/products
