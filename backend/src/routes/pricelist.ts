@@ -327,7 +327,7 @@ router.get('/history', async (req: Request, res: Response) => {
       },
       include: {
         priceList: { select: { id: true, date: true } },
-        product: { select: { id: true, name: true, urduName: true, category: true } },
+        product: { select: { id: true, name: true, urduName: true, category: true, emoji: true, imageUrl: true } },
       },
       orderBy: [{ itemName: 'asc' }, { priceList: { date: 'asc' } }],
     });
@@ -433,7 +433,7 @@ router.post('/duplicate', async (req: Request, res: Response) => {
         },
       },
       include: {
-        items: { include: { product: { select: { id: true, name: true, urduName: true } } }, orderBy: { itemName: 'asc' } },
+        items: { include: { product: { select: { id: true, name: true, urduName: true, category: true, emoji: true, imageUrl: true } } }, orderBy: { itemName: 'asc' } },
       },
     });
 
@@ -622,7 +622,7 @@ router.post('/', async (req: Request, res: Response) => {
       const updated = await prisma.priceList.findUnique({
         where: { id: existing.id },
         include: {
-          items: { include: { product: { select: { id: true, name: true, urduName: true, category: true } } }, orderBy: { itemName: 'asc' } },
+          items: { include: { product: { select: { id: true, name: true, urduName: true, category: true, emoji: true, imageUrl: true } } }, orderBy: { itemName: 'asc' } },
           createdBy: { select: { id: true, name: true } },
         },
       });
@@ -651,7 +651,7 @@ router.post('/', async (req: Request, res: Response) => {
         } : undefined,
       },
       include: {
-        items: { include: { product: { select: { id: true, name: true, urduName: true, category: true } } }, orderBy: { itemName: 'asc' } },
+        items: { include: { product: { select: { id: true, name: true, urduName: true, category: true, emoji: true, imageUrl: true } } }, orderBy: { itemName: 'asc' } },
         createdBy: { select: { id: true, name: true } },
       },
     });
@@ -673,7 +673,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       where: { id },
       include: {
         items: {
-          include: { product: { select: { id: true, name: true, urduName: true, category: true } } },
+          include: { product: { select: { id: true, name: true, urduName: true, category: true, emoji: true, imageUrl: true } } },
           orderBy: { itemName: 'asc' },
         },
         createdBy: { select: { id: true, name: true } },
@@ -763,7 +763,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
     const updated = await prisma.priceList.findUnique({
       where: { id },
       include: {
-        items: { include: { product: { select: { id: true, name: true, urduName: true } } }, orderBy: { itemName: 'asc' } },
+        items: { include: { product: { select: { id: true, name: true, urduName: true, category: true, emoji: true, imageUrl: true } } }, orderBy: { itemName: 'asc' } },
       },
     });
 
