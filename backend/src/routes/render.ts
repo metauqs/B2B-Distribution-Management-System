@@ -83,7 +83,7 @@ function resolveLocalAsset(urlStr: string): { body: Buffer; contentType: string 
 // ── Shared Singleton Puppeteer Browser Instance ────────────────────────────────
 let sharedBrowser: Browser | null = null;
 let idleCloseTimer: NodeJS.Timeout | null = null;
-const IDLE_BROWSER_TIMEOUT_MS = 20000; // 20s idle timeout to reclaim memory
+const IDLE_BROWSER_TIMEOUT_MS = 120000; // 120s idle timeout to keep warm during active billing sessions
 let browserStarting: Promise<any> | null = null;
 
 export function scheduleBrowserIdleClose() {
@@ -379,12 +379,12 @@ router.post('/jpeg', async (req, res) => {
     await page.setContent(injectBaseUrlIfNeeded(html), { waitUntil: 'domcontentloaded', timeout: 10000 });
     const contentMs = Date.now() - t_content;
 
-    // Robust font & image readiness check with decode() and natural dimension verification
+    // Robust font & image readiness check + single-pass height measurement
     const t_fonts = Date.now();
-    await page.evaluate(async () => {
+    const { bodyHeight } = await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 1500))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 1200))]);
       }
       const images = Array.from(d.querySelectorAll('img')) as any[];
       if (images.length > 0) {
@@ -412,16 +412,13 @@ router.post('/jpeg', async (req, res) => {
               };
             });
           })),
-          new Promise((r) => setTimeout(r, 600)),
+          new Promise((r) => setTimeout(r, 400)),
         ]);
       }
+      return { bodyHeight: d?.body?.scrollHeight || 1123 };
     });
     const fontsMs = Date.now() - t_fonts;
 
-    const bodyHeight = await page.evaluate(() => {
-      const d = (globalThis as any).document;
-      return d?.body?.scrollHeight || 1123;
-    });
     await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.2 });
 
     const t_shot = Date.now();
@@ -491,11 +488,11 @@ router.post('/png', async (req, res) => {
 
     await page.setContent(injectBaseUrlIfNeeded(html), { waitUntil: 'domcontentloaded', timeout: 10000 });
 
-    // Robust font & image readiness check with decode() and natural dimension verification
-    await page.evaluate(async () => {
+    // Robust font & image readiness check + single-pass height measurement
+    const { bodyHeight } = await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 1500))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 1200))]);
       }
       const images = Array.from(d.querySelectorAll('img')) as any[];
       if (images.length > 0) {
@@ -523,15 +520,12 @@ router.post('/png', async (req, res) => {
               };
             });
           })),
-          new Promise((r) => setTimeout(r, 600)),
+          new Promise((r) => setTimeout(r, 400)),
         ]);
       }
+      return { bodyHeight: d?.body?.scrollHeight || 1123 };
     });
 
-    const bodyHeight = await page.evaluate(() => {
-      const d = (globalThis as any).document;
-      return d?.body?.scrollHeight || 1123;
-    });
     await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.2 });
 
     const screenshot = await page.screenshot({ type: 'png', fullPage: true, timeout: 15000 });

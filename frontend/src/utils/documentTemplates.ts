@@ -78,34 +78,53 @@ async function resolveLogoDataUri(logoUrl: string, origin: string): Promise<stri
   }
 }
 
+let CACHED_BRAND_CONFIG: BrandConfig | null = null;
+let CACHED_BRAND_CONFIG_TS = 0;
+const BRAND_CACHE_TTL = 300000; // 5 minutes
+
 /**
  * Fetch brand config from /api/broadcasts/settings and merge with defaults.
  * Falls back gracefully if the API is unavailable.
  */
 export async function loadBrandConfig(): Promise<BrandConfig> {
+  if (CACHED_BRAND_CONFIG && (Date.now() - CACHED_BRAND_CONFIG_TS) < BRAND_CACHE_TTL) {
+    return CACHED_BRAND_CONFIG;
+  }
   try {
     const res = await fetch('/api/broadcasts/settings');
     if (!res.ok) return DEFAULT_BRAND;
     const data = await res.json();
     if (!data?.success) return DEFAULT_BRAND;
     const s = data.data ?? {};
-    return {
+    const brand: BrandConfig = {
       ...DEFAULT_BRAND,
       contactNumber: s.phoneNumber || DEFAULT_BRAND.contactNumber,
     };
+    CACHED_BRAND_CONFIG = brand;
+    CACHED_BRAND_CONFIG_TS = Date.now();
+    return brand;
   } catch {
     return DEFAULT_BRAND;
   }
 }
+
+let CACHED_BRAND_WITH_LOGO: BrandConfig | null = null;
+let CACHED_BRAND_WITH_LOGO_TS = 0;
 
 /**
  * Load brand config AND embed the logo as a base64 data URI so it renders
  * correctly in both popup print windows and server-side Puppeteer.
  */
 export async function loadBrandConfigWithLogo(origin = typeof window !== 'undefined' ? window.location.origin : ''): Promise<BrandConfig> {
+  if (CACHED_BRAND_WITH_LOGO && (Date.now() - CACHED_BRAND_WITH_LOGO_TS) < BRAND_CACHE_TTL) {
+    return CACHED_BRAND_WITH_LOGO;
+  }
   const brand = await loadBrandConfig();
   const logoDataUri = await resolveLogoDataUri(brand.logoUrl, origin);
-  return { ...brand, logoUrl: logoDataUri };
+  const result = { ...brand, logoUrl: logoDataUri };
+  CACHED_BRAND_WITH_LOGO = result;
+  CACHED_BRAND_WITH_LOGO_TS = Date.now();
+  return result;
 }
 
 // ─── Shared CSS Design System ─────────────────────────────────────────────────
@@ -2384,18 +2403,21 @@ export async function convertDataUrlToHighResJpg(dataUrl: string, quality = 0.98
 export async function generateTemplateJpgBase64(html: string): Promise<string> {
   if (!html || typeof window === 'undefined') return '';
 
-  // ── Step 1: High-Definition Client-Side Generation (0 MB Server RAM & 0% Server CPU) ──
+  // ── Step 1: Direct High-Speed Image Generation (Backend Puppeteer + Native JPEG) ──
   try {
-    const clientPngBase64 = await generateTemplateImageBase64(html);
-    if (clientPngBase64) {
-      const jpg = await convertDataUrlToHighResJpg(clientPngBase64, 0.95);
+    const resultBase64 = await generateTemplateImageBase64(html);
+    if (resultBase64) {
+      if (resultBase64.startsWith('data:image/jpeg') || resultBase64.startsWith('data:image/jpg')) {
+        return resultBase64;
+      }
+      const jpg = await convertDataUrlToHighResJpg(resultBase64, 0.95);
       if (jpg) return jpg;
     }
   } catch (clientErr) {
-    console.warn('Client-side canvas render error, falling back to server render:', clientErr);
+    console.warn('Direct image render error, falling back to server render:', clientErr);
   }
 
-  // ── Step 2: Server-Side Fallback (only if client-side canvas failed) ──
+  // ── Step 2: Server-Side Direct Fallback ──
   const TARGET_WIDTH = 794;
   const token = typeof window !== 'undefined' ? (localStorage.getItem('sabzi_token') || localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('sabzi_token') || sessionStorage.getItem('token') || '') : '';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };

@@ -777,8 +777,11 @@ export default function SalesPage() {
 
   // ── Helper to ensure fresh Master Catalog products on invoice export ──────
   const getLiveCatalogProducts = async () => {
+    if (catalogProducts && catalogProducts.length > 0) {
+      return catalogProducts;
+    }
     try {
-      const prodRes = await fetchWithCache<any>('/api/products', { ttl: 0, forceRefresh: true });
+      const prodRes = await fetchWithCache<any>('/api/products', { ttl: 30000 });
       const pList = prodRes?.data || (Array.isArray(prodRes) ? prodRes : []);
       if (pList && pList.length > 0) {
         setCatalogProducts(pList);
