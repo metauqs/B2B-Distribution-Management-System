@@ -254,9 +254,10 @@ export default function PriceListPage() {
     try {
       const data = await fetchWithCache<any>(key, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
       if (data) {
-        setCurrentList(data);
-        setIsDraft(!!data.isDraft);
-        const items = data.items ?? [];
+        const listData = data?.data && !Array.isArray(data.data) ? data.data : data;
+        setCurrentList(listData);
+        setIsDraft(!!(data.isDraft ?? listData?.isDraft));
+        const items = listData?.items ?? (Array.isArray(listData) ? listData : []);
         if (!isEditing) {
           setEditItems(items.map((i: PriceItemRow) => ({
             ...i,
@@ -264,7 +265,7 @@ export default function PriceListPage() {
             origSellRate: i.sellRate,
           })));
         }
-        setListNotes(data.notes ?? '');
+        setListNotes(listData?.notes ?? '');
       }
     } catch (err) {
       console.error('loadDateList error:', err);

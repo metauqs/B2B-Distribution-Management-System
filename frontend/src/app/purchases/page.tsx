@@ -108,7 +108,7 @@ export default function PurchasesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSupplier, setFilterSupplier] = useState('all');
   const [filterProduct, setFilterProduct] = useState('all');
-  const [filterDate, setFilterDate] = useState(() => todayInputDate());
+  const [filterDate, setFilterDate] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
@@ -121,10 +121,10 @@ export default function PurchasesPage() {
         fetchWithCache<any>('/api/products', { ttl: TTL_LONG, forceRefresh: isBackground }),
         fetchWithCache<any>('/api/inventory', { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
-      if (pd)  setPurchases(pd.data ?? (Array.isArray(pd) ? pd : []));
-      if (sd)  setSuppliers(sd.data ?? (Array.isArray(sd) ? sd : []));
-      if (prd) setProducts(prd.data ?? (Array.isArray(prd) ? prd : []));
-      const invList = invRes?.data ?? (Array.isArray(invRes) ? invRes : []);
+      if (pd)  setPurchases(Array.isArray(pd) ? pd : (pd?.data ?? []));
+      if (sd)  setSuppliers(Array.isArray(sd) ? sd : (sd?.data ?? []));
+      if (prd) setProducts(Array.isArray(prd) ? prd : (prd?.data ?? []));
+      const invList = Array.isArray(invRes) ? invRes : (invRes?.data ?? []);
       if (invList) setInventoryData(invList);
     } catch (err) {
       console.error('purchases load error:', err);

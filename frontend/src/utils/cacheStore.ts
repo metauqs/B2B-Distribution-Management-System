@@ -155,16 +155,7 @@ export async function fetchWithCache<T = any>(
         }
 
         if (data && (data.success !== false)) {
-          let payloadToCache: any;
-          if (data.data !== undefined) {
-            if (data.summary !== undefined || data.rateMap !== undefined || data.isToday !== undefined || data.isDraft !== undefined) {
-              payloadToCache = data;
-            } else {
-              payloadToCache = data.data;
-            }
-          } else {
-            payloadToCache = data;
-          }
+          const payloadToCache = data.data !== undefined ? data.data : data;
           setCachedData(key, payloadToCache);
           return payloadToCache as T;
         }
