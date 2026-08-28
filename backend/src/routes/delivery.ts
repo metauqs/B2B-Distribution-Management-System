@@ -35,9 +35,11 @@ function isDeliveryDue(deliveryDate: Date, scheduledTime: string | null | undefi
 // ── In-Memory cache for deliveries (15s TTL) ───────────────────────────────
 const DELIVERY_CACHE = new Map<string, { ts: number; data: any }>();
 const DELIVERY_CACHE_TTL = 15000;
+const DELIVERY_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearDeliveryCache(): void {
   DELIVERY_CACHE.clear();
+  DELIVERY_IN_FLIGHT.clear();
 }
 
 // GET /api/delivery
@@ -61,96 +63,114 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
+    if (DELIVERY_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await DELIVERY_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
+
     const filterRange = date ? getBusinessDateRange(String(date)) : undefined;
     const dayStart = filterRange?.start;
     const dayEnd = filterRange?.end;
 
-    // ── Auto-Dispatch Logic for PENDING deliveries ──
-    const pendingDeliveries = await prisma.delivery.findMany({
-      where: {
-        ...(branchId ? { branchId } : {}),
-        status: 'PENDING',
-      },
-    });
+    const fetchDeliveryPromise = (async () => {
+      // ── Auto-Dispatch Logic for PENDING deliveries ──
+      const pendingDeliveries = await prisma.delivery.findMany({
+        where: {
+          ...(branchId ? { branchId } : {}),
+          status: 'PENDING',
+          date: dayStart && dayEnd ? { gte: dayStart, lte: dayEnd } : { gte: new Date(Date.now() - 3 * 86400000) },
+        },
+      });
 
-    const toDispatch = pendingDeliveries
-      .filter(d => isDeliveryDue(d.date, d.scheduledTime))
-      .map(d => d.id);
+      const toDispatch = pendingDeliveries
+        .filter(d => isDeliveryDue(d.date, d.scheduledTime))
+        .map(d => d.id);
 
-    if (toDispatch.length > 0) {
-      await prisma.$transaction(async (tx) => {
-        await tx.delivery.updateMany({
-          where: { id: { in: toDispatch } },
-          data: { status: 'OUT' },
-        });
+      if (toDispatch.length > 0) {
+        await prisma.$transaction(async (tx) => {
+          await tx.delivery.updateMany({
+            where: { id: { in: toDispatch } },
+            data: { status: 'OUT' },
+          });
 
-        const salesToUpdate = pendingDeliveries
-          .filter(d => toDispatch.includes(d.id))
-          .map(d => d.saleId);
+          const salesToUpdate = pendingDeliveries
+            .filter(d => toDispatch.includes(d.id))
+            .map(d => d.saleId);
 
-        await tx.sale.updateMany({
-          where: { id: { in: salesToUpdate } },
-          data: { deliveryStatus: 'OUT' },
-        });
-      }, { maxWait: 15000, timeout: 120000 });
-    }
+          await tx.sale.updateMany({
+            where: { id: { in: salesToUpdate } },
+            data: { deliveryStatus: 'OUT' },
+          });
+        }, { maxWait: 15000, timeout: 120000 });
+      }
 
-    const deliveries = await prisma.delivery.findMany({
-      where: {
-        ...(branchId ? { branchId } : {}),
-        ...(status ? { status: status as any } : {}),
-        ...(targetEmployeeId ? { employeeId: targetEmployeeId } : {}),
-        ...(dayStart && dayEnd ? {
-          date: {
-            gte: dayStart,
-            lte: dayEnd,
-          }
-        } : {}),
-      },
-      include: {
-        sale: {
-          select: {
-            id: true,
-            invoiceNo: true,
-            subtotal: true,
-            discount: true,
-            deliveryCharge: true,
-            total: true,
-            paid: true,
-            balance: true,
-            status: true,
-            deliveryStatus: true,
-            failureReason: true,
-            deliveryDate: true,
-            deliveryTime: true,
-            items: {
-              select: {
-                id: true,
-                productId: true,
-                itemName: true,
-                qty: true,
-                unit: true,
-                rate: true,
-                amount: true,
-                returnedQty: true,
-                returnReason: true,
-              }
+      const deliveries = await prisma.delivery.findMany({
+        where: {
+          ...(branchId ? { branchId } : {}),
+          ...(status ? { status: status as any } : {}),
+          ...(targetEmployeeId ? { employeeId: targetEmployeeId } : {}),
+          ...(dayStart && dayEnd ? {
+            date: {
+              gte: dayStart,
+              lte: dayEnd,
+            }
+          } : {}),
+        },
+        include: {
+          sale: {
+            select: {
+              id: true,
+              invoiceNo: true,
+              subtotal: true,
+              discount: true,
+              deliveryCharge: true,
+              total: true,
+              paid: true,
+              balance: true,
+              status: true,
+              deliveryStatus: true,
+              failureReason: true,
+              deliveryDate: true,
+              deliveryTime: true,
+              items: {
+                select: {
+                  id: true,
+                  productId: true,
+                  itemName: true,
+                  qty: true,
+                  unit: true,
+                  rate: true,
+                  amount: true,
+                  returnedQty: true,
+                  returnReason: true,
+                }
+              },
             },
           },
+          client: { select: { id: true, name: true, address: true, phone: true, currentBalance: true } },
+          vehicle: { select: { id: true, plateNo: true, type: true } },
+          driver: { select: { id: true, name: true, phone: true } },
+          employee: { select: { id: true, name: true, phone: true, whatsapp: true } },
         },
-        client: { select: { id: true, name: true, address: true, phone: true, currentBalance: true } },
-        vehicle: { select: { id: true, plateNo: true, type: true } },
-        driver: { select: { id: true, name: true, phone: true } },
-        employee: { select: { id: true, name: true, phone: true, whatsapp: true } },
-      },
-      orderBy: { date: 'asc' },
-      take: 200,
-    });
+        orderBy: { date: 'asc' },
+        take: 200,
+      });
 
-    if (DELIVERY_CACHE.size >= 50) DELIVERY_CACHE.clear();
-    DELIVERY_CACHE.set(cacheKey, { ts: Date.now(), data: deliveries });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: deliveries });
+      return deliveries;
+    })();
+
+    DELIVERY_IN_FLIGHT.set(cacheKey, fetchDeliveryPromise);
+
+    try {
+      const deliveries = await fetchDeliveryPromise;
+      if (DELIVERY_CACHE.size >= 50) DELIVERY_CACHE.clear();
+      DELIVERY_CACHE.set(cacheKey, { ts: Date.now(), data: deliveries });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: deliveries });
+    } finally {
+      DELIVERY_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error in GET /api/delivery:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to fetch deliveries' });

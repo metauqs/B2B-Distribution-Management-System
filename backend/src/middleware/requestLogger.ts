@@ -22,12 +22,16 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
 
     const logMsg = `[API] ${method} ${originalUrl}${cacheStatus} ${statusCode} - ${duration}ms (reqId: ${requestId.substring(0, 8)})`;
 
-    if (duration > 1000 || statusCode >= 500) {
-      console.warn(`🔴 [API CRITICAL SLOW/FAIL] ${logMsg}`);
+    if (statusCode >= 400) {
+      console.warn(`❌ [API ERROR] ${logMsg}`);
+    } else if (duration > 1000) {
+      console.warn(`🔴 [API CRITICAL LATENCY] ${logMsg}`);
     } else if (duration > 500) {
       console.warn(`⚠️ [API SLOW] ${logMsg}`);
+    } else if (duration >= 300) {
+      console.log(`🟡 [API NORMAL] ${logMsg}`);
     } else {
-      console.log(logMsg);
+      console.log(`⚡ [API FAST] ${logMsg}`);
     }
   });
 
