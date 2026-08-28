@@ -267,7 +267,6 @@ export default function ClientsPage() {
   // ─── Loaders ──────────────────────────────────────────────────────────────
 
   const loadClients = useCallback(async (isBackground = false) => {
-    if (!isBackground && clients.length === 0) setLoading(true);
     const params = new URLSearchParams();
     params.set('stats', 'true');
     if (showArchived)           params.set('archived', 'true');
@@ -275,15 +274,16 @@ export default function ClientsPage() {
     if (ratingFilter !== 'all') params.set('rating', ratingFilter);
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
     const key = `/api/clients?${params}`;
+    if (!isBackground && !getCachedData(key)) setLoading(true);
     try {
-      const data = await fetchWithCache<Client[]>(key, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
-      if (data) setClients(data);
+      const data = await fetchWithCache<any>(key, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
+      if (data) setClients(data.data ?? (Array.isArray(data) ? data : []));
     } catch (err) {
       console.error('loadClients error:', err);
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, typeFilter, ratingFilter, showArchived, clients.length]);
+  }, [debouncedSearch, typeFilter, ratingFilter, showArchived]);
 
   const handleRestore = async (clientId: string) => {
     if (restoringId) return;

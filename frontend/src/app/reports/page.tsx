@@ -116,10 +116,11 @@ export default function ReportsPage() {
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
 
   const loadData = useCallback(async (showSpinner = false) => {
-    if (showSpinner && !execData) setLoading(true);
+    const mainKey = `/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`;
+    if (showSpinner && !getCachedData(mainKey)) setLoading(true);
     try {
       const [execRes, invProfRes, custRes, prodRes, valRes, bsRes, costRes] = await Promise.all([
-        fetchWithCache<ExecutiveData>(`/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
+        fetchWithCache<ExecutiveData>(mainKey, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
         fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/sales/invoices?from=${from}&to=${to}&search=${encodeURIComponent(searchQuery)}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
         fetchWithCache<any[]>(`/api/reports/sales/customers?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
         fetchWithCache<any[]>(`/api/reports/sales/products?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
@@ -150,7 +151,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset, from, to, searchQuery, execData]);
+  }, [datePreset, from, to, searchQuery]);
 
   useEffect(() => { loadData(false); }, [loadData]);
 

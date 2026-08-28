@@ -113,24 +113,25 @@ export default function PurchasesPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const load = useCallback(async (isBackground = false) => {
-    if (!isBackground && purchases.length === 0) setLoading(true);
+    if (!isBackground && !getCachedData('/api/purchases')) setLoading(true);
     try {
       const [pd, sd, prd, invRes] = await Promise.all([
-        fetchWithCache<Purchase[]>('/api/purchases', { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<any[]>('/api/suppliers', { ttl: TTL_LONG, forceRefresh: isBackground }),
-        fetchWithCache<any[]>('/api/products', { ttl: TTL_LONG, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/purchases', { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/suppliers', { ttl: TTL_LONG, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/products', { ttl: TTL_LONG, forceRefresh: isBackground }),
         fetchWithCache<any>('/api/inventory', { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
-      if (pd)  setPurchases(pd);
-      if (sd)  setSuppliers(sd);
-      if (prd) setProducts(prd);
-      if (invRes && invRes.data) setInventoryData(invRes.data);
+      if (pd)  setPurchases(pd.data ?? (Array.isArray(pd) ? pd : []));
+      if (sd)  setSuppliers(sd.data ?? (Array.isArray(sd) ? sd : []));
+      if (prd) setProducts(prd.data ?? (Array.isArray(prd) ? prd : []));
+      const invList = invRes?.data ?? (Array.isArray(invRes) ? invRes : []);
+      if (invList) setInventoryData(invList);
     } catch (err) {
       console.error('purchases load error:', err);
     } finally {
       setLoading(false);
     }
-  }, [purchases.length]);
+  }, []);
 
   const productRefMap = useMemo(() => {
     const map = new Map<string, { prevPrice: number; avgCost: number; qty: number }>();

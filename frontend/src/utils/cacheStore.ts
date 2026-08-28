@@ -154,9 +154,19 @@ export async function fetchWithCache<T = any>(
           throw new Error('PARSE_ERROR: Invalid server response format.');
         }
 
-        if (data && data.success) {
-          setCachedData(key, data.data ?? data);
-          return (data.data ?? data) as T;
+        if (data && (data.success !== false)) {
+          let payloadToCache: any;
+          if (data.data !== undefined) {
+            if (data.summary !== undefined || data.rateMap !== undefined || data.isToday !== undefined || data.isDraft !== undefined) {
+              payloadToCache = data;
+            } else {
+              payloadToCache = data.data;
+            }
+          } else {
+            payloadToCache = data;
+          }
+          setCachedData(key, payloadToCache);
+          return payloadToCache as T;
         }
         throw new Error(data?.error ?? 'Request failed');
       });

@@ -94,13 +94,13 @@ export default function DashboardPage() {
     }
   }, [user, router]);
 
-  const loadForDate = useCallback(async (targetDate: string, showLoadingSpinner = false) => {
+  const loadForDate = useCallback(async (targetDate: string, isBackground = false) => {
     const key = `/api/reports/dashboard?date=${targetDate}`;
-    if (showLoadingSpinner && !getCachedData(key)) setLoading(true);
+    if (!isBackground && !getCachedData(key)) setLoading(true);
     try {
       const result = await fetchWithCache<DashboardData>(key, {
         ttl: TTL_SHORT,
-        forceRefresh: !showLoadingSpinner,
+        forceRefresh: isBackground,
       });
       if (result) {
         setData(result);

@@ -244,28 +244,28 @@ export default function DeliveryPage() {
   }, []);
 
   const load = useCallback(async (isBackground = false) => {
-    if (!isBackground && deliveries.length === 0) setLoading(true);
-    try {
-      const dParams = new URLSearchParams();
-      if (filterDate) dParams.set('date', filterDate);
-      if (selectedEmpId) dParams.set('employeeId', selectedEmpId);
+    const dParams = new URLSearchParams();
+    if (filterDate) dParams.set('date', filterDate);
+    if (selectedEmpId) dParams.set('employeeId', selectedEmpId);
 
-      const dKey = `/api/delivery?${dParams.toString()}`;
+    const dKey = `/api/delivery?${dParams.toString()}`;
+    if (!isBackground && !getCachedData(dKey)) setLoading(true);
+    try {
       const [dd, vd, ed] = await Promise.all([
-        fetchWithCache<Delivery[]>(dKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<any[]>('/api/vehicles', { ttl: TTL_MEDIUM, forceRefresh: isBackground }),
-        fetchWithCache<any[]>('/api/employees?activeOnly=true', { ttl: TTL_MEDIUM, forceRefresh: isBackground }),
+        fetchWithCache<any>(dKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/vehicles', { ttl: TTL_MEDIUM, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/employees?activeOnly=true', { ttl: TTL_MEDIUM, forceRefresh: isBackground }),
       ]);
       
-      if (dd) setDeliveries(dd);
-      if (vd) setVehicles(vd);
-      if (ed) setEmployees(ed);
+      if (dd) setDeliveries(dd.data ?? (Array.isArray(dd) ? dd : []));
+      if (vd) setVehicles(vd.data ?? (Array.isArray(vd) ? vd : []));
+      if (ed) setEmployees(ed.data ?? (Array.isArray(ed) ? ed : []));
     } catch (err) {
       console.error('Error loading delivery data:', err);
     } finally {
       setLoading(false);
     }
-  }, [filterDate, selectedEmpId, deliveries.length]);
+  }, [filterDate, selectedEmpId]);
 
   useEffect(() => { load(); }, [load]);
 

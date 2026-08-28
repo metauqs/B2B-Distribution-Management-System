@@ -1,4 +1,5 @@
-import { fetchWithCache, TTL_LONG, TTL_MEDIUM } from './cacheStore';
+import { fetchWithCache, TTL_LONG, TTL_MEDIUM, TTL_SHORT } from './cacheStore';
+import { getTodayBusinessDateString } from './businessDate';
 
 let prefetchTimer: NodeJS.Timeout | null = null;
 
@@ -12,29 +13,72 @@ export function prefetchPageData(pathname: string): void {
 
   prefetchTimer = setTimeout(() => {
     try {
+      const today = getTodayBusinessDateString();
       switch (pathname) {
+        case '/':
+          fetchWithCache(`/api/reports/dashboard?date=${today}`, { ttl: TTL_SHORT }).catch(() => {});
+          break;
+
         case '/sales':
-        case '/pricelist':
+          fetchWithCache('/api/sales?limit=100', { ttl: TTL_SHORT }).catch(() => {});
           fetchWithCache('/api/pricelist/active', { ttl: TTL_MEDIUM }).catch(() => {});
           fetchWithCache('/api/products', { ttl: TTL_LONG }).catch(() => {});
           break;
 
-        case '/clients':
         case '/collections':
-          fetchWithCache('/api/clients?minimal=true', { ttl: TTL_LONG }).catch(() => {});
+          fetchWithCache('/api/collections', { ttl: TTL_SHORT }).catch(() => {});
+          fetchWithCache('/api/clients?minimal=true', { ttl: TTL_SHORT }).catch(() => {});
+          break;
+
+        case '/clients':
+          fetchWithCache('/api/clients?stats=true', { ttl: TTL_MEDIUM }).catch(() => {});
           break;
 
         case '/inventory':
-        case '/purchases':
+          fetchWithCache('/api/inventory', { ttl: TTL_SHORT }).catch(() => {});
           fetchWithCache('/api/products', { ttl: TTL_LONG }).catch(() => {});
           break;
 
+        case '/purchases':
+          fetchWithCache('/api/purchases', { ttl: TTL_SHORT }).catch(() => {});
+          fetchWithCache('/api/suppliers', { ttl: TTL_LONG }).catch(() => {});
+          fetchWithCache('/api/products', { ttl: TTL_LONG }).catch(() => {});
+          fetchWithCache('/api/inventory', { ttl: TTL_SHORT }).catch(() => {});
+          break;
+
+        case '/delivery':
+          fetchWithCache('/api/delivery', { ttl: TTL_SHORT }).catch(() => {});
+          fetchWithCache('/api/vehicles', { ttl: TTL_MEDIUM }).catch(() => {});
+          fetchWithCache('/api/employees?activeOnly=true', { ttl: TTL_MEDIUM }).catch(() => {});
+          break;
+
+        case '/pricelist':
+          fetchWithCache('/api/pricelist/active', { ttl: TTL_MEDIUM }).catch(() => {});
+          fetchWithCache('/api/products?availability=ALL', { ttl: TTL_LONG }).catch(() => {});
+          break;
+
+        case '/expenses':
+          fetchWithCache('/api/expenses', { ttl: TTL_SHORT }).catch(() => {});
+          fetchWithCache('/api/expenses/summary', { ttl: TTL_SHORT }).catch(() => {});
+          break;
+
+        case '/employees':
+          fetchWithCache('/api/employees', { ttl: TTL_LONG }).catch(() => {});
+          break;
+
+        case '/reports':
+          fetchWithCache(`/api/reports/executive-dashboard?preset=today&from=${today}&to=${today}`, { ttl: TTL_SHORT }).catch(() => {});
+          break;
+
         case '/settings':
+          fetchWithCache('/api/settings/users', { ttl: TTL_LONG }).catch(() => {});
+          fetchWithCache('/api/products', { ttl: TTL_LONG }).catch(() => {});
           fetchWithCache('/api/broadcasts/settings', { ttl: TTL_LONG }).catch(() => {});
           break;
       }
     } catch {
       // Non-blocking prefetch guard
     }
-  }, 250);
+  }, 150);
 }
+

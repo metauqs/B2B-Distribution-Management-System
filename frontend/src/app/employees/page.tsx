@@ -113,16 +113,16 @@ export default function EmployeesPage() {
 
   // Load employees
   const load = useCallback(async (isBackground = false) => {
-    if (!isBackground && employees.length === 0) setLoading(true);
+    if (!isBackground && !getCachedData('/api/employees')) setLoading(true);
     try {
-      const data = await fetchWithCache<Employee[]>('/api/employees', { ttl: TTL_LONG, forceRefresh: isBackground });
-      if (data) setEmployees(data);
+      const data = await fetchWithCache<any>('/api/employees', { ttl: TTL_LONG, forceRefresh: isBackground });
+      if (data) setEmployees(data.data ?? (Array.isArray(data) ? data : []));
     } catch (err) {
       console.error('employees load error:', err);
     } finally {
       setLoading(false);
     }
-  }, [employees.length]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 

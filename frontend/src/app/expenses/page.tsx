@@ -248,21 +248,22 @@ export default function ExpensesPage() {
       const sumKey = `/api/expenses/summary?${params.toString()}`;
       const intKey = `/api/expenses/integrated?${params.toString()}`;
 
+      if (!isBackground && !getCachedData(expKey)) setLoading(true);
       const [expData, sumData, intData] = await Promise.all([
-        fetchWithCache<Expense[]>(expKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<ExpenseSummary>(sumKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<IntegratedExpense[]>(intKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>(expKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>(sumKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>(intKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
 
-      if (expData) setExpenses(expData);
-      if (sumData) setSummary(sumData);
-      if (intData) setIntegratedExpenses(intData);
+      if (expData) setExpenses(expData.data ?? (Array.isArray(expData) ? expData : []));
+      if (sumData) setSummary(sumData.data ?? sumData);
+      if (intData) setIntegratedExpenses(intData.data ?? (Array.isArray(intData) ? intData : []));
     } catch (err) {
       console.error('Error loading expenses:', err);
     } finally {
       setLoading(false);
     }
-  }, [dateRange, customFrom, customTo, catFilter, payMethodFilter, vehicleFilter, employeeFilter, search, expenses.length]);
+  }, [dateRange, customFrom, customTo, catFilter, payMethodFilter, vehicleFilter, employeeFilter, search]);
 
   useEffect(() => {
     loadMasterData();

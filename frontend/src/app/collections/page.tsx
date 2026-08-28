@@ -166,19 +166,20 @@ export default function CollectionsPage() {
   };
 
   const load = useCallback(async (isBackground = false) => {
-    if (!isBackground && collections.length === 0) setLoading(true);
+    if (!isBackground && !getCachedData('/api/collections')) setLoading(true);
     try {
       const [cd, cld, sd] = await Promise.all([
-        fetchWithCache<Collection[]>('/api/collections', { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<Client[]>('/api/clients?minimal=true', { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<Sale[]>('/api/sales', { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/collections', { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/clients?minimal=true', { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/sales', { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
-      if (cd) setCollections(cd);
-      if (cld) setClients(cld);
+      if (cd) setCollections(cd.data ?? (Array.isArray(cd) ? cd : []));
+      if (cld) setClients(cld.data ?? (Array.isArray(cld) ? cld : []));
       if (sd) {
-        setSales(sd);
+        const salesList = sd.data ?? (Array.isArray(sd) ? sd : []);
+        setSales(salesList);
         const initialExpanded: { [key: string]: boolean } = {};
-        sd.forEach((item: Sale) => {
+        salesList.forEach((item: Sale) => {
           initialExpanded[item.clientId] = true;
         });
         setExpandedClients(initialExpanded);
@@ -186,7 +187,7 @@ export default function CollectionsPage() {
     } catch (err) {
       console.error('collections load error:', err);
     } finally { setLoading(false); }
-  }, [collections.length]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 

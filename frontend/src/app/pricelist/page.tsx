@@ -249,9 +249,10 @@ export default function PriceListPage() {
   }, []);
 
   const loadDateList = useCallback(async (date: string, isBackground = false) => {
-    if (!isBackground && (!currentList || currentList.date !== date)) setLoading(true);
+    const key = `/api/pricelist?date=${date}`;
+    if (!isBackground && !getCachedData(key)) setLoading(true);
     try {
-      const data = await fetchWithCache<any>(`/api/pricelist?date=${date}`, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
+      const data = await fetchWithCache<any>(key, { ttl: TTL_MEDIUM, forceRefresh: isBackground });
       if (data) {
         setCurrentList(data);
         setIsDraft(!!data.isDraft);
@@ -270,7 +271,7 @@ export default function PriceListPage() {
     } finally {
       setLoading(false);
     }
-  }, [isEditing, currentList]);
+  }, [isEditing]);
 
   const loadLists = useCallback(async () => {
     try {

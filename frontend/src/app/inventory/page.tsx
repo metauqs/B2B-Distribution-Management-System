@@ -291,23 +291,23 @@ export default function InventoryPage() {
 
   // ── Load inventory & all products ───────────────────────────────────────────
   const load = useCallback(async (isBackground = false) => {
-    if (!isBackground && inventory.length === 0) setLoading(true);
+    if (!isBackground && !getCachedData('/api/inventory')) setLoading(true);
     try {
       const [invData, prodData] = await Promise.all([
         fetchWithCache<any>('/api/inventory', { ttl: TTL_SHORT, forceRefresh: isBackground }),
         fetchWithCache<any>('/api/products', { ttl: TTL_LONG, forceRefresh: isBackground }),
       ]);
       if (invData) {
-        setInventory(invData.data ?? invData ?? []);
+        setInventory(invData.data ?? (Array.isArray(invData) ? invData : []));
         setSummary(invData.summary ?? null);
       }
       if (prodData) {
-        setAllProducts(prodData.data ?? prodData ?? []);
+        setAllProducts(prodData.data ?? (Array.isArray(prodData) ? prodData : []));
       }
     } catch (err) {
       console.error('inventory load error:', err);
     } finally { setLoading(false); }
-  }, [inventory.length]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 

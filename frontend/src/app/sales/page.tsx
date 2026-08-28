@@ -290,30 +290,31 @@ export default function SalesPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3500); };
 
   const loadSales = useCallback(async (isBackground = false) => {
-    if (!isBackground && sales.length === 0) setLoading(true);
-    try {
-      const p = new URLSearchParams({ limit: '100' });
-      if (debouncedSrchInv)      p.set('search', debouncedSrchInv);
-      if (filterSt !== 'all')   p.set('status', filterSt);
-      if (filterMode !== 'all') p.set('mode', filterMode);
-      if (filterDate) {
-        p.set('from', filterDate);
-        p.set('to', filterDate + 'T23:59:59');
-      }
-      const targetDate = filterDate || new Date().toISOString().slice(0, 10);
-      
-      const salesKey = `/api/sales?${p}`;
-      const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=100`;
+    const p = new URLSearchParams({ limit: '100' });
+    if (debouncedSrchInv)      p.set('search', debouncedSrchInv);
+    if (filterSt !== 'all')   p.set('status', filterSt);
+    if (filterMode !== 'all') p.set('mode', filterMode);
+    if (filterDate) {
+      p.set('from', filterDate);
+      p.set('to', filterDate + 'T23:59:59');
+    }
+    const targetDate = filterDate || new Date().toISOString().slice(0, 10);
+    
+    const salesKey = `/api/sales?${p}`;
+    const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=100`;
 
+    if (!isBackground && !getCachedData(salesKey)) setLoading(true);
+    try {
       const [salesData, collData] = await Promise.all([
-        fetchWithCache<Sale[]>(salesKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<any[]>(collKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>(salesKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>(collKey, { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
 
-      if (salesData) setSales(salesData);
+      if (salesData) setSales(salesData.data ?? (Array.isArray(salesData) ? salesData : []));
 
-      if (collData && Array.isArray(collData)) {
-        const totalColl = collData.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+      const rawColl = collData?.data ?? collData;
+      if (rawColl && Array.isArray(rawColl)) {
+        const totalColl = rawColl.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
         setTodayCollectionsAmt(totalColl);
       } else {
         setTodayCollectionsAmt(0);
@@ -323,7 +324,7 @@ export default function SalesPage() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSrchInv, filterSt, filterMode, filterDate, sales.length]);
+  }, [debouncedSrchInv, filterSt, filterMode, filterDate]);
 
   // ── Load clients (with error guard) ─────────────────────────────────────────
   const loadClients = useCallback(async () => {
