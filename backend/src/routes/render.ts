@@ -372,7 +372,7 @@ router.post('/jpeg', async (req, res) => {
 
     const t_page = Date.now();
     const requestedWidth = Number(width) || 794;
-    page = await setupRenderPage(browser, requestedWidth, 1.2);
+    page = await setupRenderPage(browser, requestedWidth, 1.0);
     const pageMs = Date.now() - t_page;
 
     const t_content = Date.now();
@@ -384,7 +384,7 @@ router.post('/jpeg', async (req, res) => {
     const { bodyHeight } = await page.evaluate(async () => {
       const d = (globalThis as any).document;
       if (d?.fonts?.ready) {
-        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 1200))]);
+        await Promise.race([d.fonts.ready, new Promise((r) => setTimeout(r, 600))]);
       }
       const images = Array.from(d.querySelectorAll('img')) as any[];
       if (images.length > 0) {
@@ -412,19 +412,19 @@ router.post('/jpeg', async (req, res) => {
               };
             });
           })),
-          new Promise((r) => setTimeout(r, 400)),
+          new Promise((r) => setTimeout(r, 300)),
         ]);
       }
       return { bodyHeight: d?.body?.scrollHeight || 1123 };
     });
     const fontsMs = Date.now() - t_fonts;
 
-    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.2 });
+    await page.setViewport({ width: requestedWidth, height: bodyHeight + 10, deviceScaleFactor: 1.0 });
 
     const t_shot = Date.now();
     const jpegBuffer = await page.screenshot({
       type: 'jpeg',
-      quality: Math.min(100, Math.max(50, Number(quality) || 88)),
+      quality: Math.min(95, Math.max(50, Number(quality) || 82)),
       fullPage: true,
       timeout: 15000,
     });
