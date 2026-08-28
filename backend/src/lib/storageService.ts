@@ -128,9 +128,10 @@ export async function uploadProductImage(
     }
   }
 
-  const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+  // Return lightweight relative endpoint URL to prevent database Base64 bloat
+  const relativeUrl = `/api/products/image/${filename}?v=${timestamp}`;
   return {
-    url: dataUrl,
+    url: relativeUrl,
     isCloud: false,
     bytes: buffer.length,
     format: ext,
