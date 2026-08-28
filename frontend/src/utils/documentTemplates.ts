@@ -1325,7 +1325,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
           <td style="padding:7px 10px;vertical-align:middle;">
             <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px;">
               <div style="display:flex;flex-direction:column;align-items:flex-start;">
-                <span style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:26px;font-weight:800;color:#FFFFFF;direction:rtl;line-height:1.2;">${item.urduName || item.itemName}</span>
+                <span style="font-family:'Jameel','Jameel Noori Nastaleeq','Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:26px;font-weight:800;color:#FFFFFF;direction:rtl;line-height:1.2;unicode-bidi:isolate;">${item.urduName || item.itemName}</span>
                 <span style="font-size:11px;color:#A3C9B3;font-weight:500;font-family:'Lora',Georgia,serif;margin-top:1px;">${item.itemName}</span>
               </div>
               ${htmlVisual}
@@ -1341,7 +1341,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
       <tr style="background:#0D4429;border-bottom:2px solid #E5A93C;">
         <th style="font-size:11px;padding:9px 10px;width:90px;text-align:left;font-weight:800;color:#FACC15;letter-spacing:0.08em;">RATE (RS)</th>
         <th style="font-size:11px;padding:9px 10px;width:60px;text-align:center;font-weight:800;color:#FACC15;letter-spacing:0.08em;">UNIT</th>
-        <th style="font-size:11px;padding:9px 10px;text-align:right;font-weight:800;color:#FACC15;letter-spacing:0.08em;">پروڈکٹ / PRODUCT</th>
+        <th style="font-size:11px;padding:9px 10px;text-align:right;font-weight:800;color:#FACC15;letter-spacing:0.08em;font-family:'Jameel','Jameel Noori Nastaleeq','Jameel Khushkhat L','Noto Nastaliq Urdu','Lora',sans-serif;">پروڈکٹ / PRODUCT</th>
         <th style="font-size:11px;padding:9px 10px;width:30px;text-align:right;font-weight:800;color:#FACC15;">#</th>
       </tr>
     </thead>
@@ -1383,7 +1383,7 @@ export function generatePriceListHTML(data: PriceListData, brand: BrandConfig, o
         </div>
 
         <div style="text-align:right;">
-          <div style="font-family:'Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:28px;font-weight:800;color:#FACC15;direction:rtl;line-height:1.2;">آج کی ریٹ لسٹ</div>
+          <div style="font-family:'Jameel','Jameel Noori Nastaleeq','Jameel Khushkhat L','Noto Nastaliq Urdu','Noto Sans Arabic',sans-serif;font-size:28px;font-weight:800;color:#FACC15;direction:rtl;line-height:1.2;unicode-bidi:isolate;">آج کی ریٹ لسٹ</div>
           <div style="font-size:12px;font-weight:800;color:#FDFBF7;letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;">TODAY'S PRICE LIST</div>
           <div style="display:inline-block;margin-top:6px;background:#0D4429;border:1px solid #E5A93C;color:#FFFFFF;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;padding:4px 12px;border-radius:6px;letter-spacing:0.05em;">
             📅 ${data.dateStr}

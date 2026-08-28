@@ -1250,7 +1250,7 @@ export default function PriceListPage() {
                                   <div>
                                     <strong>{item.itemName}</strong>
                                     {item.product?.urduName && (
-                                      <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>
+                                      <span style={{ color: 'var(--muted)', fontSize: 14, marginLeft: 6, fontFamily: 'var(--font-urdu, "Jameel", "Jameel Noori Nastaleeq", "Jameel Khushkhat L", serif)', direction: 'rtl', unicodeBidi: 'isolate' }}>
                                         ({item.product.urduName})
                                       </span>
                                     )}
@@ -1421,7 +1421,7 @@ export default function PriceListPage() {
                               <tr key={idx} style={{ cursor: 'pointer' }} onClick={() => setExpandedProduct(expandedProduct === h.itemName ? null : h.itemName)}>
                                 <td>
                                   <strong>{h.itemName}</strong>
-                                  {h.product?.urduName && <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>({h.product.urduName})</span>}
+                                  {h.product?.urduName && <span style={{ color: 'var(--muted)', fontSize: 14, marginLeft: 6, fontFamily: 'var(--font-urdu, "Jameel", "Jameel Noori Nastaleeq", "Jameel Khushkhat L", serif)', direction: 'rtl', unicodeBidi: 'isolate' }}>({h.product.urduName})</span>}
                                 </td>
                                 <td style={{ textTransform: 'capitalize', fontSize: 12 }}>{h.product?.category || '—'}</td>
                                 <td className="mono" style={{ textAlign: 'right' }}>
@@ -1501,7 +1501,7 @@ export default function PriceListPage() {
                     <div key={idx} className="va-mobile-card">
                       <div className="card-header" onClick={() => setExpandedProduct(expandedProduct === h.itemName ? null : h.itemName)} style={{ cursor: 'pointer' }}>
                         <span className="card-title" style={{ color: '#FFFFFF' }}>{h.itemName}</span>
-                        {h.product?.urduName && <span className="card-subtitle text-emerald-100">{h.product.urduName}</span>}
+                        {h.product?.urduName && <span className="card-subtitle text-emerald-100" style={{ fontFamily: 'var(--font-urdu, "Jameel", "Jameel Noori Nastaleeq", "Jameel Khushkhat L", serif)', fontSize: 14, direction: 'rtl', unicodeBidi: 'isolate' }}>{h.product.urduName}</span>}
                       </div>
 
                       <div className="card-divider" />
@@ -1700,7 +1700,7 @@ export default function PriceListPage() {
               </div>
               <div className="va-field" style={{ marginBottom: 12 }}>
                 <label>Urdu Name (Optional)</label>
-                <input value={newProdUrdu} onChange={e => setNewProdUrdu(e.target.value)} placeholder="e.g. ایوکاڈو" style={{ background: 'var(--paper)', color: 'var(--ink)', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif' }} />
+                <input value={newProdUrdu} onChange={e => setNewProdUrdu(e.target.value)} placeholder="e.g. ایوکاڈو" style={{ background: 'var(--paper)', color: 'var(--ink)', fontFamily: 'var(--font-urdu, "Jameel", "Jameel Noori Nastaleeq", "Jameel Khushkhat L", serif)', direction: 'rtl' }} />
               </div>
               <div className="va-field" style={{ marginBottom: 12 }}>
                 <label>Product Emoji / Icon (Optional)</label>
@@ -1763,7 +1763,7 @@ export default function PriceListPage() {
                         </td>
                         <td>
                           {p.urduName ? (
-                            <span style={{ fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif', fontSize: 13 }}>
+                            <span style={{ fontFamily: 'var(--font-urdu, "Jameel", "Jameel Noori Nastaleeq", "Jameel Khushkhat L", serif)', fontSize: 14, direction: 'rtl', unicodeBidi: 'isolate' }}>
                               {p.urduName}
                             </span>
                           ) : (
@@ -1822,7 +1822,7 @@ export default function PriceListPage() {
                     <div>
                       <span className="card-title" style={{ color: '#FFFFFF' }}>{p.name}</span>
                       {p.urduName && (
-                        <span className="card-subtitle text-emerald-100" style={{ display: 'block', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif' }}>
+                        <span className="card-subtitle text-emerald-100" style={{ display: 'block', fontFamily: 'var(--font-urdu, "Jameel", "Jameel Noori Nastaleeq", "Jameel Khushkhat L", serif)', fontSize: 14, direction: 'rtl', unicodeBidi: 'isolate' }}>
                           {p.urduName}
                         </span>
                       )}
@@ -2138,7 +2138,7 @@ export default function PriceListPage() {
                                 <td style={{ padding: 4, fontWeight: 600 }}>
                                   <span>{it.itemName}</span>
                                   {it.product?.urduName && (
-                                    <span style={{ fontSize: 10, color: '#4B5563', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", "Noto Sans Arabic", "Urdu Typesetting", serif', marginLeft: 4 }}>
+                                    <span style={{ fontSize: 12, color: '#4B5563', fontFamily: 'var(--font-urdu, "Jameel", "Jameel Noori Nastaleeq", "Jameel Khushkhat L", serif)', marginLeft: 4, direction: 'rtl', unicodeBidi: 'isolate' }}>
                                       ({it.product.urduName})
                                     </span>
                                   )}
@@ -2502,7 +2502,7 @@ export default function PriceListPage() {
                   value={editUrdu}
                   onChange={e => setEditUrdu(e.target.value)}
                   placeholder="e.g. تازہ آلو"
-                  style={{ background: 'var(--paper)', color: 'var(--ink)', fontFamily: '"Jameel Khushkhat L", "Noto Nastaliq Urdu", serif' }}
+                  style={{ background: 'var(--paper)', color: 'var(--ink)', fontFamily: 'var(--font-urdu, "Jameel", "Jameel Noori Nastaleeq", "Jameel Khushkhat L", serif)', direction: 'rtl' }}
                 />
               </div>
 
