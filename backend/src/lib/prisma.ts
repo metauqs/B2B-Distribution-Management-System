@@ -5,21 +5,21 @@ import { Pool } from 'pg';
 let connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
 
-// Auto-normalize deprecated PostgreSQL SSL modes to eliminate warnings
-if (connectionString.includes('sslmode=require')) {
-  connectionString = connectionString.replace(/sslmode=require/g, 'sslmode=verify-full');
-} else if (connectionString.includes('sslmode=prefer')) {
-  connectionString = connectionString.replace(/sslmode=prefer/g, 'sslmode=verify-full');
-}
+// Keep connectionString as-is to preserve Neon compatibility
 
 const pool = new Pool({
   connectionString,
-  max: 15, // Optimal connection pool to allow concurrent dashboard aggregations without queuing
+  max: 6, // 6 pooled connections is optimal for Neon Serverless to prevent socket exhaustion and contention
   idleTimeoutMillis: 30000, // Keep warm sockets alive for 30s
   connectionTimeoutMillis: 15000,
   keepAlive: true,
   ssl: connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
 });
+
+pool.on('error', (err: any) => {
+  console.warn('PostgreSQL connection pool client error (auto-reconnecting):', err?.message || err);
+});
+
 const adapter = new PrismaPg(pool);
 
 const prisma = new PrismaClient({

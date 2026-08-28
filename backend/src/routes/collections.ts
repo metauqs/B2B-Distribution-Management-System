@@ -39,147 +39,173 @@ router.get('/daily-history', async (req: Request, res: Response) => {
     const fetchDailyPromise = (async () => {
       const targetDateStr = date ? String(date) : undefined;
       const range = getBusinessDateRange(targetDateStr);
+      const rawBranchId = branchId || '';
+      const rawClientId = clientId ? String(clientId) : '';
+      const rawEmployeeId = employeeId && employeeId !== 'all' ? String(employeeId) : '';
+      const rawMethod = method && method !== 'all' ? String(method).toUpperCase() : '';
+      const rawSearch = search ? String(search).trim() : '';
 
-    const where: any = {
-      deletedAt: null,
-      ...(branchId ? { branchId } : {}),
-      date: {
-        gte: range.start,
-        lte: range.end,
-      },
-      ...(clientId ? { clientId: String(clientId) } : {}),
-      ...(employeeId && employeeId !== 'all' ? { receivedByUserId: String(employeeId) } : {}),
-      ...(method && method !== 'all' ? { method: String(method).toUpperCase() } : {}),
-      ...(search ? {
-        OR: [
-          { reference: { contains: String(search), mode: 'insensitive' } },
-          { notes: { contains: String(search), mode: 'insensitive' } },
-          { client: { name: { contains: String(search), mode: 'insensitive' } } },
-        ]
-      } : {}),
-    };
+      const collections: any[] = await prisma.$queryRaw`
+        SELECT 
+          c.id,
+          c."clientId",
+          c.amount::float as amount,
+          c.method,
+          c."cashAccountId",
+          c."bankAccountId",
+          c."receivedByUserId",
+          c."remainingBalance"::float as "remainingBalance",
+          c.date,
+          c.reference,
+          c.notes,
+          c."branchId",
+          c."createdAt",
+          c."deletedAt",
+          json_build_object(
+            'id', cl.id,
+            'name', cl.name,
+            'clientId', cl."clientId",
+            'currentBalance', cl."currentBalance"::float
+          ) as client,
+          CASE WHEN u.id IS NOT NULL THEN
+            json_build_object(
+              'id', u.id,
+              'name', u.name,
+              'role', u.role
+            )
+          ELSE NULL END as "receivedByUser",
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id', ca.id,
+                  'collectionId', ca."collectionId",
+                  'saleId', ca."saleId",
+                  'allocatedAmount', ca."allocatedAmount"::float,
+                  'sale', json_build_object(
+                    'id', s.id,
+                    'invoiceNo', s."invoiceNo",
+                    'date', s.date,
+                    'total', s.total::float,
+                    'paid', s.paid::float,
+                    'balance', s.balance::float,
+                    'status', s.status
+                  )
+                )
+              )
+              FROM collection_allocations ca
+              LEFT JOIN sales s ON s.id = ca."saleId"
+              WHERE ca."collectionId" = c.id
+            ),
+            '[]'::json
+          ) as allocations,
+          COALESCE(
+            (
+              SELECT clg.balance::float
+              FROM customer_ledger clg
+              WHERE clg."referenceId" = c.id AND clg.type = 'PAYMENT'
+              LIMIT 1
+            ),
+            c."remainingBalance"::float
+          ) as "ledgerBalance"
+        FROM collections c
+        LEFT JOIN clients cl ON cl.id = c."clientId"
+        LEFT JOIN users u ON u.id = c."receivedByUserId"
+        WHERE c."deletedAt" IS NULL 
+          AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
+          AND (${rawClientId} = '' OR c."clientId" = ${rawClientId})
+          AND (${rawEmployeeId} = '' OR c."receivedByUserId" = ${rawEmployeeId})
+          AND (${rawMethod} = '' OR c.method::text = ${rawMethod})
+          AND c.date >= ${range.start} AND c.date <= ${range.end}
+          AND (${rawSearch} = '' OR (
+            c.reference ILIKE ${'%' + rawSearch + '%'} OR 
+            c.notes ILIKE ${'%' + rawSearch + '%'} OR 
+            cl.name ILIKE ${'%' + rawSearch + '%'}
+          ))
+        ORDER BY c.date ASC, c."createdAt" ASC
+      `;
 
-    const collections = await prisma.collection.findMany({
-      where,
-      select: {
-        id: true,
-        clientId: true,
-        amount: true,
-        method: true,
-        cashAccountId: true,
-        bankAccountId: true,
-        receivedByUserId: true,
-        remainingBalance: true,
-        date: true,
-        reference: true,
-        notes: true,
-        branchId: true,
-        createdAt: true,
-        deletedAt: true,
-        client: { select: { id: true, name: true, clientId: true, currentBalance: true } },
-        receivedByUser: { select: { id: true, name: true, role: true } },
-        allocations: {
-          select: {
-            id: true,
-            collectionId: true,
-            saleId: true,
-            allocatedAmount: true,
-            sale: { select: { id: true, invoiceNo: true } }
-          }
-        }
-      },
-      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-    });
+      let totalAmount = 0;
+      let cashAmount = 0;
+      let bankAmount = 0;
+      let onlineAmount = 0;
+      let chequeAmount = 0;
+      let otherAmount = 0;
 
-    const collectionIds = collections.map(c => c.id);
-    const ledgers = collectionIds.length > 0 ? await prisma.customerLedger.findMany({
-      where: { referenceId: { in: collectionIds }, type: 'PAYMENT' },
-      select: { referenceId: true, balance: true }
-    }) : [];
+      const byMethod: Record<string, number> = {};
+      const byEmployee: Record<string, number> = {};
 
-    const ledgerMap = Object.fromEntries(ledgers.map(l => [l.referenceId, l.balance]));
+      const formattedTransactions = collections.map((col: any, index: number) => {
+        const amt = col.amount || 0;
+        totalAmount += amt;
 
-    let totalAmount = 0;
-    let cashAmount = 0;
-    let bankAmount = 0;
-    let onlineAmount = 0;
-    let chequeAmount = 0;
-    let otherAmount = 0;
+        const mUpper = (col.method || 'CASH').toUpperCase();
+        byMethod[mUpper] = (byMethod[mUpper] || 0) + amt;
 
-    const byMethod: Record<string, number> = {};
-    const byEmployee: Record<string, number> = {};
+        if (mUpper === 'CASH') cashAmount += amt;
+        else if (mUpper === 'BANK' || mUpper === 'BANK_TRANSFER') bankAmount += amt;
+        else if (mUpper === 'ONLINE') onlineAmount += amt;
+        else if (mUpper === 'CHEQUE') chequeAmount += amt;
+        else otherAmount += amt;
 
-    const formattedTransactions = collections.map((col: any, index: number) => {
-      const amt = col.amount || 0;
-      totalAmount += amt;
+        const empName = col.receivedByUser?.name || 'Not Recorded';
+        byEmployee[empName] = (byEmployee[empName] || 0) + amt;
 
-      const mUpper = (col.method || 'CASH').toUpperCase();
-      byMethod[mUpper] = (byMethod[mUpper] || 0) + amt;
+        const invoiceNumbers = (col.allocations || [])
+          .map((a: any) => a.sale?.invoiceNo)
+          .filter(Boolean) as string[];
+        const invoiceRefStr = invoiceNumbers.length > 0
+          ? invoiceNumbers.join(', ')
+          : (col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`);
 
-      if (mUpper === 'CASH') cashAmount += amt;
-      else if (mUpper === 'BANK' || mUpper === 'BANK_TRANSFER') bankAmount += amt;
-      else if (mUpper === 'ONLINE') onlineAmount += amt;
-      else if (mUpper === 'CHEQUE') chequeAmount += amt;
-      else otherAmount += amt;
+        const pktTime = new Date(col.date).toLocaleTimeString('en-GB', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: 'Asia/Karachi',
+        });
 
-      const empName = col.receivedByUser?.name || 'Not Recorded';
-      byEmployee[empName] = (byEmployee[empName] || 0) + amt;
+        const clientCurrBal = col.client?.currentBalance ?? 0;
+        const rawRemBal = (clientCurrBal <= 0) ? 0 : (col.ledgerBalance ?? col.remainingBalance ?? null);
+        const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
 
-      const invoiceNumbers = (col.allocations || [])
-        .map((a: any) => a.sale?.invoiceNo)
-        .filter(Boolean) as string[];
-      const invoiceRefStr = invoiceNumbers.length > 0
-        ? invoiceNumbers.join(', ')
-        : (col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`);
-
-      const pktTime = new Date(col.date).toLocaleTimeString('en-GB', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'Asia/Karachi',
+        return {
+          seqNo: index + 1,
+          id: col.id,
+          referenceNo: col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`,
+          date: col.date,
+          time: pktTime,
+          clientId: col.clientId,
+          clientCode: col.client?.clientId || 'WH-0000',
+          clientName: col.client?.name || 'Customer',
+          invoiceNo: invoiceRefStr,
+          invoices: invoiceNumbers,
+          amount: amt,
+          method: mUpper,
+          receivedBy: empName,
+          receivedByUserId: col.receivedByUserId || null,
+          remainingBalance: remBal,
+          notes: col.notes || null,
+          status: 'COMPLETED',
+        };
       });
 
-      const clientCurrBal = col.client?.currentBalance ?? 0;
-      const rawRemBal = (clientCurrBal <= 0) ? 0 : (ledgerMap[col.id] ?? col.remainingBalance ?? null);
-      const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
-
       return {
-        seqNo: index + 1,
-        id: col.id,
-        referenceNo: col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`,
-        date: col.date,
-        time: pktTime,
-        clientId: col.clientId,
-        clientCode: col.client?.clientId || 'WH-0000',
-        clientName: col.client?.name || 'Customer',
-        invoiceNo: invoiceRefStr,
-        invoices: invoiceNumbers,
-        amount: amt,
-        method: mUpper,
-        receivedBy: empName,
-        receivedByUserId: col.receivedByUserId || null,
-        remainingBalance: remBal,
-        notes: col.notes || null,
-        status: 'COMPLETED',
+        success: true,
+        businessDate: range.businessDateStr,
+        summary: {
+          totalTransactions: collections.length,
+          totalCollected: totalAmount,
+          cashCollected: cashAmount,
+          bankCollected: bankAmount,
+          onlineCollected: onlineAmount,
+          chequeCollected: chequeAmount,
+          otherCollected: otherAmount,
+          byMethod,
+          byEmployee,
+        },
+        transactions: formattedTransactions,
       };
-    });
-
-    return {
-      success: true,
-      businessDate: range.businessDateStr,
-      summary: {
-        totalTransactions: collections.length,
-        totalCollected: totalAmount,
-        cashCollected: cashAmount,
-        bankCollected: bankAmount,
-        onlineCollected: onlineAmount,
-        chequeCollected: chequeAmount,
-        otherCollected: otherAmount,
-        byMethod,
-        byEmployee,
-      },
-      transactions: formattedTransactions,
-    };
     })();
 
     COLLECTIONS_IN_FLIGHT.set(cacheKey, fetchDailyPromise);
@@ -221,8 +247,8 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     const fetchCollectionsPromise = (async () => {
-      const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
-      const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
+      const dateFrom = from ? getBusinessDateRange(String(from)).start : null;
+      const dateTo = to ? getBusinessDateRange(String(to)).end : null;
 
       if (dateFrom && isNaN(dateFrom.getTime())) {
         throw new Error('Invalid from date');
@@ -231,59 +257,93 @@ router.get('/', async (req: Request, res: Response) => {
         throw new Error('Invalid to date');
       }
 
-      const where: any = {
-        deletedAt: null,
-        ...(branchId ? { branchId } : {}),
-        ...(clientId ? { clientId: String(clientId) } : {}),
-        ...(employeeId ? { receivedByUserId: String(employeeId) } : {}),
-        ...(method && method !== 'all' ? { method: String(method).toUpperCase() } : {}),
-        ...(search ? {
-          OR: [
-            { reference: { contains: String(search), mode: 'insensitive' } },
-            { notes: { contains: String(search), mode: 'insensitive' } },
-            { client: { name: { contains: String(search), mode: 'insensitive' } } },
-          ]
-        } : {}),
-        ...(dateFrom || dateTo ? {
-          date: {
-            ...(dateFrom ? { gte: dateFrom } : {}),
-            ...(dateTo ? { lte: dateTo } : {}),
-          },
-        } : {}),
-      };
+      const rawBranchId = branchId || '';
+      const rawClientId = clientId ? String(clientId) : '';
+      const rawEmployeeId = employeeId && employeeId !== 'all' ? String(employeeId) : '';
+      const rawMethod = method && method !== 'all' ? String(method).toUpperCase() : '';
+      const rawSearch = search ? String(search).trim() : '';
 
-      const collections = await prisma.collection.findMany({
-        where,
-        select: {
-          id: true,
-          clientId: true,
-          amount: true,
-          method: true,
-          cashAccountId: true,
-          bankAccountId: true,
-          receivedByUserId: true,
-          remainingBalance: true,
-          date: true,
-          reference: true,
-          notes: true,
-          branchId: true,
-          createdAt: true,
-          deletedAt: true,
-          client: { select: { id: true, name: true, clientId: true } },
-          receivedByUser: { select: { id: true, name: true, role: true } },
-          allocations: {
-            select: {
-              id: true,
-              collectionId: true,
-              saleId: true,
-              allocatedAmount: true,
-              sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
-            }
-          }
-        },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-        ...(limit ? { take: limit } : {}),
-      });
+      const collections: any[] = await prisma.$queryRaw`
+        SELECT 
+          c.id,
+          c."clientId",
+          c.amount::float as amount,
+          c.method,
+          c."cashAccountId",
+          c."bankAccountId",
+          c."receivedByUserId",
+          c."remainingBalance"::float as "remainingBalance",
+          c.date,
+          c.reference,
+          c.notes,
+          c."branchId",
+          c."createdAt",
+          c."deletedAt",
+          json_build_object(
+            'id', cl.id,
+            'name', cl.name,
+            'clientId', cl."clientId",
+            'currentBalance', cl."currentBalance"::float
+          ) as client,
+          CASE WHEN u.id IS NOT NULL THEN
+            json_build_object(
+              'id', u.id,
+              'name', u.name,
+              'role', u.role
+            )
+          ELSE NULL END as "receivedByUser",
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id', ca.id,
+                  'collectionId', ca."collectionId",
+                  'saleId', ca."saleId",
+                  'allocatedAmount', ca."allocatedAmount"::float,
+                  'sale', json_build_object(
+                    'id', s.id,
+                    'invoiceNo', s."invoiceNo",
+                    'date', s.date,
+                    'total', s.total::float,
+                    'paid', s.paid::float,
+                    'balance', s.balance::float,
+                    'status', s.status
+                  )
+                )
+              )
+              FROM collection_allocations ca
+              LEFT JOIN sales s ON s.id = ca."saleId"
+              WHERE ca."collectionId" = c.id
+            ),
+            '[]'::json
+          ) as allocations,
+          COALESCE(
+            (
+              SELECT clg.balance::float
+              FROM customer_ledger clg
+              WHERE clg."referenceId" = c.id AND clg.type = 'PAYMENT'
+              LIMIT 1
+            ),
+            c."remainingBalance"::float
+          ) as "ledgerBalance"
+        FROM collections c
+        LEFT JOIN clients cl ON cl.id = c."clientId"
+        LEFT JOIN users u ON u.id = c."receivedByUserId"
+        WHERE c."deletedAt" IS NULL 
+          AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
+          AND (${rawClientId} = '' OR c."clientId" = ${rawClientId})
+          AND (${rawEmployeeId} = '' OR c."receivedByUserId" = ${rawEmployeeId})
+          AND (${rawMethod} = '' OR c.method::text = ${rawMethod})
+          AND (${dateFrom}::timestamptz IS NULL OR c.date >= ${dateFrom}::timestamptz)
+          AND (${dateTo}::timestamptz IS NULL OR c.date <= ${dateTo}::timestamptz)
+          AND (${rawSearch} = '' OR (
+            c.reference ILIKE ${'%' + rawSearch + '%'} OR 
+            c.notes ILIKE ${'%' + rawSearch + '%'} OR 
+            cl.name ILIKE ${'%' + rawSearch + '%'}
+          ))
+        ORDER BY c.date DESC, c."createdAt" DESC
+        LIMIT ${limit}
+      `;
 
       if (collections.length === 0) {
         return {
@@ -293,16 +353,9 @@ router.get('/', async (req: Request, res: Response) => {
         };
       }
 
-      const collectionIds = collections.map(c => c.id);
-      const ledgers = await prisma.customerLedger.findMany({
-        where: { referenceId: { in: collectionIds }, type: 'PAYMENT' },
-        select: { referenceId: true, balance: true }
-      });
-
-      const ledgerMap = Object.fromEntries(ledgers.map(l => [l.referenceId, l.balance]));
-
       const data = collections.map(c => {
-        const rawRemBal = ledgerMap[c.id] ?? c.remainingBalance ?? null;
+        const clientCurrBal = c.client?.currentBalance ?? 0;
+        const rawRemBal = (clientCurrBal <= 0) ? 0 : (c.ledgerBalance ?? c.remainingBalance ?? null);
         const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
         return {
           ...c,
@@ -311,15 +364,16 @@ router.get('/', async (req: Request, res: Response) => {
         };
       });
 
-      const totalAmount = collections.reduce((sum, c) => sum + c.amount, 0);
+      const totalAmount = collections.reduce((sum, c) => sum + (c.amount || 0), 0);
       const count = collections.length;
       const byMethod: { [key: string]: number } = {};
       const byEmployee: { [key: string]: number } = {};
 
       collections.forEach(c => {
-        byMethod[c.method] = (byMethod[c.method] || 0) + c.amount;
+        const m = c.method || 'CASH';
+        byMethod[m] = (byMethod[m] || 0) + (c.amount || 0);
         const empName = c.receivedByUser?.name || 'Unrecorded (Historical)';
-        byEmployee[empName] = (byEmployee[empName] || 0) + c.amount;
+        byEmployee[empName] = (byEmployee[empName] || 0) + (c.amount || 0);
       });
 
       return {

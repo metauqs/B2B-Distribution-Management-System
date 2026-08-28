@@ -252,9 +252,12 @@ router.post('/refresh', async (req: Request, res: Response) => {
         user = cached.user;
       } else {
         user = await prisma.user.findUnique({
-          where: { id: userId, deletedAt: null },
-          select: { id: true, email: true, name: true, role: true, branchId: true, isActive: true },
+          where: { id: userId },
+          select: { id: true, email: true, name: true, role: true, branchId: true, isActive: true, deletedAt: true },
         });
+        if (user && user.deletedAt) {
+          user = null;
+        }
         if (user && user.isActive) {
           ME_CACHE.set(user.id, { ts: Date.now(), user });
         }
@@ -333,7 +336,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
 
     const fetchMePromise = (async () => {
       const user = await prisma.user.findUnique({
-        where: { id: userId, deletedAt: null },
+        where: { id: userId },
         select: {
           id: true,
           email: true,
@@ -344,11 +347,12 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
           isActive: true,
           lastLoginAt: true,
           createdAt: true,
+          deletedAt: true,
           branch: { select: { id: true, name: true } },
         },
       });
 
-      if (!user || !user.isActive) {
+      if (!user || !user.isActive || user.deletedAt) {
         ME_CACHE.delete(userId);
         return null;
       }

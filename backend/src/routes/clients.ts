@@ -93,54 +93,55 @@ router.get('/', async (req: Request, res: Response) => {
         }));
       }
 
-      const clientIds = clients.map(c => c.id);
+      const rawBranchId = branchId || '';
+      const statsRows: Array<{
+        clientId: string;
+        totalSales: number;
+        salesCount: number;
+        lastOrderDate: Date | null;
+        totalCollected: number;
+      }> = await prisma.$queryRaw`
+        SELECT 
+          c.id as "clientId",
+          COALESCE(s.total_sales, 0)::float as "totalSales",
+          COALESCE(s.sales_count, 0)::int as "salesCount",
+          s.last_order_date as "lastOrderDate",
+          COALESCE(col.total_collected, 0)::float as "totalCollected"
+        FROM "Client" c
+        LEFT JOIN (
+          SELECT 
+            "clientId",
+            SUM(total) as total_sales,
+            COUNT(id) as sales_count,
+            MAX(date) as last_order_date
+          FROM "Sale"
+          WHERE "deletedAt" IS NULL 
+            AND status != 'CANCELLED'
+            AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
+          GROUP BY "clientId"
+        ) s ON s."clientId" = c.id
+        LEFT JOIN (
+          SELECT 
+            "clientId",
+            SUM(amount) as total_collected
+          FROM "Collection"
+          WHERE "deletedAt" IS NULL 
+            AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
+          GROUP BY "clientId"
+        ) col ON col."clientId" = c.id
+        WHERE c."deletedAt" IS NULL
+          AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
+      `;
 
-      const [salesArr, collectionsArr, activeSalesArr] = await Promise.all([
-        prisma.sale.groupBy({
-          by: ['clientId'],
-          where: { 
-            ...(branchId ? { branchId } : {}), 
-            deletedAt: null,
-            clientId: { in: clientIds }
-          },
-          _sum: { total: true },
-          _count: { id: true },
-          _max: { date: true },
-        }),
-        prisma.collection.groupBy({
-          by: ['clientId'],
-          where: { 
-            ...(branchId ? { branchId } : {}), 
-            deletedAt: null,
-            clientId: { in: clientIds }
-          },
-          _sum: { amount: true },
-        }),
-        prisma.sale.groupBy({
-          by: ['clientId'],
-          where: { 
-            ...(branchId ? { branchId } : {}), 
-            deletedAt: null,
-            status: { not: 'CANCELLED' },
-            clientId: { in: clientIds }
-          },
-          _sum: { total: true },
-          _count: { id: true },
-        }),
-      ]);
-
-      const salesMap = Object.fromEntries(salesArr.map(x => [x.clientId, x]));
-      const collectionsMap = Object.fromEntries(collectionsArr.map(x => [x.clientId, x]));
-      const activeSalesMap = Object.fromEntries(activeSalesArr.map(x => [x.clientId, x]));
+      const statsMap = Object.fromEntries(statsRows.map(x => [x.clientId, x]));
 
       return clients.map(c => {
-        const s = salesMap[c.id];
-        const col = collectionsMap[c.id];
-        const activeS = activeSalesMap[c.id];
+        const s = statsMap[c.id];
 
-        const totalSales = s?._sum.total ?? 0;
-        const totalCollected = col?._sum.amount ?? 0;
-        const salesCount = activeS?._count.id ?? 0;
+        const totalSales = s?.totalSales ?? 0;
+        const totalCollected = s?.totalCollected ?? 0;
+        const salesCount = s?.salesCount ?? 0;
+        const lastOrderDate = s?.lastOrderDate ?? null;
         const averageOrderValue = salesCount > 0 ? Math.round(totalSales / salesCount) : 0;
         const calculatedLimit = Math.max(50000, Math.round(averageOrderValue * 3));
         const effectiveLimit = c.creditLimit && c.creditLimit > 0 ? c.creditLimit : calculatedLimit;
@@ -149,7 +150,7 @@ router.get('/', async (req: Request, res: Response) => {
           ...c,
           totalSales,
           salesCount,
-          lastOrderDate: s?._max.date ? s._max.date.toISOString() : null,
+          lastOrderDate: lastOrderDate ? lastOrderDate.toISOString() : null,
           totalCollected,
           averageOrderValue,
           calculatedCreditLimit: calculatedLimit,
@@ -310,10 +311,19 @@ router.get('/:id', async (req: Request, res: Response) => {
         // Collections
         prisma.collection.findMany({
           where: { clientId: id, deletedAt: null },
-          include: {
+          select: {
+            id: true,
+            amount: true,
+            method: true,
+            date: true,
+            reference: true,
+            notes: true,
+            remainingBalance: true,
             receivedByUser: { select: { id: true, name: true, role: true } },
             allocations: {
-              include: {
+              select: {
+                id: true,
+                allocatedAmount: true,
                 sale: { select: { id: true, invoiceNo: true, date: true, total: true, paid: true, balance: true, status: true } }
               }
             }

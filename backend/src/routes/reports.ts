@@ -157,23 +157,45 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       const l30Start = new Date(Date.now() - 30 * 86400000);
 
       const dbStart = Date.now();
+      const rawBranchId = branchId || '';
+
       const [
+        rawAggs,
         todaySalesRecords,
-        todayPurchasesAgg,
-        todayExpensesAgg,
-        todayCollectionsAgg,
-        todayWastageAgg,
-        receivablesData,
-        supplierPurchasesArr,
-        supplierPaymentsArr,
-        allSuppliers,
-        pendingDeliveries,
         deliveryStatusAgg,
         inventoryItems,
-        atRiskClients,
         l30Data,
         attentionRaw,
+        receivablesData,
       ] = await Promise.all([
+        prisma.$queryRaw<Array<{
+          today_purchases: number;
+          today_expenses: number;
+          today_collections: number;
+          today_wastage_qty: number;
+          today_wastage_count: number;
+          total_receivables: number;
+          receivables_client_count: number;
+          total_payables: number;
+          pending_deliveries: number;
+          at_risk_clients: number;
+        }>>`
+          SELECT 
+            (SELECT COALESCE(SUM(total), 0) FROM purchases WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL)::float as today_purchases,
+            (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL)::float as today_expenses,
+            (SELECT COALESCE(SUM(amount), 0) FROM collections WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL)::float as today_collections,
+            (SELECT COALESCE(SUM(qty), 0) FROM wastages WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd})::float as today_wastage_qty,
+            (SELECT COUNT(*) FROM wastages WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd})::int as today_wastage_count,
+            (SELECT COALESCE(SUM("currentBalance"), 0) FROM clients WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND "currentBalance" > 0 AND "deletedAt" IS NULL)::float as total_receivables,
+            (SELECT COUNT(*) FROM clients WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND "currentBalance" > 0 AND "deletedAt" IS NULL)::int as receivables_client_count,
+            (
+              (SELECT COALESCE(SUM("openingBalance"), 0) FROM suppliers WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND "deletedAt" IS NULL) +
+              (SELECT COALESCE(SUM(total), 0) FROM purchases WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND "deletedAt" IS NULL) -
+              (SELECT COALESCE(SUM(amount), 0) FROM supplier_payments WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}))
+            )::float as total_payables,
+            (SELECT COUNT(*) FROM deliveries WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND status NOT IN ('DELIVERED', 'FAILED'))::int as pending_deliveries,
+            (SELECT COUNT(*) FROM clients WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND rating IN ('RED', 'ORANGE') AND "deletedAt" IS NULL)::int as at_risk_clients
+        `,
         prisma.sale.findMany({
           where: { ...tWhere, status: { not: 'CANCELLED' } },
           select: {
@@ -193,15 +215,6 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           },
           orderBy: { date: 'desc' },
         }),
-        prisma.purchase.aggregate({ where: tWhere, _sum: { total: true } }),
-        prisma.expense.aggregate({ where: tWhere, _sum: { amount: true } }),
-        prisma.collection.aggregate({ where: tWhere, _sum: { amount: true } }),
-        prisma.wastage.aggregate({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } }, _sum: { qty: true }, _count: true }),
-        getHistoricalReceivables(branchId, todayEnd, isToday),
-        prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
-        prisma.supplierPayment.groupBy({ by: ['supplierId'], where: branchId ? { branchId } : {}, _sum: { amount: true } }),
-        prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } }),
-        prisma.delivery.count({ where: { ...bWhere, status: { notIn: ['DELIVERED', 'FAILED'] } } }),
         prisma.delivery.groupBy({
           by: ['status'],
           where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } },
@@ -211,12 +224,31 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           where: bWhere,
           select: { qty: true, avgCost: true, currentBuyPrice: true, product: { select: { minStock: true } } },
         }),
-        prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
         getL30Metrics(branchId, bWhere),
-        prisma.client.findMany({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, select: { id: true, name: true, currentBalance: true }, orderBy: { currentBalance: 'desc' }, take: 5 }),
+        prisma.client.findMany({
+          where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } },
+          select: { id: true, name: true, currentBalance: true },
+          orderBy: { currentBalance: 'desc' },
+          take: 5,
+        }),
+        isToday ? Promise.resolve(null) : getHistoricalReceivables(branchId, todayEnd, isToday),
       ]);
-      const { l30Sales, l30Purchases, l30Expenses } = l30Data;
       const dbDuration = Date.now() - dbStart;
+
+      const aggRow = (rawAggs && rawAggs[0]) || ({} as any);
+      const todayPurchases = Number(aggRow.today_purchases ?? 0);
+      const todayExpenses = Number(aggRow.today_expenses ?? 0);
+      const dbCollectionsSum = Number(aggRow.today_collections ?? 0);
+      const totalPayables = Math.max(0, Number(aggRow.total_payables ?? 0));
+      const pendingDeliveries = Number(aggRow.pending_deliveries ?? 0);
+      const atRiskClients = Number(aggRow.at_risk_clients ?? 0);
+      const todayWastageQty = Number(aggRow.today_wastage_qty ?? 0);
+      const todayWastageCount = Number(aggRow.today_wastage_count ?? 0);
+
+      const totalReceivables = receivablesData ? receivablesData.receivables : Number(aggRow.total_receivables ?? 0);
+      const clientCount = receivablesData ? receivablesData.clientCount : Number(aggRow.receivables_client_count ?? 0);
+
+      const { l30Sales, l30Purchases, l30Expenses } = l30Data;
 
       const completedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'DELIVERED')?._count ?? 0;
       const failedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'FAILED')?._count ?? 0;
@@ -251,13 +283,8 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       const todaySalesCount = todaySalesRecords.length;
       const recentSales = todaySalesRecords.slice(0, 5);
 
-      const todayPurchases = todayPurchasesAgg._sum.total ?? 0;
-      const todayExpenses = todayExpensesAgg._sum.amount ?? 0;
-      const dbCollectionsSum = todayCollectionsAgg._sum.amount ?? 0;
       // Collections = standalone collection entries + checkout cash paid at invoice
       const todayCollections = todaySalesPaid > dbCollectionsSum ? todaySalesPaid : dbCollectionsSum;
-      const totalReceivables = receivablesData.receivables;
-      const clientCount = receivablesData.clientCount;
 
       // ── Gross Profit: same formula as Reports module (financialEngine.ts) ─────────
       const netSales = Math.max(0, grossSales - todayDiscounts);
@@ -267,24 +294,6 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       const todayProfit = netProfit;
       const cashPosition = todayCollections - todayExpenses - todayPurchases;
       const netSalesToday = netSales; // expose netSales (after discounts) not gross
-
-      const purMap: Record<string, number> = {};
-      for (const p of supplierPurchasesArr) {
-        if (p.supplierId) purMap[p.supplierId] = (purMap[p.supplierId] ?? 0) + (p._sum.total ?? 0);
-      }
-      const payMap: Record<string, number> = {};
-      for (const p of supplierPaymentsArr) {
-        if (p.supplierId) payMap[p.supplierId] = (payMap[p.supplierId] ?? 0) + (p._sum.amount ?? 0);
-      }
-
-      let totalPayables = 0;
-      for (const supp of allSuppliers) {
-        const opening = supp.openingBalance ?? 0;
-        const purchases = purMap[supp.id] ?? 0;
-        const payments = payMap[supp.id] ?? 0;
-        const balance = opening + purchases - payments;
-        if (balance > 0) totalPayables += balance;
-      }
 
       let totalInventoryValue = 0;
       let lowStockCount = 0;
@@ -336,8 +345,8 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           returnedProducts: returnedProductsToday,
           returnValue: returnValueToday,
           netSales: netSalesToday,
-          wastageCount: todayWastageAgg._count,
-          wastageQty: todayWastageAgg._sum.qty ?? 0,
+          wastageCount: todayWastageCount,
+          wastageQty: todayWastageQty,
         },
         inventory: {
           totalValue: totalInventoryValue,
@@ -414,7 +423,18 @@ router.get('/pnl', async (req: Request, res: Response) => {
       const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
       const dateRange = { gte: fromDate, lte: toDate };
 
-      const [salesSummary, purchasesAgg, expensesAgg, collectionsAgg, wastageAgg] = await Promise.all([
+      const [
+        salesSummary,
+        purchasesAgg,
+        expensesAgg,
+        collectionsAgg,
+        wastageAgg,
+        expensesByCategory,
+        expensesByPaymentMethod,
+        dailySales,
+        dailyPurchases,
+        dailyExpenses,
+      ] = await Promise.all([
         getAuthoritativeGrossSales({ ...bWhere, date: dateRange }),
         prisma.purchase.aggregate({
           where: { ...bWhere, date: dateRange, deletedAt: null },
@@ -432,6 +452,36 @@ router.get('/pnl', async (req: Request, res: Response) => {
           where: { ...bWhere, date: dateRange },
           _count: true,
         }),
+        prisma.expense.groupBy({
+          by: ['category'],
+          where: { ...bWhere, date: dateRange, deletedAt: null },
+          _sum: { amount: true },
+          orderBy: { _sum: { amount: 'desc' } },
+        }),
+        prisma.expense.groupBy({
+          by: ['paidBy'],
+          where: { ...bWhere, date: dateRange, deletedAt: null },
+          _sum: { amount: true },
+          orderBy: { _sum: { amount: 'desc' } },
+        }),
+        prisma.sale.groupBy({
+          by: ['date'],
+          where: { ...bWhere, date: dateRange, status: { not: 'CANCELLED' }, deletedAt: null },
+          _sum: { total: true },
+          orderBy: { date: 'asc' },
+        }),
+        prisma.purchase.groupBy({
+          by: ['date'],
+          where: { ...bWhere, date: dateRange, deletedAt: null },
+          _sum: { total: true },
+          orderBy: { date: 'asc' },
+        }),
+        prisma.expense.groupBy({
+          by: ['date'],
+          where: { ...bWhere, date: dateRange, deletedAt: null },
+          _sum: { amount: true },
+          orderBy: { date: 'asc' },
+        }),
       ]);
 
       const revenue = salesSummary.totalRevenue;
@@ -445,35 +495,6 @@ router.get('/pnl', async (req: Request, res: Response) => {
       const netProfit = grossProfit - expenses;
       const grossMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
       const netMarginPct = revenue > 0 ? (netProfit / revenue) * 100 : 0;
-
-      const expensesByCategory = await prisma.expense.groupBy({
-        by: ['category'],
-        where: { ...bWhere, date: dateRange, deletedAt: null },
-        _sum: { amount: true },
-        orderBy: { _sum: { amount: 'desc' } },
-      });
-
-      const expensesByPaymentMethod = await prisma.expense.groupBy({
-        by: ['paidBy'],
-        where: { ...bWhere, date: dateRange, deletedAt: null },
-        _sum: { amount: true },
-        orderBy: { _sum: { amount: 'desc' } },
-      });
-
-      const [dailySales, dailyPurchases, dailyExpenses] = await Promise.all([
-        prisma.sale.groupBy({
-          by: ['date'], where: { ...bWhere, date: dateRange, status: { not: 'CANCELLED' }, deletedAt: null },
-          _sum: { total: true }, orderBy: { date: 'asc' },
-        }),
-        prisma.purchase.groupBy({
-          by: ['date'], where: { ...bWhere, date: dateRange, deletedAt: null },
-          _sum: { total: true }, orderBy: { date: 'asc' },
-        }),
-        prisma.expense.groupBy({
-          by: ['date'], where: { ...bWhere, date: dateRange, deletedAt: null },
-          _sum: { amount: true }, orderBy: { date: 'asc' },
-        }),
-      ]);
 
       const dayMap: Record<string, { sales: number; purchases: number; expenses: number; profit: number }> = {};
       const addDay = (d: Date | string, field: 'sales' | 'purchases' | 'expenses', val: number) => {
@@ -795,15 +816,27 @@ router.get('/invoice-registry', async (req: Request, res: Response) => {
         take: limit,
       });
 
+      const saleIds = sales.map(s => s.id);
       const invoiceRefList = sales.flatMap(s => [s.invoiceNo, `INV-${s.invoiceNo}`]);
-      const checkoutColls = invoiceRefList.length
-        ? await prisma.collection.findMany({
-            where: { reference: { in: invoiceRefList }, deletedAt: null },
-            select: { reference: true, amount: true },
-          })
-        : [];
+      const [checkoutColls, allocations] = await Promise.all([
+        invoiceRefList.length
+          ? prisma.collection.findMany({
+              where: { reference: { in: invoiceRefList }, deletedAt: null },
+              select: { reference: true, amount: true },
+            })
+          : Promise.resolve([]),
+        saleIds.length
+          ? prisma.collectionAllocation.findMany({
+              where: { saleId: { in: saleIds } },
+              select: { saleId: true, allocatedAmount: true },
+            })
+          : Promise.resolve([]),
+      ]);
 
       const checkoutPayMap: Record<string, number> = {};
+      for (const a of allocations) {
+        checkoutPayMap[a.saleId] = (checkoutPayMap[a.saleId] ?? 0) + a.allocatedAmount;
+      }
       for (const c of checkoutColls) {
         if (c.reference) {
           const inv = c.reference.replace(/^INV-/, '');
