@@ -107,14 +107,14 @@ router.get('/', async (req: Request, res: Response) => {
           COALESCE(s.sales_count, 0)::int as "salesCount",
           s.last_order_date as "lastOrderDate",
           COALESCE(col.total_collected, 0)::float as "totalCollected"
-        FROM "Client" c
+        FROM clients c
         LEFT JOIN (
           SELECT 
             "clientId",
             SUM(total) as total_sales,
             COUNT(id) as sales_count,
             MAX(date) as last_order_date
-          FROM "Sale"
+          FROM sales
           WHERE "deletedAt" IS NULL 
             AND status != 'CANCELLED'
             AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
@@ -124,7 +124,7 @@ router.get('/', async (req: Request, res: Response) => {
           SELECT 
             "clientId",
             SUM(amount) as total_collected
-          FROM "Collection"
+          FROM collections
           WHERE "deletedAt" IS NULL 
             AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
           GROUP BY "clientId"
@@ -270,15 +270,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const fetchProfilePromise = (async () => {
-      const client = await prisma.client.findFirst({
-        where: { id, ...(branchId ? { branchId } : {}) }
-      });
-
-      if (!client) {
-        return null;
-      }
-
-      const [sales, collections, deliveries, ledger] = await Promise.all([
+      const [client, sales, collections, deliveries, ledger, creditRisk, collectionBehaviour] = await Promise.all([
+        prisma.client.findFirst({
+          where: { id, ...(branchId ? { branchId } : {}) }
+        }),
         // Sales
         prisma.sale.findMany({
           where: { clientId: id, deletedAt: null },
@@ -352,7 +347,13 @@ router.get('/:id', async (req: Request, res: Response) => {
           orderBy: { date: 'asc' },
           take: 500,
         }),
+        calculateClientCreditRisk(id),
+        calculateCollectionBehaviour(id),
       ]);
+
+      if (!client) {
+        return null;
+      }
 
       const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
       const totalCollected = collections.reduce((sum, c) => sum + c.amount, 0);
@@ -392,11 +393,6 @@ router.get('/:id', async (req: Request, res: Response) => {
       const openingBalanceRemaining = openingBal > 0 ? Math.max(0, Math.round((client.currentBalance - invoiceOutstanding) * 100) / 100) : 0;
       const openingBalancePaid = openingBal > 0 ? Math.max(0, Math.round((openingBal - openingBalanceRemaining) * 100) / 100) : 0;
       const openingBalanceStatus: 'CLEARED' | 'UNPAID' | 'NO_OPENING' = openingBal === 0 ? 'NO_OPENING' : openingBalanceRemaining < 0.99 ? 'CLEARED' : 'UNPAID';
-
-      const [creditRisk, collectionBehaviour] = await Promise.all([
-        calculateClientCreditRisk(id),
-        calculateCollectionBehaviour(id),
-      ]);
 
       return {
         client: {
