@@ -48,20 +48,18 @@ router.get('/', async (req: Request, res: Response) => {
       }),
       prisma.inventory.findMany({
         where: { ...(branchId ? { branchId } : {}) },
-        include: {
-          product: {
-            select: {
-              id: true,
-              name: true,
-              urduName: true,
-              emoji: true,
-              imageUrl: true,
-              category: true,
-              defaultUnit: true,
-              minStock: true,
-              availability: true,
-            },
-          },
+        select: {
+          id: true,
+          productId: true,
+          branchId: true,
+          qty: true,
+          reservedQty: true,
+          avgCost: true,
+          currentBuyPrice: true,
+          previousBuyPrice: true,
+          lastPurchaseDate: true,
+          lastPurchaseQty: true,
+          updatedAt: true,
         },
       }),
     ]);
@@ -74,7 +72,7 @@ router.get('/', async (req: Request, res: Response) => {
       if (inv) {
         return {
           ...inv,
-          product: inv.product ?? prod,
+          product: prod,
         };
       }
       return {
@@ -113,7 +111,7 @@ router.get('/', async (req: Request, res: Response) => {
       .filter(inv => !search || inv.product?.name.toLowerCase().includes(String(search).toLowerCase()) || inv.product?.urduName?.includes(String(search)))
       .map(inv => {
         const availableQty = Math.max(0, inv.qty - (inv.reservedQty ?? 0));
-        const effectiveMinStock = inv.minStock > 0 ? inv.minStock : (inv.product?.minStock ?? 0);
+        const effectiveMinStock = ((inv as any).minStock && (inv as any).minStock > 0) ? (inv as any).minStock : (inv.product?.minStock ?? 0);
         const stockStatus = inv.qty <= 0
           ? 'OUT_OF_STOCK'
           : inv.qty <= effectiveMinStock

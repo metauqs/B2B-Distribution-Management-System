@@ -305,9 +305,12 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
       }
     }
 
-    return res.status(404).send('Image not found');
+    // 100% Guaranteed SVG Fallback with immutable browser caching
+    const finalEmoji = product?.emoji || queryEmoji || getProductFallbackEmoji(productName || safeFilename);
+    return sendSvg(res, generateProductSvgFallback(finalEmoji));
   } catch (err) {
-    return res.status(404).send('Image not found');
+    const finalEmoji = queryEmoji || getProductFallbackEmoji(safeFilename);
+    return sendSvg(res, generateProductSvgFallback(finalEmoji));
   }
 }
 

@@ -33,13 +33,28 @@ async function performSingleFlightTokenRefresh(): Promise<string | null> {
   return activeRefreshPromise;
 }
 
+const inFlightGetRequests = new Map<string, Promise<Response>>();
+
 /**
  * Utility wrapper around fetch that automatically handles:
  * 1. Attaching JWT Authorization Bearer headers
- * 2. Silent token refresh with single-flight lock when access token expires (401 status)
- * 3. Timeout handling to prevent hanging requests
+ * 2. In-flight GET request deduplication (prevents duplicate simultaneous network requests)
+ * 3. Silent token refresh with single-flight lock when access token expires (401 status)
+ * 4. Timeout handling to prevent hanging requests
  */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const method = (init?.method || 'GET').toUpperCase();
+  const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+
+  // Deduplicate concurrent in-flight GET requests
+  if (method === 'GET' && !init?.body && !init?.signal) {
+    const existing = inFlightGetRequests.get(urlStr);
+    if (existing) {
+      const res = await existing;
+      return res.clone();
+    }
+  }
+
   const token = typeof window !== 'undefined' ? localStorage.getItem('sabzi_token') : null;
 
   const headers = new Headers(init?.headers || {});
@@ -47,7 +62,6 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const method = (init?.method || 'GET').toUpperCase();
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     if (!headers.has('Idempotency-Key') && !headers.has('idempotency-key')) {
       const key = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -68,26 +82,41 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     signal: init?.signal || controller.signal,
   };
 
-  try {
-    let response = await fetch(input, requestInit);
-    clearTimeout(timeoutId);
+  const executeFetch = async (): Promise<Response> => {
+    try {
+      let response = await fetch(input, requestInit);
+      clearTimeout(timeoutId);
 
-    // If request failed due to expired access token (401), attempt single-flight silent token refresh
-    if (response.status === 401 && typeof window !== 'undefined') {
-      const newAccessToken = await performSingleFlightTokenRefresh();
-      if (newAccessToken) {
-        // Retry original failed request with new access token
-        headers.set('Authorization', `Bearer ${newAccessToken}`);
-        response = await fetch(input, { ...requestInit, headers });
+      // If request failed due to expired access token (401), attempt single-flight silent token refresh
+      if (response.status === 401 && typeof window !== 'undefined') {
+        const newAccessToken = await performSingleFlightTokenRefresh();
+        if (newAccessToken) {
+          // Retry original failed request with new access token
+          headers.set('Authorization', `Bearer ${newAccessToken}`);
+          response = await fetch(input, { ...requestInit, headers });
+        }
+      }
+
+      return response;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Server connection timed out. Please try again.');
+      }
+      throw error;
+    } finally {
+      if (method === 'GET') {
+        inFlightGetRequests.delete(urlStr);
       }
     }
+  };
 
-    return response;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Server connection timed out. Please try again.');
-    }
-    throw error;
+  if (method === 'GET' && !init?.body && !init?.signal) {
+    const fetchPromise = executeFetch();
+    inFlightGetRequests.set(urlStr, fetchPromise);
+    const res = await fetchPromise;
+    return res.clone();
   }
+
+  return await executeFetch();
 }

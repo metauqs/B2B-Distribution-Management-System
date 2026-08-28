@@ -827,26 +827,49 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
       } : {}),
     };
 
-    const sales = await prisma.sale.findMany({
-      where,
-      include: {
-        client: { select: { id: true, clientId: true, name: true, type: true } },
-        items: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                category: true,
-                inventory: { select: { avgCost: true, currentBuyPrice: true } },
+    const [sales, allInventories] = await Promise.all([
+      prisma.sale.findMany({
+        where,
+        select: {
+          id: true,
+          invoiceNo: true,
+          date: true,
+          subtotal: true,
+          discount: true,
+          deliveryCharge: true,
+          status: true,
+          paymentMode: true,
+          client: { select: { id: true, clientId: true, name: true, type: true } },
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              itemName: true,
+              qty: true,
+              unit: true,
+              rate: true,
+              amount: true,
+              costPrice: true,
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: { date: 'desc' },
-      take: 500,
-    });
+        orderBy: { date: 'desc' },
+        take: 500,
+      }),
+      prisma.inventory.findMany({
+        where: { ...(branchId ? { branchId } : {}) },
+        select: { productId: true, avgCost: true, currentBuyPrice: true },
+      }),
+    ]);
+
+    const invMap = new Map(allInventories.map(inv => [inv.productId, inv]));
 
     const rows = sales.map(s => {
       const grossSales = Number(s.subtotal);
@@ -856,7 +879,7 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
 
       let invoiceCogs = 0;
       const itemBreakdown = s.items.map(item => {
-        const inv = item.product?.inventory?.[0];
+        const inv = item.productId ? invMap.get(item.productId) : null;
         const fallbackCost = (inv?.avgCost && inv.avgCost > 0) ? inv.avgCost : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : (item.rate * 0.75));
         const costBasis = ((item as any).costPrice > 0) ? (item as any).costPrice : fallbackCost;
         const itemCogs = item.qty * costBasis;
@@ -958,48 +981,48 @@ router.get('/sales/customers', async (req: Request, res: Response) => {
     const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
     const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
 
-    const sales = await prisma.sale.findMany({
-      where: {
-        ...(branchId ? { branchId } : {}),
-        status: { not: 'CANCELLED' },
-        deletedAt: null,
-        date: { gte: fromDate, lte: toDate },
-      },
-      select: {
-        id: true,
-        clientId: true,
-        subtotal: true,
-        discount: true,
-        deliveryCharge: true,
-        client: {
-          select: {
-            id: true,
-            clientId: true,
-            name: true,
-            type: true,
-            rating: true,
-            currentBalance: true,
-          },
+    const [sales, allInventories] = await Promise.all([
+      prisma.sale.findMany({
+        where: {
+          ...(branchId ? { branchId } : {}),
+          status: { not: 'CANCELLED' },
+          deletedAt: null,
+          date: { gte: fromDate, lte: toDate },
         },
-        items: {
-          select: {
-            qty: true,
-            rate: true,
-            costPrice: true,
-            product: {
-              select: {
-                inventory: {
-                  where: { ...(branchId ? { branchId } : {}) },
-                  select: { avgCost: true, currentBuyPrice: true },
-                  take: 1,
-                },
-              },
+        select: {
+          id: true,
+          clientId: true,
+          subtotal: true,
+          discount: true,
+          deliveryCharge: true,
+          client: {
+            select: {
+              id: true,
+              clientId: true,
+              name: true,
+              type: true,
+              rating: true,
+              currentBalance: true,
+            },
+          },
+          items: {
+            select: {
+              productId: true,
+              qty: true,
+              rate: true,
+              costPrice: true,
             },
           },
         },
-      },
-      take: 2000,
-    });
+        take: 2000,
+      }),
+      prisma.inventory.findMany({
+        where: { ...(branchId ? { branchId } : {}) },
+        select: { productId: true, avgCost: true, currentBuyPrice: true },
+      }),
+    ]);
+
+    const invMap = new Map(allInventories.map(inv => [inv.productId, inv]));
 
     const clientMap: Record<string, {
       clientId: string;
@@ -1039,7 +1062,7 @@ router.get('/sales/customers', async (req: Request, res: Response) => {
       clientMap[cid].deliveryCharges += Number(sale.deliveryCharge);
 
       for (const item of sale.items) {
-        const inv = item.product?.inventory?.[0];
+        const inv = item.productId ? invMap.get(item.productId) : null;
         const fallbackCost = (inv?.avgCost && inv.avgCost > 0)
           ? inv.avgCost
           : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : item.rate * 0.75);
