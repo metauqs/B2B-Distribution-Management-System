@@ -10,9 +10,11 @@ const router = Router();
 // ── In-Memory cache for purchases (20s TTL) ───────────────────────────────
 const PURCHASE_CACHE = new Map<string, { ts: number; data: any }>();
 const PURCHASE_CACHE_TTL = 20000;
+const PURCHASE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearPurchaseCache(): void {
   PURCHASE_CACHE.clear();
+  PURCHASE_IN_FLIGHT.clear();
 }
 
 // GET /api/purchases
@@ -29,42 +31,56 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cached.data });
     }
 
-    const purchases = await prisma.purchase.findMany({
-      where: { ...(branchId ? { branchId } : {}), deletedAt: null },
-      select: {
-        id: true,
-        date: true,
-        subtotal: true,
-        total: true,
-        paid: true,
-        balance: true,
-        status: true,
-        transportCost: true,
-        notes: true,
-        supplierId: true,
-        createdAt: true,
-        supplier: { select: { id: true, name: true } },
-        items: {
-          select: {
-            id: true,
-            productId: true,
-            itemName: true,
-            unit: true,
-            qty: true,
-            rate: true,
-            amount: true,
-            product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } },
+    if (PURCHASE_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await PURCHASE_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
+
+    const fetchPurchasesPromise = (async () => {
+      return await prisma.purchase.findMany({
+        where: { ...(branchId ? { branchId } : {}), deletedAt: null },
+        select: {
+          id: true,
+          date: true,
+          subtotal: true,
+          total: true,
+          paid: true,
+          balance: true,
+          status: true,
+          transportCost: true,
+          notes: true,
+          supplierId: true,
+          createdAt: true,
+          supplier: { select: { id: true, name: true } },
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              itemName: true,
+              unit: true,
+              qty: true,
+              rate: true,
+              amount: true,
+              product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } },
+            },
           },
         },
-      },
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      take: limit,
-    });
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        take: limit,
+      });
+    })();
 
-    if (PURCHASE_CACHE.size > 50) PURCHASE_CACHE.clear();
-    PURCHASE_CACHE.set(cacheKey, { ts: Date.now(), data: purchases });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json({ success: true, data: purchases });
+    PURCHASE_IN_FLIGHT.set(cacheKey, fetchPurchasesPromise);
+    try {
+      const purchases = await fetchPurchasesPromise;
+      if (PURCHASE_CACHE.size > 50) PURCHASE_CACHE.clear();
+      PURCHASE_CACHE.set(cacheKey, { ts: Date.now(), data: purchases });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: purchases });
+    } finally {
+      PURCHASE_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error in GET /api/purchases:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load purchases', data: [] });

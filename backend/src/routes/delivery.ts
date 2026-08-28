@@ -42,6 +42,50 @@ export function clearDeliveryCache(): void {
   DELIVERY_IN_FLIGHT.clear();
 }
 
+let isAutoDispatchRunning = false;
+
+async function checkAndAutoDispatch(branchId?: string, dayStart?: Date, dayEnd?: Date) {
+  if (isAutoDispatchRunning) return;
+  isAutoDispatchRunning = true;
+  try {
+    const pendingDeliveries = await prisma.delivery.findMany({
+      where: {
+        ...(branchId ? { branchId } : {}),
+        status: 'PENDING',
+        date: dayStart && dayEnd ? { gte: dayStart, lte: dayEnd } : { gte: new Date(Date.now() - 3 * 86400000) },
+      },
+      select: { id: true, date: true, scheduledTime: true, saleId: true },
+    });
+
+    const toDispatch = pendingDeliveries
+      .filter(d => isDeliveryDue(d.date, d.scheduledTime))
+      .map(d => d.id);
+
+    if (toDispatch.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        await tx.delivery.updateMany({
+          where: { id: { in: toDispatch } },
+          data: { status: 'OUT' },
+        });
+
+        const salesToUpdate = pendingDeliveries
+          .filter(d => toDispatch.includes(d.id))
+          .map(d => d.saleId);
+
+        await tx.sale.updateMany({
+          where: { id: { in: salesToUpdate } },
+          data: { deliveryStatus: 'OUT' },
+        });
+      }, { maxWait: 10000, timeout: 30000 });
+      clearDeliveryCache();
+    }
+  } catch (err) {
+    console.error('[AUTO DISPATCH ERROR]', err);
+  } finally {
+    isAutoDispatchRunning = false;
+  }
+}
+
 // GET /api/delivery
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -73,38 +117,12 @@ router.get('/', async (req: Request, res: Response) => {
     const dayStart = filterRange?.start;
     const dayEnd = filterRange?.end;
 
+    // Trigger non-blocking auto-dispatch in background without stalling the read response
+    setImmediate(() => {
+      checkAndAutoDispatch(branchId, dayStart, dayEnd).catch(() => {});
+    });
+
     const fetchDeliveryPromise = (async () => {
-      // ── Auto-Dispatch Logic for PENDING deliveries ──
-      const pendingDeliveries = await prisma.delivery.findMany({
-        where: {
-          ...(branchId ? { branchId } : {}),
-          status: 'PENDING',
-          date: dayStart && dayEnd ? { gte: dayStart, lte: dayEnd } : { gte: new Date(Date.now() - 3 * 86400000) },
-        },
-      });
-
-      const toDispatch = pendingDeliveries
-        .filter(d => isDeliveryDue(d.date, d.scheduledTime))
-        .map(d => d.id);
-
-      if (toDispatch.length > 0) {
-        await prisma.$transaction(async (tx) => {
-          await tx.delivery.updateMany({
-            where: { id: { in: toDispatch } },
-            data: { status: 'OUT' },
-          });
-
-          const salesToUpdate = pendingDeliveries
-            .filter(d => toDispatch.includes(d.id))
-            .map(d => d.saleId);
-
-          await tx.sale.updateMany({
-            where: { id: { in: salesToUpdate } },
-            data: { deliveryStatus: 'OUT' },
-          });
-        }, { maxWait: 15000, timeout: 120000 });
-      }
-
       const deliveries = await prisma.delivery.findMany({
         where: {
           ...(branchId ? { branchId } : {}),

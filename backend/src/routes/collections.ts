@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBalance, deriveInvoiceStatus, reconcileClientBalancesAndAllocations, getAuthoritativeClientOutstanding } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
-import { getBusinessDateRange, getBusinessDateString, formatPKTDateTime, parseInputDateToUtc } from '../lib/businessDate';
+import { getBusinessDateRange, getBusinessDateString, getCurrentBusinessDateRange, formatPKTDateTime, parseInputDateToUtc } from '../lib/businessDate';
 import { postCollectionLedger } from '../lib/financialLedgerService';
 
 const router = Router();
@@ -22,15 +22,23 @@ router.get('/daily-history', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { date, employeeId, method, clientId, search } = req.query;
 
-    const cacheKey = `daily_${branchId || 'all'}_${date || 'all'}_${employeeId || 'all'}_${method || 'all'}_${clientId || 'all'}_${search || 'all'}`;
+    const normDate = date ? getBusinessDateString(getBusinessDateRange(String(date)).start) : getBusinessDateString(getCurrentBusinessDateRange().start);
+    const cacheKey = `daily_${branchId || 'all'}_${normDate}_${employeeId || 'all'}_${method || 'all'}_${clientId || 'all'}_${search ? String(search).trim().toLowerCase() : 'all'}`;
     const cached = COLLECTIONS_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < COLLECTIONS_CACHE_TTL) {
       res.setHeader('X-Cache', 'HIT');
       return res.json(cached.data);
     }
 
-    const targetDateStr = date ? String(date) : undefined;
-    const range = getBusinessDateRange(targetDateStr);
+    if (COLLECTIONS_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await COLLECTIONS_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json(coalesced);
+    }
+
+    const fetchDailyPromise = (async () => {
+      const targetDateStr = date ? String(date) : undefined;
+      const range = getBusinessDateRange(targetDateStr);
 
     const where: any = {
       deletedAt: null,
@@ -156,7 +164,7 @@ router.get('/daily-history', async (req: Request, res: Response) => {
       };
     });
 
-    const responsePayload = {
+    return {
       success: true,
       businessDate: range.businessDateStr,
       summary: {
@@ -172,11 +180,18 @@ router.get('/daily-history', async (req: Request, res: Response) => {
       },
       transactions: formattedTransactions,
     };
+    })();
 
-    if (COLLECTIONS_CACHE.size > 50) COLLECTIONS_CACHE.clear();
-    COLLECTIONS_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
-    res.setHeader('X-Cache', 'MISS');
-    return res.json(responsePayload);
+    COLLECTIONS_IN_FLIGHT.set(cacheKey, fetchDailyPromise);
+    try {
+      const responsePayload = await fetchDailyPromise;
+      if (COLLECTIONS_CACHE.size > 50) COLLECTIONS_CACHE.clear();
+      COLLECTIONS_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json(responsePayload);
+    } finally {
+      COLLECTIONS_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error in GET /api/collections/daily-history:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load daily payment history' });
@@ -190,7 +205,9 @@ router.get('/', async (req: Request, res: Response) => {
     const { clientId, employeeId, method, search, from, to, limit: limitQuery } = req.query;
     const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 1000) : (clientId || from || to ? 200 : 100);
 
-    const cacheKey = `list_${branchId || 'all'}_${clientId || 'all'}_${employeeId || 'all'}_${method || 'all'}_${search || 'all'}_${from || 'all'}_${to || 'all'}_${limit}`;
+    const normFrom = from ? getBusinessDateString(getBusinessDateRange(String(from)).start) : 'all';
+    const normTo = to ? getBusinessDateString(getBusinessDateRange(String(to)).end) : 'all';
+    const cacheKey = `list_${branchId || 'all'}_${clientId || 'all'}_${employeeId || 'all'}_${method || 'all'}_${search ? String(search).trim().toLowerCase() : 'all'}_${normFrom}_${normTo}_${limit}`;
     const cached = COLLECTIONS_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < COLLECTIONS_CACHE_TTL) {
       res.setHeader('X-Cache', 'HIT');

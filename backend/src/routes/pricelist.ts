@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { writeAuditLog, getValidUserId } from '../lib/business';
-import { getCurrentBusinessDateRange, getBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
+import { getCurrentBusinessDateRange, getBusinessDateRange, getBusinessDateString, parseInputDateToUtc } from '../lib/businessDate';
 
 const router = Router();
 
@@ -467,89 +467,102 @@ router.get('/', async (req: Request, res: Response) => {
     const limit = Math.min(parseInt(String(limitQuery ?? '30')), 90);
 
     if (dateStr) {
-      const cacheKey = `${branchId || 'all'}_${dateStr}`;
+      const { start: day, end: dayEnd } = getBusinessDateRange(String(dateStr));
+      const normDate = getBusinessDateString(day);
+      const cacheKey = `${branchId || 'all'}_${normDate}`;
       const cached = PRICELIST_CACHE.get(cacheKey);
       if (cached && (Date.now() - cached.ts) < PRICELIST_CACHE_TTL) {
         res.setHeader('X-Cache', 'HIT');
         return res.json(cached.data);
       }
 
-      const { start: day, end: dayEnd } = getBusinessDateRange(String(dateStr));
-
-      const [list, inventories, activeProducts] = await Promise.all([
-        prisma.priceList.findFirst({
-          where: {
-            ...(branchId ? { branchId } : {}),
-            date: { gte: day, lte: dayEnd },
-            isActive: true,
-          },
-          select: {
-            id: true,
-            date: true,
-            branchId: true,
-            isActive: true,
-            notes: true,
-            createdAt: true,
-            updatedAt: true,
-            createdBy: { select: { id: true, name: true } },
-            items: {
-              select: {
-                id: true,
-                priceListId: true,
-                productId: true,
-                itemName: true,
-                unit: true,
-                buyRate: true,
-                sellRate: true,
-                notes: true,
-                product: {
-                  select: { id: true, name: true, urduName: true, category: true, availability: true, emoji: true, imageUrl: true }
-                }
-              },
-              orderBy: { itemName: 'asc' }
-            },
-          },
-        }),
-        branchId ? prisma.inventory.findMany({
-          where: { branchId },
-          select: {
-            productId: true,
-            qty: true,
-            reservedQty: true,
-            avgCost: true,
-            currentBuyPrice: true,
-            previousBuyPrice: true,
-          }
-        }) : Promise.resolve([]),
-        getCachedActiveProducts(),
-      ]);
-
-      const inventoryMap = new Map<string, any>();
-      inventories.forEach(inv => inventoryMap.set(inv.productId, inv));
-
-      const synchronizedItems = buildSynchronizedPriceListItems(list, activeProducts, inventoryMap);
-
-      let responsePayload;
-      if (list) {
-        responsePayload = { success: true, isDraft: false, data: { ...list, items: synchronizedItems } };
-      } else {
-        responsePayload = {
-          success: true,
-          isDraft: true,
-          data: {
-            id: 'draft',
-            date: day.toISOString(),
-            isActive: true,
-            notes: 'Draft based on central inventory catalog',
-            items: synchronizedItems,
-          },
-        };
+      if (PRICELIST_IN_FLIGHT.has(cacheKey)) {
+        const coalesced = await PRICELIST_IN_FLIGHT.get(cacheKey);
+        res.setHeader('X-Cache', 'COALESCED');
+        return res.json(coalesced);
       }
 
-      if (PRICELIST_CACHE.size > 50) PRICELIST_CACHE.clear();
-      PRICELIST_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
-      res.setHeader('X-Cache', 'MISS');
-      return res.json(responsePayload);
+      const fetchDateListPromise = (async () => {
+        const [list, inventories, activeProducts] = await Promise.all([
+          prisma.priceList.findFirst({
+            where: {
+              ...(branchId ? { branchId } : {}),
+              date: { gte: day, lte: dayEnd },
+              isActive: true,
+            },
+            select: {
+              id: true,
+              date: true,
+              branchId: true,
+              isActive: true,
+              notes: true,
+              createdAt: true,
+              updatedAt: true,
+              createdBy: { select: { id: true, name: true } },
+              items: {
+                select: {
+                  id: true,
+                  priceListId: true,
+                  productId: true,
+                  itemName: true,
+                  unit: true,
+                  buyRate: true,
+                  sellRate: true,
+                  notes: true,
+                  product: {
+                    select: { id: true, name: true, urduName: true, category: true, availability: true, emoji: true, imageUrl: true }
+                  }
+                },
+                orderBy: { itemName: 'asc' }
+              },
+            },
+          }),
+          branchId ? prisma.inventory.findMany({
+            where: { branchId },
+            select: {
+              productId: true,
+              qty: true,
+              reservedQty: true,
+              avgCost: true,
+              currentBuyPrice: true,
+              previousBuyPrice: true,
+            }
+          }) : Promise.resolve([]),
+          getCachedActiveProducts(),
+        ]);
+
+        const inventoryMap = new Map<string, any>();
+        inventories.forEach(inv => inventoryMap.set(inv.productId, inv));
+
+        const synchronizedItems = buildSynchronizedPriceListItems(list, activeProducts, inventoryMap);
+
+        if (list) {
+          return { success: true, isDraft: false, data: { ...list, items: synchronizedItems } };
+        } else {
+          return {
+            success: true,
+            isDraft: true,
+            data: {
+              id: 'draft',
+              date: day.toISOString(),
+              isActive: true,
+              notes: 'Draft based on central inventory catalog',
+              items: synchronizedItems,
+            },
+          };
+        }
+      })();
+
+      PRICELIST_IN_FLIGHT.set(cacheKey, fetchDateListPromise);
+      try {
+        const responsePayload = await fetchDateListPromise;
+        if (PRICELIST_CACHE.size > 50) PRICELIST_CACHE.clear();
+        PRICELIST_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+        res.setHeader('X-Cache', 'MISS');
+        return res.json(responsePayload);
+      } finally {
+        PRICELIST_IN_FLIGHT.delete(cacheKey);
+      }
     }
 
     const listCacheKey = `lists_${branchId || 'all'}_${limit}`;

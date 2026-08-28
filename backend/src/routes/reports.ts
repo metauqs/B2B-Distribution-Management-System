@@ -17,9 +17,31 @@ const REPORT_CACHE = new Map<string, { ts: number; data: any }>();
 const REPORT_CACHE_TTL = 30000;
 const REPORT_IN_FLIGHT = new Map<string, Promise<any>>();
 
+// 30-day rolling aggregate cache (5-minute TTL) to avoid repeated heavy scans
+const L30_METRICS_CACHE = new Map<string, { ts: number; data: { l30Sales: any; l30Purchases: any; l30Expenses: any } }>();
+const L30_METRICS_CACHE_TTL = 300000;
+
 export function clearReportCache(): void {
   DASHBOARD_CACHE.clear();
   REPORT_CACHE.clear();
+  L30_METRICS_CACHE.clear();
+}
+
+async function getL30Metrics(branchId?: string, bWhere: any = {}) {
+  const cacheKey = branchId || 'all';
+  const cached = L30_METRICS_CACHE.get(cacheKey);
+  if (cached && (Date.now() - cached.ts) < L30_METRICS_CACHE_TTL) {
+    return cached.data;
+  }
+  const l30Start = new Date(Date.now() - 30 * 86400000);
+  const [l30Sales, l30Purchases, l30Expenses] = await Promise.all([
+    prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, status: { not: 'CANCELLED' }, deletedAt: null }, _sum: { total: true } }),
+    prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
+    prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
+  ]);
+  const data = { l30Sales, l30Purchases, l30Expenses };
+  L30_METRICS_CACHE.set(cacheKey, { ts: Date.now(), data });
+  return data;
 }
 
 /**
@@ -30,74 +52,53 @@ async function getHistoricalReceivables(branchId?: string, targetEnd?: Date, isT
   const bWhere = branchId ? { branchId, deletedAt: null } : { deletedAt: null };
 
   if (isToday || !targetEnd) {
-    const [agg, clientsWithDuesCount] = await Promise.all([
-      prisma.client.aggregate({
-        where: { ...bWhere, currentBalance: { gt: 0 } },
-        _sum: { currentBalance: true },
-      }),
-      prisma.client.count({
-        where: { ...bWhere, currentBalance: { gt: 0 } },
-      }),
-    ]);
+    const agg = await prisma.client.aggregate({
+      where: { ...bWhere, currentBalance: { gt: 0 } },
+      _sum: { currentBalance: true },
+      _count: { id: true },
+    });
     return {
       receivables: Math.round((agg._sum.currentBalance ?? 0) * 100) / 100,
-      clientCount: clientsWithDuesCount,
+      clientCount: agg._count.id ?? 0,
     };
   }
 
-  // Historical calculation as of targetEnd
-  const [clients, ledgerEntries] = await Promise.all([
+  // Historical calculation as of targetEnd using grouped aggregation
+  const [clients, ledgerAggs] = await Promise.all([
     prisma.client.findMany({
       where: bWhere,
       select: { id: true, openingBalance: true, createdAt: true },
     }),
-    prisma.customerLedger.findMany({
+    prisma.customerLedger.groupBy({
+      by: ['clientId'],
       where: {
         ...(branchId ? { branchId } : {}),
         date: { lte: targetEnd },
       },
-      select: {
-        clientId: true,
-        type: true,
+      _sum: {
         debit: true,
         credit: true,
-        description: true,
-        date: true,
-        createdAt: true,
       },
-      orderBy: [
-        { date: 'asc' },
-        { createdAt: 'asc' },
-      ],
     }),
   ]);
 
-  const clientLedgerMap = new Map<string, typeof ledgerEntries>();
-  for (const entry of ledgerEntries) {
-    let list = clientLedgerMap.get(entry.clientId);
-    if (!list) {
-      list = [];
-      clientLedgerMap.set(entry.clientId, list);
-    }
-    list.push(entry);
+  const ledgerMap = new Map<string, { debit: number; credit: number }>();
+  for (const row of ledgerAggs) {
+    ledgerMap.set(row.clientId, {
+      debit: row._sum.debit ?? 0,
+      credit: row._sum.credit ?? 0,
+    });
   }
 
   let totalReceivables = 0;
   let clientsWithDuesCount = 0;
 
   for (const client of clients) {
-    const entries = clientLedgerMap.get(client.id);
+    const sums = ledgerMap.get(client.id);
     let clientBal = 0;
-
-    if (entries && entries.length > 0) {
-      const first = entries[0];
-      const isOpening = first.type === 'ADJUSTMENT' && (first.description?.toLowerCase().includes('opening balance') ?? false);
-      let running = isOpening ? 0 : (client.openingBalance || 0);
-
-      for (const e of entries) {
-        running += (e.debit || 0) - (e.credit || 0);
-      }
-      clientBal = Math.max(0, Math.round(running * 100) / 100);
+    if (sums) {
+      const net = (sums.debit || 0) - (sums.credit || 0);
+      clientBal = Math.max(0, Math.round(((client.openingBalance || 0) + net) * 100) / 100);
     } else {
       if (targetEnd && client.createdAt <= targetEnd) {
         clientBal = Math.max(0, client.openingBalance || 0);
@@ -168,9 +169,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
         deliveryStatusAgg,
         inventoryItems,
         atRiskClients,
-        l30Sales,
-        l30Purchases,
-        l30Expenses,
+        l30Data,
         attentionRaw,
       ] = await Promise.all([
         prisma.sale.findMany({
@@ -211,11 +210,10 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           select: { qty: true, avgCost: true, currentBuyPrice: true, product: { select: { minStock: true } } },
         }),
         prisma.client.count({ where: { ...bWhere, rating: { in: ['RED', 'ORANGE'] }, deletedAt: null } }),
-        prisma.sale.aggregate({ where: { ...bWhere, date: { gte: l30Start }, status: { not: 'CANCELLED' }, deletedAt: null }, _sum: { total: true } }),
-        prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
-        prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
+        getL30Metrics(branchId, bWhere),
         prisma.client.findMany({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, select: { id: true, name: true, currentBalance: true }, orderBy: { currentBalance: 'desc' }, take: 5 }),
       ]);
+      const { l30Sales, l30Purchases, l30Expenses } = l30Data;
       const dbDuration = Date.now() - dbStart;
 
       const completedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'DELIVERED')?._count ?? 0;

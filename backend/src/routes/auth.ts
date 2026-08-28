@@ -20,6 +20,7 @@ function signAuthTokens(payload: { sub: string; email: string; role: string; bra
 const ME_CACHE = new Map<string, { ts: number; user: any }>();
 const ME_CACHE_TTL = 60000;
 const AUTH_ME_IN_FLIGHT = new Map<string, Promise<any>>();
+const AUTH_REFRESH_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function invalidateMeCache(userId?: string) {
   if (userId) ME_CACHE.delete(userId);
@@ -237,53 +238,74 @@ router.post('/refresh', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: 'Invalid Refresh Token' });
     }
 
-    let user: any = null;
-    const cached = ME_CACHE.get(decoded.sub);
-    if (cached && (Date.now() - cached.ts) < ME_CACHE_TTL) {
-      user = cached.user;
-    } else {
-      user = await prisma.user.findUnique({
-        where: { id: decoded.sub, deletedAt: null },
-        select: { id: true, email: true, name: true, role: true, branchId: true, isActive: true },
-      });
-      if (user && user.isActive) {
-        ME_CACHE.set(user.id, { ts: Date.now(), user });
+    const userId = decoded.sub;
+    if (AUTH_REFRESH_IN_FLIGHT.has(userId)) {
+      const coalesced = await AUTH_REFRESH_IN_FLIGHT.get(userId);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json(coalesced);
+    }
+
+    const performRefreshPromise = (async () => {
+      let user: any = null;
+      const cached = ME_CACHE.get(userId);
+      if (cached && (Date.now() - cached.ts) < ME_CACHE_TTL) {
+        user = cached.user;
+      } else {
+        user = await prisma.user.findUnique({
+          where: { id: userId, deletedAt: null },
+          select: { id: true, email: true, name: true, role: true, branchId: true, isActive: true },
+        });
+        if (user && user.isActive) {
+          ME_CACHE.set(user.id, { ts: Date.now(), user });
+        }
       }
+
+      if (!user || !user.isActive) {
+        return null;
+      }
+
+      const newTokens = signAuthTokens({
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        branchId: user.branchId,
+        employeeId: decoded.employeeId,
+      });
+
+      return {
+        success: true,
+        accessToken: newTokens.accessToken,
+        refreshToken: newTokens.refreshToken,
+      };
+    })();
+
+    AUTH_REFRESH_IN_FLIGHT.set(userId, performRefreshPromise);
+    try {
+      const result = await performRefreshPromise;
+      if (!result) {
+        return res.status(401).json({ success: false, error: 'User disabled or not found' });
+      }
+
+      res.cookie('sabzi_token', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 60 * 1000,
+        path: '/',
+      });
+
+      res.cookie('sabzi_refresh_token', result.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+      });
+
+      return res.json(result);
+    } finally {
+      AUTH_REFRESH_IN_FLIGHT.delete(userId);
     }
-
-    if (!user || !user.isActive) {
-      return res.status(401).json({ success: false, error: 'User disabled or not found' });
-    }
-
-    const newTokens = signAuthTokens({
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      branchId: user.branchId,
-      employeeId: decoded.employeeId,
-    });
-
-    res.cookie('sabzi_token', newTokens.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 30 * 60 * 1000,
-      path: '/',
-    });
-
-    res.cookie('sabzi_refresh_token', newTokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
-
-    return res.json({
-      success: true,
-      accessToken: newTokens.accessToken,
-      refreshToken: newTokens.refreshToken,
-    });
   } catch {
     return res.status(401).json({ success: false, error: 'Invalid or expired Refresh Token' });
   }
@@ -312,7 +334,18 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
     const fetchMePromise = (async () => {
       const user = await prisma.user.findUnique({
         where: { id: userId, deletedAt: null },
-        include: { branch: { select: { id: true, name: true } } },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          phone: true,
+          branchId: true,
+          isActive: true,
+          lastLoginAt: true,
+          createdAt: true,
+          branch: { select: { id: true, name: true } },
+        },
       });
 
       if (!user || !user.isActive) {
@@ -320,8 +353,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
         return null;
       }
 
-      const { password: _pwd, ...safeUser } = user;
-      return safeUser;
+      return user;
     })();
 
     AUTH_ME_IN_FLIGHT.set(userId, fetchMePromise);

@@ -257,18 +257,25 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
       });
     }
 
-    if (product && product.imageUrl && product.imageUrl.startsWith('data:image/')) {
-      const match = product.imageUrl.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/);
-      if (match) {
-        const mimeType = match[1];
-        const buffer = Buffer.from(match[2], 'base64');
-        res.setHeader('Content-Type', mimeType);
+    if (product && product.imageUrl) {
+      if (product.imageUrl.startsWith('http://') || product.imageUrl.startsWith('https://')) {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        if (typeof (res as any).send === 'function') {
-          return (res as any).send(buffer);
+        return res.redirect(301, product.imageUrl);
+      }
+      if (product.imageUrl.startsWith('data:image/')) {
+        const match = product.imageUrl.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/);
+        if (match) {
+          const mimeType = match[1];
+          const buffer = Buffer.from(match[2], 'base64');
+          res.setHeader('Content-Type', mimeType);
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          if (typeof (res as any).send === 'function') {
+            return (res as any).send(buffer);
+          }
+          return res.end(buffer);
         }
-        return res.end(buffer);
       }
     }
 

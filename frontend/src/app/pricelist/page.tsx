@@ -745,7 +745,9 @@ export default function PriceListPage() {
             console.error('Failed to upload image for new product:', err);
           }
         }
-        invalidateCache();
+        invalidateCache('/api/products');
+        invalidateCache('/api/pricelist');
+        invalidateCache('/api/inventory');
         window.dispatchEvent(new Event('app-revalidate'));
         showToast(`✅ ${newProdName} added to master catalog`);
         setNewProdName('');
@@ -772,7 +774,8 @@ export default function PriceListPage() {
       });
       const data = await res.json();
       if (data.success) {
-        invalidateCache();
+        invalidateCache('/api/products');
+        invalidateCache('/api/pricelist');
         window.dispatchEvent(new Event('app-revalidate'));
         showToast('✅ Status updated');
         await loadProducts(true);
@@ -849,7 +852,9 @@ export default function PriceListPage() {
       });
       const data = await res.json();
       if (data.success) {
-        invalidateCache();
+        invalidateCache('/api/products');
+        invalidateCache('/api/pricelist');
+        invalidateCache('/api/inventory');
         window.dispatchEvent(new Event('app-revalidate'));
         showToast(`✅ Updated "${editName.trim()}" successfully`);
         setEditingProduct(null);
