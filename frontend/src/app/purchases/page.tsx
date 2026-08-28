@@ -7,7 +7,7 @@ import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
 import { SkeletonTable } from '@/components/ui/Skeleton';
 import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
-import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPrintWindow, writeAndPrint } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
@@ -311,44 +311,7 @@ export default function PurchasesPage() {
       brand,
       window.location.origin
     );
-    writeAndPrint(w, html, `Purchase_${p.id.slice(-6)}.pdf`);
-  };
-
-  const handleDownloadClick = async (p: Purchase) => {
-    const w = openDownloadWindow();
-    if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfigWithLogo();
-    const html = generatePurchaseHTML(
-      {
-        voucherNo: p.id.slice(-6).toUpperCase(),
-        date: p.date,
-        supplierName: p.supplier?.name ?? 'Unknown Supplier',
-        supplierId: p.supplierId,
-        items: (p.items || []).map(it => {
-          const master = products.find(prod => prod.id === it.productId || prod.name.toLowerCase() === it.itemName.toLowerCase());
-          return {
-            itemName: it.itemName,
-            qty: Number(it.qty),
-            unit: it.unit,
-            rate: Number(it.rate),
-            amount: Number(it.amount),
-            urduName: (it as any).product?.urduName || master?.urduName || (it as any).urduName || '',
-            imageUrl: (it as any).product?.imageUrl || master?.imageUrl || (it as any).imageUrl || null,
-            emoji: (it as any).product?.emoji || master?.emoji || (it as any).emoji || null,
-            productId: it.productId || master?.id || null,
-          };
-        }),
-        subtotal: p.subtotal,
-        transportCost: p.transportCost,
-        total: p.total,
-        paid: p.paid,
-        balance: p.balance,
-        notes: p.notes
-      },
-      brand,
-      window.location.origin
-    );
-    writeAndDownload(w, html, `Purchase_${p.id.slice(-6)}.pdf`);
+    writeAndPrint(w, html, `Purchase Voucher #${p.id.slice(-6).toUpperCase()}`);
   };
 
   const handleCancelForm = () => {
@@ -1095,7 +1058,6 @@ export default function PurchasesPage() {
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="va-btn secondary small" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => handleEditClick(p)}>Edit</button>
                           <button className="va-btn secondary small" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => handlePrintClick(p)}>Print</button>
-                          <button className="va-btn secondary small" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => handleDownloadClick(p)}>💾 Download PDF</button>
                         </div>
                       </td>
                     </tr>
@@ -1125,9 +1087,8 @@ export default function PurchasesPage() {
                   headerBadge={fmtDate(p.date)}
                   footer={
                     <div style={{ display: 'flex', gap: 8, width: '100%', flexWrap: 'wrap' }}>
-                      <button className="va-btn secondary small" style={{ flex: '1 1 30%', fontWeight: 700 }} onClick={() => handleEditClick(p)}>✏️ Edit</button>
-                      <button className="va-btn small" style={{ flex: '1 1 30%', fontWeight: 700 }} onClick={() => handlePrintClick(p)}>🖨️ Print</button>
-                      <button className="va-btn secondary small" style={{ flex: '1 1 30%', fontWeight: 700 }} onClick={() => handleDownloadClick(p)}>💾 PDF</button>
+                      <button className="va-btn secondary small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => handleEditClick(p)}>✏️ Edit</button>
+                      <button className="va-btn small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => handlePrintClick(p)}>🖨️ Print</button>
                     </div>
                   }
                 >

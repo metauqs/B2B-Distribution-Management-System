@@ -10,7 +10,7 @@ import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, 
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { ProductAutocomplete } from '@/components/ui/ProductAutocomplete';
 import { ProductVisual } from '@/components/ui/ProductVisual';
-import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
 import dynamic from 'next/dynamic';
@@ -934,61 +934,6 @@ export default function SalesPage() {
     }
   };
 
-  // ── Download Invoice as PDF ───────────────────────────────────────────────────────
-  const downloadInvoice = async (s: Sale) => {
-    // Open window synchronously first — avoids browser popup blocker
-    const w = openPrintWindow();
-    if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const [brand, liveCatalog] = await Promise.all([
-      loadBrandConfigWithLogo(),
-      getLiveCatalogProducts(),
-    ]);
-    const html = generateInvoiceHTML(
-      {
-        invoiceNo:           s.invoiceNo,
-        date:                s.date,
-        paymentMode:         s.paymentMode,
-        status:              s.status,
-        clientName:          s.client?.name ?? '—',
-        clientId:            s.client?.clientId,
-        clientPhone:         s.client?.phone,
-        clientWhatsapp:      s.client?.whatsapp,
-        clientType:          s.client?.type,
-        clientAddress:       s.client?.address,
-        deliveryLocation:    s.client?.deliveryLocation,
-        employeeName:        s.employee?.name,
-        employeePhone:       s.employee?.phone,
-        deliveryDate:        s.deliveryDate,
-        deliveryTime:        s.deliveryTime,
-        items: s.items.map(i => {
-          const vis = resolveItemVisuals(i, liveCatalog);
-          return {
-            itemName: i.itemName,
-            qty:      i.qty,
-            unit:     i.unit,
-            rate:     i.rate,
-            amount:   i.amount,
-            urduName: vis.urduName,
-            imageUrl: vis.imageUrl,
-            emoji:    vis.emoji,
-            productId: vis.productId,
-            returnedQty: (i as any).returnedQty,
-            returnReason: (i as any).returnReason,
-          };
-        }),
-        previousBalance:     s.previousBalance,
-        previousBalanceDate: s.previousBalanceDate,
-        total:               s.total,
-        paid:                s.paid,
-        balance:             s.balance,
-        notes:               s.notes,
-      },
-      brand,
-      window.location.origin,
-    );
-    writeAndDownload(w, html, `Invoice_${s.invoiceNo}.pdf`);
-  };
-
   // ── Download Invoice as JPG ───────────────────────────────────────────────────────
   const downloadInvoiceJPG = async (s: Sale) => {
     setSaving(true);
@@ -1788,7 +1733,6 @@ export default function SalesPage() {
                   )}
                   <button className="va-btn secondary small" onClick={() => openAuditTrail(detailSale.id)}>📋 Audit Trail</button>
                   <button className="va-btn secondary small" onClick={() => printInvoice(detailSale)}>🖨️ Print</button>
-                  <button className="va-btn secondary small" onClick={() => downloadInvoice(detailSale)}>💾 Download PDF</button>
                   <button className="va-btn secondary small" onClick={() => downloadInvoiceJPG(detailSale)}>🖼️ Download JPG</button>
                   <button className="va-btn secondary small" onClick={() => shareWhatsApp(detailSale)} disabled={whatsappSharing} style={{ background: whatsappSharing ? '#94d3a2' : '#25D366', color: '#fff', border: 'none', opacity: whatsappSharing ? 0.7 : 1 }}>{whatsappSharing ? '⏳ Generating...' : '📲 WhatsApp'}</button>
                 </div>
@@ -1977,26 +1921,6 @@ export default function SalesPage() {
                         onClick={() => printInvoice(detailSale)}
                       >
                         👁️ View Invoice / Print
-                      </button>
-                      <button
-                        style={{
-                          width: '100%',
-                          padding: '10px 14px',
-                          background: '#F8FAFC',
-                          color: '#0F172A',
-                          fontWeight: 600,
-                          borderRadius: '10px',
-                          border: '1px solid #CBD5E1',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                        onClick={() => downloadInvoice(detailSale)}
-                      >
-                        💾 Download PDF
                       </button>
                       <button
                         style={{

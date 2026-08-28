@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, fmtDateTime, todayInputDate, compressProductImage } from '@/utils/formatters';
 import { fmtBusinessDate } from '@/utils/businessDate';
-import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generatePriceListHTML, openPrintWindow, writeAndPrint, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_MEDIUM, TTL_LONG } from '@/utils/cacheStore';
@@ -1051,8 +1051,8 @@ export default function PriceListPage() {
     }
   };
 
-  // ─── PDF Export ─────────────────────────────────────────────────────────────
-  const exportPDF = async () => {
+  // ─── Print Price List ───────────────────────────────────────────────────────
+  const printPriceList = async () => {
     const items = editItems.filter(i => i.sellRate > 0);
     if (items.length === 0) return showToast('No rates to export');
     // Open window synchronously first — avoids browser popup blocker
@@ -1082,38 +1082,6 @@ export default function PriceListPage() {
       window.location.origin,
     );
     writeAndPrint(w, html, `Daily Price List — ${dateStr}`);
-  };
-
-  const downloadPDF = async () => {
-    const items = editItems.filter(i => i.sellRate > 0);
-    if (items.length === 0) return showToast('No rates to export');
-    // Open window synchronously first — avoids browser popup blocker
-    const w = openDownloadWindow();
-    if (!w) { showToast('❌ Popup blocked — please allow popups for this site'); return; }
-    const brand = await loadBrandConfigWithLogo();
-    const dateStr = fmtBusinessDate(targetDate) || fmtDate(targetDate);
-    const html = generatePriceListHTML(
-      {
-        dateStr,
-        items: items.map(it => {
-          const master = products.find(p => p.id === it.productId || p.name.toLowerCase() === it.itemName.toLowerCase());
-          return {
-            itemName: it.itemName,
-            unit:     it.unit,
-            sellRate: it.sellRate,
-            urduName: it.product?.urduName || master?.urduName || (it as any).urduName || '',
-            category: it.product?.category || master?.category,
-            imageUrl: it.product?.imageUrl || master?.imageUrl || (it as any).imageUrl || null,
-            emoji:    it.product?.emoji || master?.emoji || (it as any).emoji || null,
-            productId: it.productId || master?.id || null,
-          };
-        }),
-        notes: listNotes || undefined,
-      },
-      brand,
-      window.location.origin,
-    );
-    writeAndDownload(w, html, `Price_List_${dateStr.replace(/\s+/g, '_')}.pdf`);
   };
 
   // ─── Filters & Search Helper ───────────────────────────────────────────────
@@ -1184,8 +1152,7 @@ export default function PriceListPage() {
                 📤 Share Today’s Price List
               </button>
             )}
-            <button className="va-btn secondary small" onClick={exportPDF}>Export PDF</button>
-            <button className="va-btn secondary small" onClick={downloadPDF}>💾 Download PDF</button>
+            <button className="va-btn secondary small" onClick={printPriceList}>🖨️ Print Price List</button>
           </div>
         </div>
       </div>

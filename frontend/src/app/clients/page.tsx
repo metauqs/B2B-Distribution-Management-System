@@ -6,7 +6,7 @@ import { fmtMoney, fmtDate, fmtDateTime } from '@/utils/formatters';
 import { apiFetch } from '@/utils/apiFetch';
 import { fetchWithCache, getCachedData, invalidateCache, TTL_MEDIUM } from '@/utils/cacheStore';
 import { SkeletonKPI, SkeletonTable, SkeletonProfile } from '@/components/ui/Skeleton';
-import { loadBrandConfig, loadBrandConfigWithLogo, generateStatementHTML, openPrintWindow, writeAndPrint, openDownloadWindow, writeAndDownload } from '@/utils/documentTemplates';
+import { loadBrandConfig, loadBrandConfigWithLogo, generateStatementHTML, openPrintWindow, writeAndPrint } from '@/utils/documentTemplates';
 import dynamic from 'next/dynamic';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
@@ -447,9 +447,9 @@ export default function ClientsPage() {
     showToast('✅ Status changed to ' + status);
   };
 
-  // ─── PDF Export ─────────────────────────────────────────────────────────────────────
+  // ─── Print Statement ─────────────────────────────────────────────────────────────────
 
-  const exportPDF = async () => {
+  const printStatement = async () => {
     if (!profile) return;
     const { client, ledger, currentBalance, totalSales, totalCollected } = profile;
     // Open window synchronously first — avoids browser popup blocker
@@ -474,33 +474,6 @@ export default function ClientsPage() {
       window.location.origin,
     );
     writeAndPrint(w, html, `Due Statement — ${client.name}`);
-  };
-
-  const downloadPDF = async () => {
-    if (!profile) return;
-    const { client, ledger, currentBalance, totalSales, totalCollected } = profile;
-    // Open window synchronously first — avoids browser popup blocker
-    const w = openDownloadWindow();
-    if (!w) return;
-    const brand = await loadBrandConfigWithLogo();
-    const html = generateStatementHTML(
-      {
-        clientName:      client.name,
-        clientId:        client.clientId,
-        ownerName:       client.ownerName,
-        phone:           client.phone,
-        whatsapp:        client.whatsapp,
-        address:         client.address,
-        deliveryLocation: client.deliveryLocation,
-        totalSales,
-        totalCollected,
-        currentBalance,
-        ledger,
-      },
-      brand,
-      window.location.origin,
-    );
-    writeAndDownload(w, html, `Due_Statement_${client.name.replace(/\s+/g, '_')}.pdf`);
   };
 
   const shareWhatsApp = () => {
@@ -916,8 +889,7 @@ export default function ClientsPage() {
                   </button>
                 ) : null}
                 {profile && <button className="va-btn secondary small" onClick={() => openEdit(profile.client)}>✏️ Edit</button>}
-                <button className="va-btn secondary small" onClick={exportPDF}>📄 PDF</button>
-                <button className="va-btn secondary small" onClick={downloadPDF}>💾 Download PDF</button>
+                <button className="va-btn secondary small" onClick={printStatement}>🖨️ Print Statement</button>
                 <button className="va-btn secondary small" onClick={shareWhatsApp} style={{ background: '#25D366', color: '#fff', border: 'none' }}>📲 WhatsApp</button>
               </div>
             </div>

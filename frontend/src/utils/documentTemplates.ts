@@ -2212,68 +2212,7 @@ export function openAndPrint(html: string, windowTitle?: string): Window | null 
   return w;
 }
 
-/**
- * Opens a blank popup window for DOWNLOAD (Save as PDF) flow.
- */
-export function openDownloadWindow(): Window | null {
-  const w = window.open('', '_blank', 'width=820,height=1050');
-  if (w) {
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-      <style>
-        body { font-family: 'Lora', Georgia, serif; display: flex; align-items: center;
-               justify-content: center; height: 100vh; margin: 0;
-               background: #F4F8F0; color: #1A3C28; }
-        .loading { text-align: center; }
-        .spinner { width: 40px; height: 40px; border: 3px solid #D4E6CC;
-                   border-top-color: #1A3C28; border-radius: 50%;
-                   animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        p { font-size: 13px; color: #4A6A45; font-weight: 500; }
-        small { font-size: 11px; color: #7A8C79; }
-      </style>
-    </head><body><div class="loading">
-      <div class="spinner"></div>
-      <p>Preparing PDF download...</p>
-      <small>Choose "Save as PDF" in the print dialog</small>
-    </div></body></html>`);
-    w.document.close();
-  }
-  return w;
-}
 
-/**
- * Writes the unified HTML into a pre-opened window and auto-triggers the print dialog.
- * User selects "Save as PDF" as the destination to download the document.
- * Shows a sticky banner reminding the user to pick Save as PDF.
- */
-export function writeAndDownload(w: Window, html: string, filename?: string): void {
-  const withHint = html.replace(
-    '</body>',
-    `<div style="
-      position:fixed;bottom:0;left:0;right:0;z-index:99999;
-      background:#1A3C28;color:#fff;padding:10px 20px;
-      font-family:'Lora', Georgia, serif;font-size:12px;font-weight:600;
-      display:flex;align-items:center;justify-content:space-between;gap:16px;
-      box-shadow:0 -2px 12px rgba(0,0,0,.15);
-    " class="no-print">
-      <span>&#128190; In the print dialog &rarr; set <strong>Destination = Save as PDF</strong></span>
-      <span style="opacity:.7;font-size:11px;">${filename ? filename + ' &middot; ' : ''}HALAL VEGG SUPPLIES</span>
-    </div>
-    <style>@media print{.no-print{display:none!important}}</style>
-    <script>
-      window.onload=function(){
-        document.title=${JSON.stringify(filename || 'Document')};
-        setTimeout(function(){window.print();},800);
-      };
-    </script>
-    </body>`
-  );
-  w.document.open();
-  w.document.write(withHint);
-  w.document.close();
-  w.document.title = filename || 'Document';
-  w.focus();
-}
 
 /**
  * Detects the client platform: 'ios', 'android', or 'desktop'.

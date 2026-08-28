@@ -42,7 +42,7 @@ The system digitizes the end-to-end B2B distribution lifecycle: **Mandi Procurem
 1. **5:00 AM Business Day Boundary**: Business operations start at **05:00 AM** every morning and conclude at **04:59:59 AM** the following calendar day. All sales, purchases, collections, and reports strictly adhere to this 5:00 AM business day cutoff instead of standard calendar midnight.
 2. **Moving Weighted Average Cost Inventory**: Replaces naive latest-purchase rate valuation with financially accurate Weighted Moving Average valuation ($\text{New Avg Cost} = \frac{\text{Old Value} + \text{New Purchase Value}}{\text{Old Qty} + \text{New Qty}}$) while preserving dual visibility into the **Latest Purchase Price (`currentBuyPrice`)**.
 3. **Atomic Invoice Commit Logic**: Invoice drafts remain strictly in React local component state during customer selection and product entry. Financial ledgers, inventory stock, customer dues, and delivery records are updated **only when the user explicitly clicks "Generate Invoice"** inside a single database transaction.
-4. **Urdu Document Pipeline**: Native PDF, JPG, and WhatsApp voucher export pipelines rendered via offscreen canvas SVG engines to guarantee proper right-to-left Arabic/Urdu cursive character joining.
+4. **Urdu Document Pipeline**: Native JPG, PNG, and WhatsApp voucher export pipelines rendered via offscreen canvas SVG engines to guarantee proper right-to-left Arabic/Urdu cursive character joining with ultra-low memory usage.
 
 ---
 
@@ -116,7 +116,7 @@ HalalVeggSupplies/
 │   │       ├── apiFetch.ts          # Resilient Request Wrapper (45s Timeout & Auth)
 │   │       ├── businessDate.ts      # Frontend 5:00 AM Business Date Utilities
 │   │       ├── cacheStore.ts        # Stale-While-Revalidate SWR Cache Layer
-│   │       ├── documentTemplates.ts # Offscreen Urdu PDF/JPG Invoice Generator
+│   │       ├── documentTemplates.ts # Offscreen Urdu JPG/PNG/Print Document Generator
 │   │       └── formatters.ts        # Currency (PKR) & Date Formatters
 │   ├── public/                      # Static Brand Assets & 🥬 Favicons
 │   └── package.json
@@ -163,7 +163,7 @@ HalalVeggSupplies/
 - **In-Memory Draft Isolation**: Order creation remains strictly in local React state until the user clicks **"Generate Invoice"**.
 - **Atomic Checkout**: Generates sequential invoice number (`INV-XXXX-XXXX`), creates sale records, deducts inventory stock (`stockOut`), logs customer ledger debit, records payment collection (if paid), and updates client dues in **a single atomic Prisma transaction**.
 - **Live Inventory Stock Badges**: Product autocomplete displays real-time stock levels (`Stock: 120.00 KG` or `Out of Stock`) inside the dropdown and on order items.
-- **Urdu Export Pipeline**: Generates clean Urdu invoices downloadable as PDF, JPG image, or directly shareable via WhatsApp.
+- **Urdu Export Pipeline**: Generates clean Urdu invoices downloadable as JPG image, printable, or directly shareable via WhatsApp.
 
 ### 3. 🥦 Moving Average Inventory (`/inventory`)
 - **Weighted Average Costing**: Automatically updates unit buy cost on purchase using the moving average formula:
@@ -237,7 +237,7 @@ HalalVeggSupplies/
 - **State Management**: Redux Toolkit v2 & Custom SWR Cache (`cacheStore.ts`)
 - **Form Handling**: React Hook Form v7 & Zod v4
 - **Icon Systems**: `@mdi/react` & `@mdi/js` (Community Material Icons), `@solar-icons/react`, `lucide-react`
-- **Document Export**: `html2canvas` & `pdfjs-dist` (Offscreen Canvas Urdu Renderer)
+- **Document Export**: `html2canvas` (Offscreen Canvas Urdu Renderer)
 
 ### Backend REST API
 - **Runtime**: Node.js v20+ & TypeScript 5.3
@@ -245,7 +245,7 @@ HalalVeggSupplies/
 - **ORM & Database Client**: Prisma v7.9 (`@prisma/client` & `@prisma/adapter-pg`)
 - **Database Driver**: `pg` v8.22 (PostgreSQL Native Client Pool)
 - **Authentication**: `jsonwebtoken` (JWT) & `bcryptjs` (Password Hashing)
-- **PDF Pipeline**: `puppeteer` v25.3
+- **Image Pipeline**: `puppeteer` v25.3 (Ultra-low memory headless image renderer)
 
 ### Database & Infrastructure
 - **Production Database**: Neon Cloud PostgreSQL (Serverless, SSL Encrypted)

@@ -331,8 +331,8 @@ function runInRenderQueue<T>(task: () => Promise<T>): Promise<T> {
 // ── In-Flight Deduplication — prevents rendering the same HTML twice concurrently ──
 const inFlightRenders = new Map<string, Promise<Buffer>>();
 
-// ── POST /api/render/jpeg ── Direct High-Speed JPEG Screenshot ───────────────
-router.post('/jpeg', async (req, res) => {
+// ── POST /api/render/jpeg & /api/render/jpg ── Direct High-Speed JPEG Screenshot ───────────────
+router.post(['/jpeg', '/jpg'], async (req, res) => {
   const startTime = Date.now();
   const { html, width = 794, quality = 88 } = req.body;
   if (!html) return res.status(400).json({ success: false, error: 'HTML is required' });
@@ -551,39 +551,14 @@ router.post('/png', async (req, res) => {
   }
 });
 
-// ── POST /api/render/pdf ── PDF Output Route ──────────────────────────────────
-router.post('/pdf', async (req, res) => {
-  const startTime = Date.now();
-  const { html, width = 794 } = req.body;
-  if (!html) return res.status(400).json({ success: false, error: 'HTML is required' });
-
-  let page: any = null;
-  try {
-    const pdfBuffer = await runInRenderQueue(async () => {
-      const browser = await getSharedBrowser();
-      const requestedWidth = Number(width) || 794;
-      page = await setupRenderPage(browser, requestedWidth, 1.2);
-
-      await page.setContent(injectBaseUrlIfNeeded(html), { waitUntil: 'domcontentloaded', timeout: 10000 });
-
-      const buffer = await page.pdf({
-        format: 'A4' as any,
-        printBackground: true,
-        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
-      });
-      return buffer;
-    });
-
-    console.log(`📄 [PDF Render] ${Date.now() - startTime}ms`);
-    res.setHeader('Content-Type', 'application/pdf');
-    return res.send(pdfBuffer);
-  } catch (err: any) {
-    console.error('PDF render failed:', err);
-    return res.status(500).json({ success: false, error: err.message });
-  } finally {
-    await closePageSafely(page);
-    scheduleBrowserIdleClose();
-  }
+// ── POST /api/render/pdf ── Permanently Disabled (404) ─────────────────────────
+// PDF rendering has been permanently removed to eliminate memory pressure on Render Free tier.
+// JPG/PNG image rendering and client-side canvas workflows are used instead.
+router.all('/pdf', (_req, res) => {
+  return res.status(404).json({
+    success: false,
+    error: 'PDF rendering is permanently disabled to optimize server memory. Please use JPG/PNG image export.',
+  });
 });
 
 // ── GET /api/render/warmup ── Keep-Alive / Render.com Free Tier Ping ─────────
