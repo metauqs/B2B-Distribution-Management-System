@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import type { AuthState, LoginCredentials, User } from '@/types/auth';
+import { apiFetch } from '@/utils/apiFetch';
 
 const loadCachedUser = (): User | null => {
   if (typeof window === 'undefined') return null;
@@ -76,7 +77,7 @@ export const fetchCurrentUser = createAsyncThunk(
 
     inFlightFetch = (async () => {
       try {
-        const res = await fetch('/api/auth/me');
+        const res = await apiFetch('/api/auth/me');
         const data = await res.json();
         if (!res.ok || !data.success) {
           setCachedUser(null);

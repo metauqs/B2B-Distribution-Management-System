@@ -238,6 +238,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.sub, deletedAt: null },
+      select: { id: true, email: true, role: true, branchId: true, isActive: true },
     });
 
     if (!user || !user.isActive) {

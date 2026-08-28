@@ -350,19 +350,13 @@ export default function SalesPage() {
       ]);
 
       if (prodData) {
-        const pList = prodData?.data || (Array.isArray(prodData) ? prodData : []);
+        const pList = Array.isArray(prodData) ? prodData : (prodData?.data ?? []);
         if (pList.length > 0) setCatalogProducts(pList);
       }
 
-      if (priceData?.items && priceData.items.length > 0) {
-        setPriceItems(priceData.items);
-      } else {
-        // Fallback to active price list / products
-        const activeData = await fetchWithCache<any>('/api/pricelist/active', { ttl: TTL_MEDIUM, forceRefresh });
-        const itemsList = activeData?.items || activeData?.data?.items || [];
-        if (itemsList.length > 0) {
-          setPriceItems(itemsList);
-        }
+      const items = priceData?.items || priceData?.data?.items || (Array.isArray(priceData) ? priceData : []);
+      if (items.length > 0) {
+        setPriceItems(items);
       }
     } catch (err) {
       console.error('loadPrices error:', err);

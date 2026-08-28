@@ -171,7 +171,7 @@ export default function CollectionsPage() {
       const [cd, cld, sd] = await Promise.all([
         fetchWithCache<any>('/api/collections', { ttl: TTL_SHORT, forceRefresh: isBackground }),
         fetchWithCache<any>('/api/clients?minimal=true', { ttl: TTL_SHORT, forceRefresh: isBackground }),
-        fetchWithCache<any>('/api/sales', { ttl: TTL_SHORT, forceRefresh: isBackground }),
+        fetchWithCache<any>('/api/sales?limit=100', { ttl: TTL_SHORT, forceRefresh: isBackground }),
       ]);
       if (cd) setCollections(cd.data ?? (Array.isArray(cd) ? cd : []));
       if (cld) setClients(cld.data ?? (Array.isArray(cld) ? cld : []));

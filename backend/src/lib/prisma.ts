@@ -14,8 +14,8 @@ if (connectionString.includes('sslmode=require')) {
 
 const pool = new Pool({
   connectionString,
-  max: 4, // Conservative connection pool cap to conserve RAM on 512MB Render instances
-  idleTimeoutMillis: 5000, // Quickly release idle database sockets
+  max: 10, // Optimal connection pool to allow concurrent dashboard aggregations without queuing
+  idleTimeoutMillis: 10000, // Release idle sockets after 10s
   connectionTimeoutMillis: 10000,
   keepAlive: true,
   ssl: connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },

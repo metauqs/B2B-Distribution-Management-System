@@ -147,15 +147,15 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       supplierPaymentsArr,
       allSuppliers,
       pendingDeliveries,
-      completedDeliveriesCount,
-      failedDeliveriesCount,
+      deliveryStatusAgg,
       inventoryItems,
       atRiskClients,
       recentSales,
       l30Sales,
       l30Purchases,
       l30Expenses,
-      attentionRaw
+      attentionRaw,
+      todaySaleItems
     ] = await Promise.all([
       prisma.sale.groupBy({
         by: ['paymentMode'],
@@ -172,8 +172,11 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       prisma.supplierPayment.groupBy({ by: ['supplierId'], where: branchId ? { branchId } : {}, _sum: { amount: true } }),
       prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } }),
       prisma.delivery.count({ where: { ...bWhere, status: { notIn: ['DELIVERED', 'FAILED'] } } }),
-      prisma.delivery.count({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd }, status: 'DELIVERED' } }),
-      prisma.delivery.count({ where: { ...bWhere, date: { gte: todayStart, lte: todayEnd }, status: 'FAILED' } }),
+      prisma.delivery.groupBy({
+        by: ['status'],
+        where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } },
+        _count: true,
+      }),
       prisma.inventory.findMany({
         where: bWhere,
         select: { qty: true, avgCost: true, currentBuyPrice: true, product: { select: { minStock: true } } },
@@ -184,8 +187,15 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       prisma.purchase.aggregate({ where: { ...bWhere, date: { gte: l30Start }, deletedAt: null }, _sum: { total: true } }),
       prisma.expense.aggregate({ where: { ...bWhere, date: { gte: l30Start } }, _sum: { amount: true } }),
       prisma.client.findMany({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, select: { id: true, name: true, currentBalance: true }, orderBy: { currentBalance: 'desc' }, take: 5 }),
+      prisma.saleItem.findMany({
+        where: { sale: { ...tWhere, status: { not: 'CANCELLED' } } },
+        select: { qty: true, costPrice: true, returnedQty: true, rate: true },
+      }),
     ]);
     const dbDuration = Date.now() - dbStart;
+
+    const completedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'DELIVERED')?._count ?? 0;
+    const failedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'FAILED')?._count ?? 0;
 
     const todaySales = salesByMode.reduce((s, r) => s + (r._sum.total ?? 0), 0);
     const grossSales = salesByMode.reduce((s, r) => s + (r._sum.subtotal ?? 0), 0);
@@ -198,30 +208,18 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const todayPurchases = todayPurchasesAgg._sum.total ?? 0;
     const todayExpenses = todayExpensesAgg._sum.amount ?? 0;
     const dbCollectionsSum = todayCollectionsAgg._sum.amount ?? 0;
-    // Collections = standalone collection entries + checkout cash paid at invoice (avoid double-counting
-    // by using whichever is larger — standalone collections already include invoice checkout payments
-    // recorded as collections; sale.paid already sums all collected amounts on the invoice)
+    // Collections = standalone collection entries + checkout cash paid at invoice
     const todayCollections = todaySalesPaid > dbCollectionsSum ? todaySalesPaid : dbCollectionsSum;
     const totalReceivables = receivablesData.receivables;
     const clientCount = receivablesData.clientCount;
 
     // ── Gross Profit: same formula as Reports module (financialEngine.ts) ─────────
-    // netSales  = grossSales (subtotal) - discounts   [matches financialEngine line 75]
-    // totalCogs = Σ(saleItem.qty × saleItem.costPrice) [matches financialEngine lines 84-93]
-    // grossProfit = netSales - totalCogs              [matches financialEngine line 95]
     const netSales = Math.max(0, grossSales - todayDiscounts);
-
-    // Fetch today's sale items to compute COGS from locked costPrice
-    const todaySaleItems = await prisma.saleItem.findMany({
-      where: { sale: { ...tWhere, status: { not: 'CANCELLED' } } },
-      select: { qty: true, costPrice: true, returnedQty: true, rate: true },
-    });
 
     let totalCogs = 0;
     let returnedProductsToday = 0;
     let returnValueToday = 0;
     for (const item of todaySaleItems) {
-      // Use locked historical cost. If missing (legacy), 0 — no estimation (matches financialEngine)
       const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
       totalCogs += item.qty * effectiveCost;
       if (item.returnedQty > 0) {
