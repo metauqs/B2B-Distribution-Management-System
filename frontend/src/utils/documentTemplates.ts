@@ -126,9 +126,33 @@ function buildDocStyles(b: BrandConfig): string {
     }
 
     @font-face {
+      font-family: 'Jameel';
+      src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Jameel Noori Nastaleeq';
+      src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
       font-family: 'Jameel Khushkhat L';
       src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
-      font-weight: normal;
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Jameel Khushkhat';
+      src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
+      font-weight: 100 900;
       font-style: normal;
       font-display: swap;
     }
@@ -136,7 +160,7 @@ function buildDocStyles(b: BrandConfig): string {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      font-family: 'Lora', 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', Georgia, serif;
+      font-family: 'Lora', 'Jameel', 'Jameel Noori Nastaleeq', 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', Georgia, serif;
       font-size: 13px;
       color: #1A1A1A;
       background: #FFFFFF;

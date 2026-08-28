@@ -17,9 +17,33 @@
 }
 
 @font-face {
+  font-family: 'Jameel';
+  src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Jameel Noori Nastaleeq';
+  src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'Jameel Khushkhat L';
   src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
-  font-weight: normal;
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Jameel Khushkhat';
+  src: url('/fonts/jameel-khushkhat.woff2') format('woff2');
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
@@ -29,7 +53,7 @@
   --font-lora:  var(--font-lora, 'Lora', Georgia, 'Times New Roman', serif);
   --font-sans:  var(--font-lora, 'Lora', Georgia, 'Times New Roman', serif);
   --font-serif: var(--font-lora, 'Lora', Georgia, 'Times New Roman', serif);
-  --font-urdu:  var(--font-urdu, 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', serif);
+  --font-urdu:  var(--font-urdu, 'Jameel', 'Jameel Noori Nastaleeq', 'Jameel Khushkhat L', 'Jameel Khushkhat', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', serif);
   --cream:     #FAF6EC;
   --paper:     #FFFDF8;
   --forest:    #1F3D2B;
@@ -722,7 +746,7 @@ button.va-icon:hover { color: var(--danger); }
   letter-spacing: 0.05em;
 }
 .va-bill-bakaya .lbl .urdu-tag {
-  font-family: 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', 'Segoe UI', Tahoma, sans-serif;
+  font-family: var(--font-urdu, 'Jameel', 'Jameel Noori Nastaleeq', 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', sans-serif);
   font-weight: 600;
   font-size: 13px;
   text-transform: none !important;
@@ -746,7 +770,7 @@ button.va-icon:hover { color: var(--danger); }
 
 /* ─── Global Urdu Typography ───────────────────────────────────────────────── */
 .va-urdu, .urdu, [lang="ur"], .urdu-main, .urdu-th, .urdu-inline {
-  font-family: var(--font-urdu, 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', serif) !important;
+  font-family: var(--font-urdu, 'Jameel', 'Jameel Noori Nastaleeq', 'Jameel Khushkhat L', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Urdu Typesetting', serif) !important;
   font-weight: 600;
   direction: rtl;
   unicode-bidi: isolate;
