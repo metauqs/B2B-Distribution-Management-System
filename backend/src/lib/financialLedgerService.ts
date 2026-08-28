@@ -43,6 +43,33 @@ export async function createLedgerEntry(tx: any, p: FinancialLedgerEntryParams):
   }
 }
 
+export async function createManyLedgerEntries(tx: any, entries: FinancialLedgerEntryParams[]): Promise<void> {
+  const db = tx || prisma;
+  if (!entries || entries.length === 0) return;
+  try {
+    await db.financialLedger.createMany({
+      data: entries.map(p => ({
+        branchId: p.branchId,
+        date: p.date ?? new Date(),
+        transactionType: p.transactionType,
+        entryType: p.entryType,
+        accountCategory: p.accountCategory,
+        accountName: p.accountName,
+        debit: p.debit ?? 0,
+        credit: p.credit ?? 0,
+        referenceType: p.referenceType,
+        referenceId: p.referenceId,
+        referenceNo: p.referenceNo,
+        entityId: p.entityId,
+        entityType: p.entityType,
+        notes: p.notes,
+      })),
+    });
+  } catch (err: any) {
+    console.error('⚠️ [FinancialLedger] Failed to create bulk ledger entries:', err.message);
+  }
+}
+
 export async function postSaleLedger(
   tx: any,
   params: {
@@ -59,26 +86,26 @@ export async function postSaleLedger(
 ): Promise<void> {
   const { branchId, saleId, invoiceNo, clientId, date, total, paid, cogs } = params;
 
-  // 1. Sales Revenue (Credit Total Sales)
-  await createLedgerEntry(tx, {
-    branchId,
-    date,
-    transactionType: 'SALE_INVOICE',
-    entryType: 'CREDIT',
-    accountCategory: 'REVENUE',
-    accountName: 'Sales Revenue',
-    credit: total,
-    referenceType: 'sale',
-    referenceId: saleId,
-    referenceNo: invoiceNo,
-    entityId: clientId,
-    entityType: 'client',
-  });
+  const entries: FinancialLedgerEntryParams[] = [
+    {
+      branchId,
+      date,
+      transactionType: 'SALE_INVOICE',
+      entryType: 'CREDIT',
+      accountCategory: 'REVENUE',
+      accountName: 'Sales Revenue',
+      credit: total,
+      referenceType: 'sale',
+      referenceId: saleId,
+      referenceNo: invoiceNo,
+      entityId: clientId,
+      entityType: 'client',
+    }
+  ];
 
-  // 2. Accounts Receivable or Cash (Debit Cash for paid portion, Debit AR for balance)
   const creditBalance = total - paid;
   if (paid > 0) {
-    await createLedgerEntry(tx, {
+    entries.push({
       branchId,
       date,
       transactionType: 'SALE_INVOICE',
@@ -94,7 +121,7 @@ export async function postSaleLedger(
     });
   }
   if (creditBalance > 0) {
-    await createLedgerEntry(tx, {
+    entries.push({
       branchId,
       date,
       transactionType: 'SALE_INVOICE',
@@ -110,9 +137,8 @@ export async function postSaleLedger(
     });
   }
 
-  // 3. COGS & Inventory Asset Reduction
   if (cogs > 0) {
-    await createLedgerEntry(tx, {
+    entries.push({
       branchId,
       date,
       transactionType: 'SALE_COGS',
@@ -126,8 +152,7 @@ export async function postSaleLedger(
       entityId: clientId,
       entityType: 'client',
     });
-
-    await createLedgerEntry(tx, {
+    entries.push({
       branchId,
       date,
       transactionType: 'SALE_COGS',
@@ -142,6 +167,8 @@ export async function postSaleLedger(
       entityType: 'client',
     });
   }
+
+  await createManyLedgerEntries(tx, entries);
 }
 
 export async function postPurchaseLedger(

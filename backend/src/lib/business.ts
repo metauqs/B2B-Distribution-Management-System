@@ -16,9 +16,10 @@ interface AuditParams {
 
 export async function writeAuditLog(params: AuditParams): Promise<void> {
   try {
+    const validUserId = await getValidUserId(params.userId);
     await prisma.auditLog.create({
       data: {
-        userId:    params.userId,
+        userId:    validUserId,
         branchId:  params.branchId,
         action:    params.action,
         entity:    params.entity,
@@ -68,32 +69,26 @@ export async function generateInvoiceNo(clientId: string, branchId?: string, tx?
   // Strip 'WH-' prefix for Option 2 (e.g. 'WH-1111' -> '1111')
   const clientCode = rawCode.replace(/^WH-/i, '').trim();
 
-  // Find recent sales for this specific client to calculate next incremental sequence
-  const existingSales = await db.sale.findMany({
+  // Find the single latest sale for this client to calculate next sequence
+  const latestSale = await db.sale.findFirst({
     where: { clientId },
     select: { invoiceNo: true },
     orderBy: { createdAt: 'desc' },
-    take: 50,
   });
 
   let maxSeq = 0;
-  for (const s of existingSales) {
-    if (s.invoiceNo) {
-      // Escape special characters in clientCode
-      const escapedCode = clientCode.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      // Match IN-1111-0001, IN-WH-1111-0001, IN-0001
-      const regex = new RegExp(`(?:IN-${escapedCode}-|IN-WH-${escapedCode}-|IN-|INV-)(\\d{1,5})$`, 'i');
-      const match = s.invoiceNo.match(regex);
-      if (match) {
-        const seq = parseInt(match[1], 10);
-        if (!isNaN(seq) && seq < 10000 && seq > maxSeq) {
-          maxSeq = seq;
-        }
+  if (latestSale?.invoiceNo) {
+    const escapedCode = clientCode.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`(?:IN-${escapedCode}-|IN-WH-${escapedCode}-|IN-|INV-)(\\d{1,5})$`, 'i');
+    const match = latestSale.invoiceNo.match(regex);
+    if (match) {
+      const seq = parseInt(match[1], 10);
+      if (!isNaN(seq) && seq < 10000) {
+        maxSeq = seq;
       }
     }
   }
 
-  // Fallback to total sales count if no pattern match found in recent sales
   if (maxSeq === 0) {
     maxSeq = await db.sale.count({ where: { clientId } });
   }

@@ -304,46 +304,56 @@ router.post('/', async (req: Request, res: Response) => {
   const startTime = Date.now();
   try {
     const sale = await prisma.$transaction(async tx => {
-      const invoiceNo = await generateInvoiceNo(clientId, branchId, tx);
-      const validatedUserId = await getValidUserId(userId, tx);
+      const t0 = Date.now();
+      // 1. Parallelize Initial Reads (Invoice No, User Validation, Client, Last Ledger)
+      const [invoiceNo, validatedUserId, cRecord, lastLedger] = await Promise.all([
+        generateInvoiceNo(clientId, branchId, tx),
+        getValidUserId(userId, tx),
+        tx.client.findUnique({
+          where: { id: clientId },
+          select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, address: true, deliveryLocation: true, currentBalance: true, creditLimit: true }
+        }),
+        tx.customerLedger.findFirst({
+          where: { clientId },
+          orderBy: { date: 'desc' },
+          select: { date: true }
+        }),
+      ]);
+      const t_initReads = Date.now() - t0;
 
-      const cRecord = await tx.client.findUnique({
-        where: { id: clientId },
-        select: { currentBalance: true }
-      });
       const previousBalance = cRecord?.currentBalance ?? 0;
-      const newClientBalance = previousBalance + total - paidAmt;
-
-      if (client.creditLimit > 0) {
-        if (newClientBalance > client.creditLimit) {
-          console.warn(`Credit limit exceeded for client ${client.name}: ${newClientBalance} > ${client.creditLimit}`);
-        }
-      }
-
-      const lastLedger = await tx.customerLedger.findFirst({
-        where: { clientId },
-        orderBy: { date: 'desc' }
-      });
+      const newClientBalance = Math.max(0, Math.round(previousBalance + total - paidAmt));
       const previousBalanceDate = lastLedger?.date ?? null;
 
-      // 1. Resolve Product IDs for all items if not explicitly provided
-      for (const item of items) {
-        if (!item.productId && (item.itemName || item.name)) {
-          const match = await tx.product.findFirst({
-            where: { name: { equals: String(item.itemName || item.name).trim(), mode: 'insensitive' } },
-            select: { id: true }
-          });
-          if (match) item.productId = match.id;
+      // 2. Batch-resolve product IDs & fetch all inventory records in parallel
+      const t1 = Date.now();
+      const missingNameItems = items.filter((i: any) => !i.productId && (i.itemName || i.name));
+      if (missingNameItems.length > 0) {
+        const itemNames = missingNameItems.map((i: any) => String(i.itemName || i.name).trim());
+        const matchedProducts = await tx.product.findMany({
+          where: { name: { in: itemNames, mode: 'insensitive' } },
+          select: { id: true, name: true }
+        });
+        const nameMap = new Map(matchedProducts.map((p: any) => [p.name.toLowerCase(), p.id]));
+        for (const item of items) {
+          if (!item.productId && (item.itemName || item.name)) {
+            const foundId = nameMap.get(String(item.itemName || item.name).trim().toLowerCase());
+            if (foundId) item.productId = foundId;
+          }
         }
       }
 
-      // 2. Validate inventory stock availability for all items with productId
+      const productIds = items.map((i: any) => i.productId).filter(Boolean);
+      const invRecords = await tx.inventory.findMany({
+        where: { productId: { in: productIds }, branchId },
+        select: { productId: true, qty: true, reservedQty: true, avgCost: true, currentBuyPrice: true }
+      });
+      const invMap = new Map(invRecords.map((r: any) => [r.productId, r]));
+
+      // 3. Validate stock availability & lock cost basis in-memory
       for (const item of items) {
         if (item.productId) {
-          const inv = await tx.inventory.findUnique({
-            where: { productId_branchId: { productId: item.productId, branchId } },
-            select: { qty: true, reservedQty: true },
-          });
+          const inv: any = invMap.get(item.productId);
           const currentQty = inv?.qty ?? 0;
           const reserved = inv?.reservedQty ?? 0;
           const available = Math.max(0, currentQty - reserved);
@@ -356,34 +366,29 @@ router.post('/', async (req: Request, res: Response) => {
         }
       }
 
-      // Look up current inventory cost for each product item to lock cost basis
-      const itemsWithCost = await Promise.all(
-        items.map(async (i: any) => {
-          let itemCost = 0;
-          if (i.productId) {
-            const inv = await tx.inventory.findUnique({
-              where: { productId_branchId: { productId: i.productId, branchId } },
-              select: { avgCost: true, currentBuyPrice: true },
-            });
-            itemCost = inv?.avgCost && inv.avgCost > 0 ? inv.avgCost : (inv?.currentBuyPrice ?? 0);
-          }
-          if (itemCost <= 0) {
-            console.warn(`[POST /api/sales] Item '${i.itemName ?? i.name ?? 'Unknown'}' has no cost data. COGS will be recorded as 0.`);
-          }
-          return {
-            ...i,
-            costPrice: itemCost > 0 ? itemCost : 0,
-          };
-        })
-      );
+      const itemsWithCost = items.map((i: any) => {
+        let itemCost = 0;
+        if (i.productId) {
+          const inv: any = invMap.get(i.productId);
+          itemCost = inv?.avgCost && inv.avgCost > 0 ? inv.avgCost : (inv?.currentBuyPrice ?? 0);
+        }
+        return {
+          ...i,
+          costPrice: itemCost > 0 ? itemCost : 0,
+        };
+      });
+      const t_inv = Date.now() - t1;
 
+      // 4. Lean Sale Creation (Omit heavy nested joins inside transaction)
+      const t2 = Date.now();
+      const saleDate = parseInputDateToUtc(date);
       const s = await tx.sale.create({
         data: {
           invoiceNo,
           clientId,
           branchId,
           userId: validatedUserId ?? undefined,
-          date: parseInputDateToUtc(date),
+          date: saleDate,
           subtotal,
           discount: Number(discount),
           deliveryCharge: Number(deliveryCharge),
@@ -413,14 +418,13 @@ router.post('/', async (req: Request, res: Response) => {
         },
         include: {
           items: { include: { product: true } },
-          client: { select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, address: true, deliveryLocation: true } },
-          deliveries: { include: { driver: true, vehicle: true, employee: true } },
-          employee: true,
         },
       });
+      const t_saleCreate = Date.now() - t2;
 
-      // Create Delivery record
-      await tx.delivery.create({
+      // 5. Create Delivery Record
+      const t3 = Date.now();
+      const delivRecord = await tx.delivery.create({
         data: {
           saleId: s.id,
           clientId,
@@ -431,38 +435,72 @@ router.post('/', async (req: Request, res: Response) => {
           status: 'PENDING',
         }
       });
+      const t_delivCreate = Date.now() - t3;
 
-      // Inventory StockOuts — sequential to prevent idempotency race condition.
-      // Using Promise.all() inside a single Prisma tx causes all concurrent reads
-      // to see zero existing movements (uncommitted writes are invisible to parallel
-      // reads in the same tx), so every call passes the idempotency check and writes,
-      // producing duplicate SALE deductions. Sequential for...of guarantees each
-      // stockOut's movement is committed before the next idempotency check runs.
+      // 6. Parallel Inventory Updates & Stock Movements
+      const t4 = Date.now();
+      const stockMovementsToCreate: any[] = [];
+      const invUpdatePromises: Promise<any>[] = [];
+
       for (const item of items.filter((item: any) => item.productId)) {
-        await stockOut(tx, {
+        const inv: any = invMap.get(item.productId);
+        const oldQty = inv?.qty ?? 0;
+        const requestedQty = Number(item.qty);
+        const newQty = Math.max(0, oldQty - requestedQty);
+        const newAvgCost = newQty <= 0 ? 0 : (inv?.avgCost ?? 0);
+
+        if (inv) {
+          inv.qty = newQty;
+          inv.avgCost = newAvgCost;
+        }
+
+        invUpdatePromises.push(
+          tx.inventory.updateMany({
+            where: { productId: item.productId, branchId },
+            data: { qty: newQty, avgCost: newAvgCost },
+          })
+        );
+
+        stockMovementsToCreate.push({
           productId: item.productId,
           branchId,
-          qty: Number(item.qty),
-          unit: item.unit ?? 'KG',
+          type: 'SALE',
+          qty: -requestedQty,
+          previousStock: oldQty,
+          newStock: newQty,
           refType: 'sale',
           refId: s.id,
-          refNo: invoiceNo,
           userId: validatedUserId ?? undefined,
           date: new Date(),
+          note: `Stock OUT — ${invoiceNo} | Qty: -${requestedQty} ${item.unit ?? 'KG'}`,
         });
       }
 
-      await recordCustomerLedgerEntry(tx, {
-        clientId,
-        branchId,
-        type: 'INVOICE',
-        date: s.date,
-        referenceId: s.id,
-        referenceNo: s.invoiceNo,
-        description: 'Invoice Generated',
-        debit: total,
-        credit: 0,
-      });
+      await Promise.all([
+        ...invUpdatePromises,
+        stockMovementsToCreate.length > 0
+          ? tx.stockMovement.createMany({ data: stockMovementsToCreate })
+          : Promise.resolve(),
+      ]);
+      const t_stockOut = Date.now() - t4;
+
+      // 7. Bulk Customer Ledger & Auto-Collection
+      const t5 = Date.now();
+      const invoiceBal = previousBalance + total;
+      const ledgerEntries: any[] = [
+        {
+          clientId,
+          branchId,
+          type: 'INVOICE',
+          date: s.date,
+          referenceId: s.id,
+          referenceNo: s.invoiceNo,
+          description: 'Invoice Generated',
+          debit: total,
+          credit: 0,
+          balance: invoiceBal,
+        }
+      ];
 
       if (paidAmt > 0) {
         const coll = await tx.collection.create({
@@ -478,7 +516,6 @@ router.post('/', async (req: Request, res: Response) => {
           }
         });
 
-        // Create CollectionAllocation to link this payment to the invoice
         await tx.collectionAllocation.create({
           data: {
             collectionId: coll.id,
@@ -487,7 +524,7 @@ router.post('/', async (req: Request, res: Response) => {
           }
         });
 
-        await recordCustomerLedgerEntry(tx, {
+        ledgerEntries.push({
           clientId,
           branchId,
           type: 'PAYMENT',
@@ -497,13 +534,22 @@ router.post('/', async (req: Request, res: Response) => {
           description: 'Payment Received (Auto)',
           debit: 0,
           credit: paidAmt,
+          balance: newClientBalance,
         });
       }
 
-      // NOTE: Client.currentBalance is updated by recordCustomerLedgerEntry above.
-      // Do NOT manually set client.currentBalance here — the ledger engine is the single source of truth.
+      await tx.customerLedger.createMany({
+        data: ledgerEntries,
+      });
 
-      // Post to Financial Ledger automatically
+      await tx.client.update({
+        where: { id: clientId },
+        data: { currentBalance: newClientBalance },
+      });
+      const t_custLedger = Date.now() - t5;
+
+      // 8. Financial Ledger Bulk Post
+      const t6 = Date.now();
       const totalCogs = s.items.reduce((sum, item) => sum + (item.qty * item.costPrice), 0);
       await postSaleLedger(tx, {
         branchId,
@@ -516,23 +562,22 @@ router.post('/', async (req: Request, res: Response) => {
         cogs: totalCogs,
         deliveryCharge: s.deliveryCharge,
       });
+      const t_finLedger = Date.now() - t6;
 
-      // Single Source of Truth: Reconcile client allocations, invoice statuses, customer ledger & current balance
-      await reconcileClientBalancesAndAllocations(clientId, tx);
+      console.log(`⏱️ [POST /api/sales Breakdown] initReads:${t_initReads}ms inv:${t_inv}ms saleCreate:${t_saleCreate}ms deliv:${t_delivCreate}ms stockOut:${t_stockOut}ms custLedger:${t_custLedger}ms finLedger:${t_finLedger}ms | totalTx:${Date.now() - startTime}ms`);
 
-      // Final verification: recalculate ledger & balance inside the transaction
-      await recalculateClientLedgerAndBalance(clientId, tx);
-
-      return s;
+      return {
+        ...s,
+        client: cRecord,
+        deliveries: [delivRecord],
+      };
     }, { maxWait: 15000, timeout: 120000 });
 
-    // Non-blocking credit rating update outside transaction
-    updateClientCreditRating(clientId).catch(err =>
-      console.warn('[POST /api/sales] Async credit rating update warning:', err)
-    );
-
-    await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Sale', entityId: sale.id, newData: { invoiceNo: sale.invoiceNo, total } });
+    // Non-blocking asynchronous updates outside transaction
+    updateClientCreditRating(clientId).catch(() => {});
+    writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Sale', entityId: sale.id, newData: { invoiceNo: sale.invoiceNo, total } }).catch(() => {});
     clearSalesCache();
+
     return res.status(201).json({ success: true, data: sale });
   } catch (error: any) {
     const durationMs = Date.now() - startTime;
@@ -541,7 +586,6 @@ router.post('/', async (req: Request, res: Response) => {
       durationMs,
       clientId,
       error: error.message ?? String(error),
-      stack: error.stack,
     });
     return res.status(500).json({ success: false, error: error.message ?? 'Invoice generation failed. Please try again.' });
   }

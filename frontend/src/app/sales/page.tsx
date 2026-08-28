@@ -738,10 +738,12 @@ export default function SalesPage() {
     if (s && s.items && s.items.length > 0) {
       setDetailSale(s);
       setDetailLoad(false);
-    } else {
-      setDetailSale(getCachedData(`/api/sales/${s.id}`) || s);
-      setDetailLoad(true);
+      setAddPayAmt(0);
+      setView('detail');
+      return;
     }
+    setDetailSale(getCachedData(`/api/sales/${s.id}`) || s);
+    setDetailLoad(true);
     setAddPayAmt(0);
     setView('detail');
     try {
