@@ -4,8 +4,9 @@
   "description": "Halal Vegg Supplies ERP Backend API",
   "main": "dist/index.js",
   "scripts": {
+    "postinstall": "puppeteer browsers install chrome",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
+    "build": "puppeteer browsers install chrome && tsc",
     "start": "node --max-old-space-size=300 dist/index.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",

@@ -465,16 +465,23 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json(responsePayload);
     }
 
+    const listCacheKey = `lists_${branchId || 'all'}_${limit}`;
+    const cachedLists = PRICELIST_CACHE.get(listCacheKey);
+    if (cachedLists && (Date.now() - cachedLists.ts) < PRICELIST_CACHE_TTL) {
+      return res.json({ success: true, data: cachedLists.data });
+    }
+
     const lists = await prisma.priceList.findMany({
       where: { ...(branchId ? { branchId } : {}), isActive: true },
       include: {
         _count: { select: { items: true } },
         createdBy: { select: { id: true, name: true } },
       },
-      orderBy: { date: 'asc' },
+      orderBy: { date: 'desc' },
       take: limit,
     });
 
+    PRICELIST_CACHE.set(listCacheKey, { ts: Date.now(), data: lists });
     return res.json({ success: true, data: lists });
   } catch (err: any) {
     console.error('Error in GET /api/pricelist:', err);

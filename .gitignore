@@ -4,6 +4,7 @@
 
 # Dependencies
 node_modules/
+.cache/
 .pnp
 .pnp.js
 

@@ -55,6 +55,7 @@ router.get('/', async (req: Request, res: Response) => {
         },
         orderBy: { name: 'asc' },
       });
+      CLIENT_CACHE.set(cacheKey, { ts: Date.now(), data: clients });
       return res.json({ success: true, data: clients });
     }
 

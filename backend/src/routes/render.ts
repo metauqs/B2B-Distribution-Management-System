@@ -115,22 +115,29 @@ async function getSharedBrowser(): Promise<Browser> {
   }
 
   // Auto-discover Chromium/Chrome binary if available
-  const candidatePaths = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium',
-    '/usr/bin/google-chrome',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ].filter(Boolean) as string[];
-
-  let executablePath: string | undefined = undefined;
-  for (const p of candidatePaths) {
-    if (fs.existsSync(p)) {
-      executablePath = p;
-      break;
+  let executablePath: string | undefined = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (!executablePath) {
+    try {
+      executablePath = await (puppeteer as any).executablePath();
+    } catch {
+      const candidatePaths = [
+        path.resolve(process.cwd(), '.cache/puppeteer'),
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/usr/bin/google-chrome',
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      ];
+      for (const p of candidatePaths) {
+        if (fs.existsSync(p)) {
+          executablePath = p;
+          break;
+        }
+      }
     }
   }
+
+  console.log(`🚀 [Puppeteer] Launching Chrome executable: ${executablePath || 'default-managed'}`);
 
   // Launch a new browser instance with low-memory single-process flags
   browserStarting = puppeteer.launch({
@@ -190,17 +197,14 @@ async function getSharedBrowser(): Promise<Browser> {
  * Pre-warms the Puppeteer browser + renders a tiny blank sentinel page.
  * Call this once at server startup so the first real user render is instant.
  */
-export async function warmBrowser(): Promise<void> {
-  try {
-    const t0 = Date.now();
-    const browser = await getSharedBrowser();
-    const page = await browser.newPage();
-    await page.setContent('<html><body></body></html>', { waitUntil: 'domcontentloaded', timeout: 5000 });
-    await page.close();
-    console.log(`🔥 [Puppeteer Warm-Up] Browser ready in ${Date.now() - t0}ms`);
-  } catch (err) {
-    console.warn('[Puppeteer Warm-Up] Failed (non-fatal):', err);
-  }
+export async function warmBrowser(): Promise<boolean> {
+  const t0 = Date.now();
+  const browser = await getSharedBrowser();
+  const page = await browser.newPage();
+  await page.setContent('<html><body></body></html>', { waitUntil: 'domcontentloaded', timeout: 5000 });
+  await page.close();
+  console.log(`🔥 [Puppeteer Warm-Up] Browser ready in ${Date.now() - t0}ms`);
+  return true;
 }
 
 import { getProductFallbackEmoji, generateProductSvgFallback } from './products';
@@ -579,11 +583,15 @@ router.post('/pdf', async (req, res) => {
 });
 
 // ── GET /api/render/warmup ── Keep-Alive / Render.com Free Tier Ping ─────────
-// UptimeRobot should ping this every 2 minutes to prevent Render.com cold starts.
+// UptimeRobot pings this to verify renderer readiness and prevent cold starts.
 router.get('/warmup', async (_req, res) => {
-  // Non-blocking — respond immediately, warm browser in background
-  res.status(200).json({ success: true, status: 'warm' });
-  warmBrowser().catch(() => {}); // fire-and-forget
+  try {
+    await warmBrowser();
+    return res.status(200).json({ success: true, status: 'warm', renderer: 'READY' });
+  } catch (err: any) {
+    console.error('❌ [Puppeteer Warm-Up Failed]:', err.message);
+    return res.status(503).json({ success: false, status: 'error', renderer: 'UNAVAILABLE', error: err.message });
+  }
 });
 
 export default router;
