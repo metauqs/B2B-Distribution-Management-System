@@ -14,9 +14,9 @@ if (connectionString.includes('sslmode=require')) {
 
 const pool = new Pool({
   connectionString,
-  max: 10, // Optimal connection pool to allow concurrent dashboard aggregations without queuing
-  idleTimeoutMillis: 10000, // Release idle sockets after 10s
-  connectionTimeoutMillis: 10000,
+  max: 15, // Optimal connection pool to allow concurrent dashboard aggregations without queuing
+  idleTimeoutMillis: 30000, // Keep warm sockets alive for 30s
+  connectionTimeoutMillis: 15000,
   keepAlive: true,
   ssl: connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
 });
@@ -24,7 +24,7 @@ const adapter = new PrismaPg(pool);
 
 const prisma = new PrismaClient({
   adapter,
-  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+  log: ['error'],
 });
 
 export { prisma };

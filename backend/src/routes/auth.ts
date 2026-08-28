@@ -16,9 +16,9 @@ function signAuthTokens(payload: { sub: string; email: string; role: string; bra
   return { accessToken, refreshToken };
 }
 
-// In-Memory cache for /me endpoint (30s TTL) to eliminate query storms
+// In-Memory cache for /me endpoint (60s TTL) to eliminate query storms
 const ME_CACHE = new Map<string, { ts: number; user: any }>();
-const ME_CACHE_TTL = 30000;
+const ME_CACHE_TTL = 60000;
 
 export function invalidateMeCache(userId?: string) {
   if (userId) ME_CACHE.delete(userId);
@@ -236,10 +236,19 @@ router.post('/refresh', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: 'Invalid Refresh Token' });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.sub, deletedAt: null },
-      select: { id: true, email: true, role: true, branchId: true, isActive: true },
-    });
+    let user: any = null;
+    const cached = ME_CACHE.get(decoded.sub);
+    if (cached && (Date.now() - cached.ts) < ME_CACHE_TTL) {
+      user = cached.user;
+    } else {
+      user = await prisma.user.findUnique({
+        where: { id: decoded.sub, deletedAt: null },
+        select: { id: true, email: true, name: true, role: true, branchId: true, isActive: true },
+      });
+      if (user && user.isActive) {
+        ME_CACHE.set(user.id, { ts: Date.now(), user });
+      }
+    }
 
     if (!user || !user.isActive) {
       return res.status(401).json({ success: false, error: 'User disabled or not found' });
@@ -289,6 +298,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
     const userId = req.user.sub;
     const cached = ME_CACHE.get(userId);
     if (cached && (Date.now() - cached.ts) < ME_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
       return res.json({ success: true, data: cached.user });
     }
 
@@ -303,7 +313,9 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
     }
 
     const { password: _pwd, ...safeUser } = user;
+    if (ME_CACHE.size > 50) ME_CACHE.clear();
     ME_CACHE.set(userId, { ts: Date.now(), user: safeUser });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: safeUser });
   } catch (error) {
     console.error('[me]', error);

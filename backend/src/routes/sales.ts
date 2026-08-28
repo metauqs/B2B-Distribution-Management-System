@@ -51,12 +51,27 @@ export async function findActiveEditableSale(clientId: string, branchId?: string
   return sale;
 }
 
+// ── In-Memory cache for sales queries (20s TTL) ─────────────────────────────
+const SALES_CACHE = new Map<string, { ts: number; data: any }>();
+const SALES_CACHE_TTL = 20000;
+
+export function clearSalesCache(): void {
+  SALES_CACHE.clear();
+}
+
 // GET /api/sales — List sales
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { clientId, status, mode, search, from, to, limit: limitQuery } = req.query;
     const limit = limitQuery ? Math.min(parseInt(String(limitQuery)), 1000) : (clientId || from || to ? 200 : 100);
+
+    const cacheKey = `${branchId || 'all'}_${clientId || 'all'}_${status || 'all'}_${mode || 'all'}_${search || 'all'}_${from || 'all'}_${to || 'all'}_${limit}`;
+    const cached = SALES_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < SALES_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
 
     const dateFrom = from ? getBusinessDateRange(String(from)).start : undefined;
     const dateTo = to ? getBusinessDateRange(String(to)).end : undefined;
@@ -130,6 +145,9 @@ router.get('/', async (req: Request, res: Response) => {
       take: limit,
     });
 
+    if (SALES_CACHE.size >= 50) SALES_CACHE.clear();
+    SALES_CACHE.set(cacheKey, { ts: Date.now(), data: sales });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: sales });
   } catch (err: any) {
     console.error('[GET /api/sales]', err);
@@ -499,6 +517,7 @@ router.post('/', async (req: Request, res: Response) => {
     );
 
     await writeAuditLog({ userId: userId ?? undefined, branchId, action: 'CREATE', entity: 'Sale', entityId: sale.id, newData: { invoiceNo: sale.invoiceNo, total } });
+    clearSalesCache();
     return res.status(201).json({ success: true, data: sale });
   } catch (error: any) {
     const durationMs = Date.now() - startTime;
@@ -841,6 +860,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       );
     }
 
+    clearSalesCache();
     return res.json({ success: true, data: updatedSale });
   } catch (error: any) {
     console.error('[PUT /api/sales/:id] Error editing invoice:', error);
@@ -974,6 +994,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       newData: { additionalPayment: amt, newBalance: result.sale.balance }
     });
 
+    clearSalesCache();
     return res.json({ success: true, data: result });
   } catch (err: any) {
     console.error('[PATCH /api/sales/:id]', err);
@@ -1063,6 +1084,7 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
       newData: { reason, newStatus: 'CANCELLED' }
     });
 
+    clearSalesCache();
     return res.json({ success: true, data: updatedSale });
   } catch (err: any) {
     console.error('[POST /api/sales/:id/cancel]', err);

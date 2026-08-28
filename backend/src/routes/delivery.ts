@@ -32,11 +32,34 @@ function isDeliveryDue(deliveryDate: Date, scheduledTime: string | null | undefi
   return now >= target;
 }
 
+// ── In-Memory cache for deliveries (15s TTL) ───────────────────────────────
+const DELIVERY_CACHE = new Map<string, { ts: number; data: any }>();
+const DELIVERY_CACHE_TTL = 15000;
+
+export function clearDeliveryCache(): void {
+  DELIVERY_CACHE.clear();
+}
+
 // GET /api/delivery
 router.get('/', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { status, employeeId, date } = req.query;
+
+    const userRole = (req.headers['x-user-role'] as string) || req.user?.role;
+    const userEmployeeId = (req.headers['x-employee-id'] as string) || req.user?.employeeId;
+
+    let targetEmployeeId = employeeId ? String(employeeId) : undefined;
+    if (userRole === 'DELIVERY_STAFF' && userEmployeeId) {
+      targetEmployeeId = userEmployeeId;
+    }
+
+    const cacheKey = `${branchId || 'all'}_${status || 'all'}_${targetEmployeeId || 'all'}_${date || 'all'}`;
+    const cached = DELIVERY_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < DELIVERY_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
 
     const filterRange = date ? getBusinessDateRange(String(date)) : undefined;
     const dayStart = filterRange?.start;
@@ -70,15 +93,6 @@ router.get('/', async (req: Request, res: Response) => {
           data: { deliveryStatus: 'OUT' },
         });
       }, { maxWait: 15000, timeout: 120000 });
-    }
-
-    // Enforce role-scoped delivery filtering for DELIVERY_STAFF users
-    const userRole = (req.headers['x-user-role'] as string) || req.user?.role;
-    const userEmployeeId = (req.headers['x-employee-id'] as string) || req.user?.employeeId;
-
-    let targetEmployeeId = employeeId ? String(employeeId) : undefined;
-    if (userRole === 'DELIVERY_STAFF' && userEmployeeId) {
-      targetEmployeeId = userEmployeeId;
     }
 
     const deliveries = await prisma.delivery.findMany({
@@ -133,6 +147,9 @@ router.get('/', async (req: Request, res: Response) => {
       take: 200,
     });
 
+    if (DELIVERY_CACHE.size >= 50) DELIVERY_CACHE.clear();
+    DELIVERY_CACHE.set(cacheKey, { ts: Date.now(), data: deliveries });
+    res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: deliveries });
   } catch (err: any) {
     console.error('Error in GET /api/delivery:', err);
@@ -306,6 +323,7 @@ router.patch('/', async (req: Request, res: Response) => {
       });
     }
 
+    clearDeliveryCache();
     return res.json({ success: true, data: delivery });
   } catch (err: any) {
     console.error('Error in PATCH /api/delivery:', err);
@@ -426,6 +444,7 @@ router.post('/return', async (req: Request, res: Response) => {
       });
     }, { maxWait: 15000, timeout: 120000 });
 
+    clearDeliveryCache();
     return res.json({ success: true, data: result });
   } catch (err: any) {
     console.error('Error in POST /api/delivery/return:', err);
@@ -458,6 +477,7 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
 
+    clearDeliveryCache();
     return res.status(201).json({ success: true, data: delivery });
   } catch (err: any) {
     console.error('Error in POST /api/delivery:', err);

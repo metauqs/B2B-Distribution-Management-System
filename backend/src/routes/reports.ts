@@ -8,9 +8,17 @@ import { getAuthoritativeGrossSales, calculateGrossSalesFromSales } from '../ser
 
 const router = Router();
 
-// In-memory cache for Dashboard endpoint (10-second TTL)
+// In-memory cache for Dashboard & Report endpoints (30-second TTL)
 const DASHBOARD_CACHE = new Map<string, { ts: number; data: any }>();
-const DASHBOARD_CACHE_TTL = 10000;
+const DASHBOARD_CACHE_TTL = 30000;
+
+const REPORT_CACHE = new Map<string, { ts: number; data: any }>();
+const REPORT_CACHE_TTL = 30000;
+
+export function clearReportCache(): void {
+  DASHBOARD_CACHE.clear();
+  REPORT_CACHE.clear();
+}
 
 /**
  * Compute total receivables and count of clients with positive outstanding balances
@@ -738,6 +746,13 @@ router.get('/executive-dashboard', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { preset = 'today', from, to } = req.query;
 
+    const cacheKey = `exec_${branchId || 'all'}_${preset}_${from || ''}_${to || ''}`;
+    const cached = REPORT_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < REPORT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
+
     const presetRange = getBusinessDatePresetRange(String(preset), from ? String(from) : undefined, to ? String(to) : undefined);
     const fromDate = presetRange.start;
     const toDate = presetRange.end;
@@ -747,13 +762,18 @@ router.get('/executive-dashboard', async (req: Request, res: Response) => {
       getFinancialAlerts(branchId),
     ]);
 
-    return res.json({
+    const responsePayload = {
       success: true,
       data: {
         ...metrics,
         alerts,
       },
-    });
+    };
+
+    if (REPORT_CACHE.size >= 50) REPORT_CACHE.clear();
+    REPORT_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    res.setHeader('X-Cache', 'MISS');
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('Error in GET /api/reports/executive-dashboard:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load executive dashboard' });
@@ -765,6 +785,13 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     const { from, to, clientId, status, search } = req.query;
+
+    const cacheKey = `inv_prof_${branchId || 'all'}_${from || ''}_${to || ''}_${clientId || ''}_${status || ''}_${search || ''}`;
+    const cached = REPORT_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < REPORT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
 
     const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
     const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
@@ -877,7 +904,7 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
     const grossMarginPct = totals.netSales > 0 ? (totals.grossProfit / totals.netSales) * 100 : 0;
     const contributionMarginPct = totals.netSales > 0 ? (totals.contributionProfit / totals.netSales) * 100 : 0;
 
-    return res.json({
+    const responsePayload = {
       success: true,
       data: {
         rows,
@@ -887,20 +914,17 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
           contributionMarginPct: Number(contributionMarginPct.toFixed(2)),
         },
       },
-    });
+    };
+
+    if (REPORT_CACHE.size >= 50) REPORT_CACHE.clear();
+    REPORT_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    res.setHeader('X-Cache', 'MISS');
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('Error in GET /api/reports/sales/invoices:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load invoice profitability' });
   }
 });
-
-// In-Memory cache for reports (20s TTL)
-const REPORT_CACHE = new Map<string, { ts: number; data: any }>();
-const REPORT_CACHE_TTL = 20000;
-
-export function clearReportCache(): void {
-  REPORT_CACHE.clear();
-}
 
 // GET /api/reports/sales/customers — Customer Profitability Report
 router.get('/sales/customers', async (req: Request, res: Response) => {
@@ -1140,6 +1164,13 @@ router.get('/sales/products', async (req: Request, res: Response) => {
 router.get('/purchases/cost-analysis', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const cacheKey = `purch_cost_${branchId || 'all'}`;
+    const cached = REPORT_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < REPORT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
+
     const history = await prisma.purchasePriceHistory.findMany({
       where: branchId ? { branchId } : {},
       include: {
@@ -1161,7 +1192,11 @@ router.get('/purchases/cost-analysis', async (req: Request, res: Response) => {
       totalSpent: h.buyPrice * h.qty,
     }));
 
-    return res.json({ success: true, data: rows });
+    const responsePayload = { success: true, data: rows };
+    if (REPORT_CACHE.size >= 50) REPORT_CACHE.clear();
+    REPORT_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    res.setHeader('X-Cache', 'MISS');
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('Error in GET /api/reports/purchases/cost-analysis:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load purchase cost analysis' });
@@ -1172,6 +1207,13 @@ router.get('/purchases/cost-analysis', async (req: Request, res: Response) => {
 router.get('/inventory/valuation', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const cacheKey = `inv_val_${branchId || 'all'}`;
+    const cached = REPORT_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < REPORT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
+
     const inventory = await prisma.inventory.findMany({
       where: branchId ? { branchId } : {},
       include: {
@@ -1204,7 +1246,7 @@ router.get('/inventory/valuation', async (req: Request, res: Response) => {
     const totalAvgCostValue = rows.reduce((s, r) => s + r.avgCostValuation, 0);
     const totalLatestBuyValue = rows.reduce((s, r) => s + r.latestBuyValuation, 0);
 
-    return res.json({
+    const responsePayload = {
       success: true,
       data: {
         rows,
@@ -1215,7 +1257,12 @@ router.get('/inventory/valuation', async (req: Request, res: Response) => {
           totalLatestBuyValue,
         },
       },
-    });
+    };
+
+    if (REPORT_CACHE.size >= 50) REPORT_CACHE.clear();
+    REPORT_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    res.setHeader('X-Cache', 'MISS');
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('Error in GET /api/reports/inventory/valuation:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load inventory valuation' });
@@ -1226,6 +1273,13 @@ router.get('/inventory/valuation', async (req: Request, res: Response) => {
 router.get('/finance/balance-sheet', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
+    const cacheKey = `bal_sheet_${branchId || 'all'}`;
+    const cached = REPORT_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < REPORT_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
+
     const bWhere = branchId ? { branchId } : {};
 
     const [cashAccts, bankAccts, receivablesAgg, inventoryItems, suppliers, suppPurchases, suppPayments] = await Promise.all([
@@ -1261,7 +1315,7 @@ router.get('/finance/balance-sheet', async (req: Request, res: Response) => {
     const totalLiabilities = payables;
     const equity = totalAssets - totalLiabilities;
 
-    return res.json({
+    const responsePayload = {
       success: true,
       data: {
         assets: {
@@ -1281,7 +1335,12 @@ router.get('/finance/balance-sheet', async (req: Request, res: Response) => {
           totalEquity: equity,
         },
       },
-    });
+    };
+
+    if (REPORT_CACHE.size >= 50) REPORT_CACHE.clear();
+    REPORT_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+    res.setHeader('X-Cache', 'MISS');
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('Error in GET /api/reports/finance/balance-sheet:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load balance sheet' });
