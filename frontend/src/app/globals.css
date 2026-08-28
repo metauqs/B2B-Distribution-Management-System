@@ -66,6 +66,9 @@
   --muted:     #7A7C6E;
   --danger:    #A83E3E;
   --ok:        #3E7A4E;
+  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-flow:   cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ─── Base Reset ──────────────────────────────────────────────────────────── */
@@ -1240,6 +1243,142 @@ button.va-icon:hover { color: var(--danger); }
   }
   100% {
     background-position: -200% 0;
+  }
+}
+
+/* ─── Hardware-Accelerated Zero-Memory Flow Animations ────────────────────── */
+@keyframes va-page-flow {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes va-fade-flow {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes va-scale-flow {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes va-modal-flow {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes va-tab-flow {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.va-page-flow {
+  animation: va-page-flow 0.24s var(--ease-smooth) forwards;
+  will-change: transform, opacity;
+  width: 100%;
+}
+
+.va-fade-in {
+  animation: va-fade-flow 0.18s var(--ease-flow) forwards;
+}
+
+.va-scale-in {
+  animation: va-scale-flow 0.22s var(--ease-smooth) forwards;
+}
+
+.va-tab-content-flow {
+  animation: va-tab-flow 0.18s var(--ease-smooth) forwards;
+}
+
+/* Modal and dialog smooth entry */
+.va-modal-box,
+[role="dialog"] > div {
+  animation: va-modal-flow 0.22s var(--ease-smooth) forwards;
+  will-change: transform, opacity;
+}
+
+/* Component Level Fluid Transitions (CSS-only, Zero JS Memory) */
+.va-card {
+  transition: transform 0.18s var(--ease-smooth), box-shadow 0.18s var(--ease-smooth), border-color 0.15s ease;
+}
+
+.va-card:hover {
+  transform: translate3d(0, -1.5px, 0);
+  box-shadow: 0 4px 12px rgba(31, 61, 43, 0.05);
+}
+
+.va-panel {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+button.va-btn, a.va-btn {
+  transition: background 0.14s ease, transform 0.1s ease, box-shadow 0.14s ease;
+}
+
+button.va-btn:active, a.va-btn:active {
+  transform: scale(0.985);
+}
+
+.va-nav-btn {
+  transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.va-nav-btn:hover {
+  transform: translate3d(2px, 0, 0);
+}
+
+/* Table row smooth hover */
+table.va-table tr {
+  transition: background 0.1s ease;
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .va-page-flow,
+  .va-fade-in,
+  .va-scale-in,
+  .va-tab-content-flow,
+  .va-modal-box,
+  [role="dialog"] > div {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+  .va-card,
+  button.va-btn,
+  a.va-btn,
+  .va-nav-btn,
+  table.va-table tr {
+    transition: none !important;
+    transform: none !important;
   }
 }
 
