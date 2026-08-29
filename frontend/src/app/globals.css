@@ -1252,59 +1252,14 @@ button.va-icon:hover { color: var(--danger); }
 @keyframes va-page-flow {
   0% {
     opacity: 0;
-    transform: translate3d(0, 8px, 0);
   }
   100% {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes va-fade-flow {
-  0% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
-@keyframes va-scale-flow {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 6px, 0) scale(0.99);
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-@keyframes va-modal-flow {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 12px, 0) scale(0.98);
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-@keyframes va-tab-flow {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 4px, 0);
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
   }
 }
 
 .va-page-flow {
-  animation: va-page-flow 0.24s var(--ease-smooth) forwards;
-  will-change: transform, opacity;
+  animation: va-page-flow 0.2s var(--ease-smooth) forwards;
   width: 100%;
 }
 
