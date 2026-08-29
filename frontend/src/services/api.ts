@@ -15,6 +15,13 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    // Prevent double /api/api if baseURL is already /api and endpoint starts with /api
+    if (config.url?.startsWith('/api/')) {
+      config.url = config.url.replace(/^\/api/, '');
+    } else if (config.url === '/api') {
+      config.url = '';
+    }
+
     const method = (config.method || '').toUpperCase();
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       if (!config.headers['Idempotency-Key'] && !config.headers['idempotency-key']) {

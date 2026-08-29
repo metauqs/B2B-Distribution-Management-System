@@ -28,7 +28,8 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
 }
 
 async function handleProxy(request: NextRequest, path: string[]) {
-  const pathStr = (path || []).join('/');
+  const cleanPath = path.length > 0 && path[0] === 'api' ? path.slice(1) : path;
+  const pathStr = (cleanPath || []).join('/');
   const searchParams = request.nextUrl.search;
   const targetUrl = `${BACKEND_URL}/api/${pathStr}${searchParams}`;
 

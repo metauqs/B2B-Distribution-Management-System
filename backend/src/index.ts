@@ -59,6 +59,15 @@ app.use(cors({
 
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+
+// Normalize accidental duplicate /api/api prefixes
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/api/')) {
+    req.url = req.url.replace(/^\/api\/api\//, '/api/');
+  }
+  next();
+});
+
 app.use(requestLogger);
 
 // Static uploads serving (disallow dotfiles and directory indexing)

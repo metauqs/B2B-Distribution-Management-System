@@ -56,8 +56,15 @@ const SALES_CACHE = new Map<string, { ts: number; data: any }>();
 const SALES_CACHE_TTL = 20000;
 const SALES_IN_FLIGHT = new Map<string, Promise<any>>();
 
+const ACTIVE_SALE_CACHE = new Map<string, { ts: number; data: any }>();
+const ACTIVE_SALE_CACHE_TTL = 10000;
+const ACTIVE_SALE_IN_FLIGHT = new Map<string, Promise<any>>();
+
 export function clearSalesCache(): void {
   SALES_CACHE.clear();
+  ACTIVE_SALE_CACHE.clear();
+  SALES_IN_FLIGHT.clear();
+  ACTIVE_SALE_IN_FLIGHT.clear();
 }
 
 // GET /api/sales — List sales
@@ -179,8 +186,31 @@ router.get('/active', async (req: Request, res: Response) => {
     if (!clientId) {
       return res.status(400).json({ success: false, error: 'clientId parameter is required' });
     }
-    const sale = await findActiveEditableSale(String(clientId), branchId);
-    return res.json({ success: true, data: sale });
+
+    const cacheKey = `active_sale_${branchId || 'all'}_${clientId}`;
+    const cached = ACTIVE_SALE_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < ACTIVE_SALE_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached.data });
+    }
+
+    if (ACTIVE_SALE_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await ACTIVE_SALE_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
+
+    const fetchPromise = findActiveEditableSale(String(clientId), branchId);
+    ACTIVE_SALE_IN_FLIGHT.set(cacheKey, fetchPromise);
+    try {
+      const sale = await fetchPromise;
+      if (ACTIVE_SALE_CACHE.size > 100) ACTIVE_SALE_CACHE.clear();
+      ACTIVE_SALE_CACHE.set(cacheKey, { ts: Date.now(), data: sale });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: sale });
+    } finally {
+      ACTIVE_SALE_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('[GET /api/sales/active]', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to check active invoice' });
