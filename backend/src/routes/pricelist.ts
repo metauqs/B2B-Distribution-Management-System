@@ -515,17 +515,18 @@ router.get('/', async (req: Request, res: Response) => {
       const fetchDateListPromise = (async () => {
         const [list, inventories, activeProducts] = await Promise.all([
           fetchPriceListWithItems(branchId, day, dayEnd),
-          branchId ? prisma.inventory.findMany({
-            where: { branchId },
-            select: {
-              productId: true,
-              qty: true,
-              reservedQty: true,
-              avgCost: true,
-              currentBuyPrice: true,
-              previousBuyPrice: true,
-            }
-          }) : Promise.resolve([]),
+          branchId ? prisma.$queryRaw<Array<{
+            productId: string;
+            qty: number;
+            reservedQty: number;
+            avgCost: number;
+            currentBuyPrice: number;
+            previousBuyPrice: number;
+          }>>`
+            SELECT "productId", qty::float, "reservedQty"::float, "avgCost"::float, "currentBuyPrice"::float, "previousBuyPrice"::float
+            FROM inventory
+            WHERE "branchId" = ${branchId}
+          ` : Promise.resolve([]),
           getCachedActiveProducts(),
         ]);
 
@@ -589,27 +590,29 @@ router.get('/', async (req: Request, res: Response) => {
         createdBy: { id: string; name: string } | null;
         _count: { items: number };
       }> = await prisma.$queryRaw`
+        WITH target_lists AS (
+          SELECT pl.id, pl.date, pl."branchId", pl."isActive", pl.notes, pl."createdAt", pl."updatedAt", pl."createdById"
+          FROM price_lists pl
+          WHERE (${rawBranchId} = '' OR pl."branchId" = ${rawBranchId})
+            AND pl."isActive" = true
+          ORDER BY pl.date DESC
+          LIMIT ${limit}
+        )
         SELECT 
-          pl.id,
-          pl.date,
-          pl."branchId",
-          pl."isActive",
-          pl.notes,
-          pl."createdAt",
-          pl."updatedAt",
+          tl.id,
+          tl.date,
+          tl."branchId",
+          tl."isActive",
+          tl.notes,
+          tl."createdAt",
+          tl."updatedAt",
           CASE WHEN u.id IS NOT NULL THEN json_build_object('id', u.id, 'name', u.name) ELSE NULL END as "createdBy",
-          json_build_object('items', COALESCE(ic.item_count, 0)::int) as "_count"
-        FROM price_lists pl
-        LEFT JOIN users u ON u.id = pl."createdById"
-        LEFT JOIN (
-          SELECT "priceListId", COUNT(id) as item_count
-          FROM price_items
-          GROUP BY "priceListId"
-        ) ic ON ic."priceListId" = pl.id
-        WHERE (${rawBranchId} = '' OR pl."branchId" = ${rawBranchId})
-          AND pl."isActive" = true
-        ORDER BY pl.date DESC
-        LIMIT ${limit}
+          json_build_object('items', COALESCE(
+            (SELECT COUNT(*) FROM price_items pi WHERE pi."priceListId" = tl.id), 0
+          )::int) as "_count"
+        FROM target_lists tl
+        LEFT JOIN users u ON u.id = tl."createdById"
+        ORDER BY tl.date DESC
       `;
       return lists;
     })();
