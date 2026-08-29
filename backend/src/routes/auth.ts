@@ -16,9 +16,9 @@ function signAuthTokens(payload: { sub: string; email: string; role: string; bra
   return { accessToken, refreshToken };
 }
 
-// In-Memory cache for /me endpoint (60s TTL) to eliminate query storms
+// In-Memory cache for /me endpoint (5m TTL) to eliminate query storms
 const ME_CACHE = new Map<string, { ts: number; user: any }>();
-const ME_CACHE_TTL = 60000;
+const ME_CACHE_TTL = 300000;
 const AUTH_ME_IN_FLIGHT = new Map<string, Promise<any>>();
 const AUTH_REFRESH_IN_FLIGHT = new Map<string, Promise<any>>();
 
@@ -179,6 +179,27 @@ router.post('/login', async (req: Request, res: Response) => {
       data: { lastLoginAt: new Date() },
     });
 
+    // Populate fast ME_CACHE immediately
+    ME_CACHE.set(user.id, {
+      ts: Date.now(),
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        branchId: targetBranchId,
+        isActive: true,
+        employee: {
+          id: matchedEmployee.id,
+          employeeId: matchedEmployee.employeeId,
+          name: matchedEmployee.name,
+          role: matchedEmployee.role,
+          phone: matchedEmployee.phone,
+          whatsapp: matchedEmployee.whatsapp,
+        },
+      }
+    });
+
     // Issue 30m Access Token & 7d Refresh Token
     const { accessToken, refreshToken } = signAuthTokens({
       sub: user.id,
@@ -251,15 +272,28 @@ router.post('/refresh', async (req: Request, res: Response) => {
       if (cached && (Date.now() - cached.ts) < ME_CACHE_TTL) {
         user = cached.user;
       } else {
-        user = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { id: true, email: true, name: true, role: true, branchId: true, isActive: true, deletedAt: true },
-        });
-        if (user && user.deletedAt) {
-          user = null;
-        }
-        if (user && user.isActive) {
-          ME_CACHE.set(user.id, { ts: Date.now(), user });
+        try {
+          const rows: any[] = await prisma.$queryRaw`
+            SELECT id, email, name, role, "branchId", "isActive"
+            FROM users
+            WHERE id = ${userId} AND "deletedAt" IS NULL
+            LIMIT 1
+          `;
+          if (rows.length > 0 && rows[0].isActive) {
+            user = rows[0];
+            ME_CACHE.set(user.id, { ts: Date.now(), user });
+          }
+        } catch {
+          // If DB is temporarily sleeping/slow, use cryptographic JWT verified claims
+          if (decoded.sub && decoded.email && decoded.role) {
+            user = {
+              id: decoded.sub,
+              email: decoded.email,
+              role: decoded.role,
+              branchId: decoded.branchId,
+              isActive: true,
+            };
+          }
         }
       }
 

@@ -162,9 +162,6 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       const [
         rawAggs,
         todaySalesRecords,
-        deliveryStatusAgg,
-        inventoryItems,
-        l30Data,
         attentionRaw,
         receivablesData,
       ] = await Promise.all([
@@ -177,8 +174,15 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           total_receivables: number;
           receivables_client_count: number;
           total_payables: number;
+          completed_deliveries: number;
+          failed_deliveries: number;
           pending_deliveries: number;
           at_risk_clients: number;
+          total_inventory_value: number;
+          low_stock_count: number;
+          l30_sales: number;
+          l30_purchases: number;
+          l30_expenses: number;
         }>>`
           SELECT 
             (SELECT COALESCE(SUM(total), 0) FROM purchases WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL)::float as today_purchases,
@@ -193,44 +197,83 @@ router.get('/dashboard', async (req: Request, res: Response) => {
               (SELECT COALESCE(SUM(total), 0) FROM purchases WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND "deletedAt" IS NULL) -
               (SELECT COALESCE(SUM(amount), 0) FROM supplier_payments WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}))
             )::float as total_payables,
+            (SELECT COUNT(*) FROM deliveries WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND status = 'DELIVERED')::int as completed_deliveries,
+            (SELECT COUNT(*) FROM deliveries WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND status = 'FAILED')::int as failed_deliveries,
             (SELECT COUNT(*) FROM deliveries WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND status NOT IN ('DELIVERED', 'FAILED'))::int as pending_deliveries,
-            (SELECT COUNT(*) FROM clients WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND rating IN ('RED', 'ORANGE') AND "deletedAt" IS NULL)::int as at_risk_clients
+            (SELECT COUNT(*) FROM clients WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND rating IN ('RED', 'ORANGE') AND "deletedAt" IS NULL)::int as at_risk_clients,
+            (
+              SELECT COALESCE(SUM(GREATEST(0, inv.qty) * (CASE WHEN inv."avgCost" > 0 THEN inv."avgCost" ELSE (CASE WHEN inv."currentBuyPrice" > 0 THEN inv."currentBuyPrice" ELSE 0 END) END)), 0)
+              FROM inventory inv
+              WHERE (${rawBranchId} = '' OR inv."branchId" = ${rawBranchId})
+            )::float as total_inventory_value,
+            (
+              SELECT COUNT(*)
+              FROM inventory inv
+              LEFT JOIN products pr ON pr.id = inv."productId"
+              WHERE (${rawBranchId} = '' OR inv."branchId" = ${rawBranchId})
+                AND inv.qty <= COALESCE(pr."minStock", 0)
+            )::int as low_stock_count,
+            (SELECT COALESCE(SUM(total), 0) FROM sales WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${l30Start} AND status != 'CANCELLED' AND "deletedAt" IS NULL)::float as l30_sales,
+            (SELECT COALESCE(SUM(total), 0) FROM purchases WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${l30Start} AND "deletedAt" IS NULL)::float as l30_purchases,
+            (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${l30Start} AND "deletedAt" IS NULL)::float as l30_expenses
         `,
-        prisma.sale.findMany({
-          where: { ...tWhere, status: { not: 'CANCELLED' } },
-          select: {
-            id: true,
-            subtotal: true,
-            total: true,
-            discount: true,
-            paid: true,
-            paymentMode: true,
-            status: true,
-            date: true,
-            invoiceNo: true,
-            client: { select: { name: true } },
-            items: {
-              select: { qty: true, costPrice: true, returnedQty: true, rate: true }
-            }
-          },
-          orderBy: { date: 'desc' },
-        }),
-        prisma.delivery.groupBy({
-          by: ['status'],
-          where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } },
-          _count: true,
-        }),
-        prisma.inventory.findMany({
-          where: bWhere,
-          select: { qty: true, avgCost: true, currentBuyPrice: true, product: { select: { minStock: true } } },
-        }),
-        getL30Metrics(branchId, bWhere),
-        prisma.client.findMany({
-          where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } },
-          select: { id: true, name: true, currentBalance: true },
-          orderBy: { currentBalance: 'desc' },
-          take: 5,
-        }),
+        prisma.$queryRaw<Array<{
+          id: string;
+          invoiceNo: string;
+          date: Date;
+          subtotal: number;
+          discount: number;
+          total: number;
+          paid: number;
+          paymentMode: string;
+          status: string;
+          clientName: string;
+          items: Array<{ qty: number; costPrice: number; returnedQty: number; rate: number }>;
+        }>>`
+          SELECT 
+            s.id,
+            s."invoiceNo",
+            s.date,
+            s.subtotal::float as subtotal,
+            s.discount::float as discount,
+            s.total::float as total,
+            s.paid::float as paid,
+            s."paymentMode",
+            s.status,
+            COALESCE(c.name, '—') as "clientName",
+            COALESCE(
+              (
+                SELECT json_agg(
+                  json_build_object(
+                    'qty', si.qty::float,
+                    'costPrice', si."costPrice"::float,
+                    'returnedQty', si."returnedQty"::float,
+                    'rate', si.rate::float
+                  )
+                )
+                FROM sale_items si
+                WHERE si."saleId" = s.id
+              ),
+              '[]'::json
+            ) as items
+          FROM sales s
+          LEFT JOIN clients c ON c.id = s."clientId"
+          WHERE (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+            AND s.date >= ${todayStart}
+            AND s.date <= ${todayEnd}
+            AND s."deletedAt" IS NULL
+            AND s.status != 'CANCELLED'::"TransactionStatus"
+          ORDER BY s.date DESC, s."createdAt" DESC
+        `,
+        prisma.$queryRaw<Array<{ id: string; name: string; balance: number }>>`
+          SELECT id, name, "currentBalance"::float as balance
+          FROM clients
+          WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
+            AND "deletedAt" IS NULL
+            AND "currentBalance" > 0
+          ORDER BY "currentBalance" DESC
+          LIMIT 5
+        `,
         isToday ? Promise.resolve(null) : getHistoricalReceivables(branchId, todayEnd, isToday),
       ]);
       const dbDuration = Date.now() - dbStart;
@@ -241,17 +284,20 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       const dbCollectionsSum = Number(aggRow.today_collections ?? 0);
       const totalPayables = Math.max(0, Number(aggRow.total_payables ?? 0));
       const pendingDeliveries = Number(aggRow.pending_deliveries ?? 0);
+      const completedDeliveriesCount = Number(aggRow.completed_deliveries ?? 0);
+      const failedDeliveriesCount = Number(aggRow.failed_deliveries ?? 0);
       const atRiskClients = Number(aggRow.at_risk_clients ?? 0);
       const todayWastageQty = Number(aggRow.today_wastage_qty ?? 0);
       const todayWastageCount = Number(aggRow.today_wastage_count ?? 0);
+      const totalInventoryValue = Number(aggRow.total_inventory_value ?? 0);
+      const lowStockCount = Number(aggRow.low_stock_count ?? 0);
 
       const totalReceivables = receivablesData ? receivablesData.receivables : Number(aggRow.total_receivables ?? 0);
       const clientCount = receivablesData ? receivablesData.clientCount : Number(aggRow.receivables_client_count ?? 0);
 
-      const { l30Sales, l30Purchases, l30Expenses } = l30Data;
-
-      const completedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'DELIVERED')?._count ?? 0;
-      const failedDeliveriesCount = deliveryStatusAgg.find(d => d.status === 'FAILED')?._count ?? 0;
+      const l30Rev = Number(aggRow.l30_sales ?? 0);
+      const l30Pur = Number(aggRow.l30_purchases ?? 0);
+      const l30Exp = Number(aggRow.l30_expenses ?? 0);
 
       let todaySales = 0;
       let grossSales = 0;
@@ -271,7 +317,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
         if (s.paymentMode === 'CASH') cashSales += s.total;
         else if (s.paymentMode === 'CREDIT') creditSales += s.total;
 
-        for (const item of s.items) {
+        for (const item of s.items || []) {
           const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
           totalCogs += item.qty * effectiveCost;
           if (item.returnedQty > 0) {
@@ -295,18 +341,6 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       const cashPosition = todayCollections - todayExpenses - todayPurchases;
       const netSalesToday = netSales; // expose netSales (after discounts) not gross
 
-      let totalInventoryValue = 0;
-      let lowStockCount = 0;
-      for (const inv of inventoryItems) {
-        const cost = inv.avgCost > 0 ? inv.avgCost : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
-        totalInventoryValue += Math.max(0, inv.qty) * cost;
-        const min = inv.product?.minStock ?? 0;
-        if (inv.qty <= min) lowStockCount++;
-      }
-
-      const l30Rev = l30Sales._sum.total ?? 0;
-      const l30Pur = l30Purchases._sum.total ?? 0;
-      const l30Exp = l30Expenses._sum.amount ?? 0;
       const l30Profit = l30Rev - l30Pur - l30Exp;
       const marginScore = l30Rev > 0 ? Math.max(0, Math.min(100, (l30Profit / l30Rev) * 100)) : 0;
       const collectionScore = l30Rev > 0 ? Math.max(0, Math.min(100, (totalReceivables / l30Rev) * -50 + 100)) : 80;
@@ -315,7 +349,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       const attention = attentionRaw.map(c => ({
         id: c.id,
         name: c.name,
-        balance: c.currentBalance,
+        balance: c.balance,
       }));
 
       const duration = Date.now() - start;
@@ -363,7 +397,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
         recentSales: recentSales.map(s => ({
           id: s.id,
           invoiceNo: s.invoiceNo,
-          clientName: s.client?.name ?? '—',
+          clientName: s.clientName ?? '—',
           total: s.total,
           status: s.status,
           date: s.date.toISOString(),
