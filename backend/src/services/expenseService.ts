@@ -354,8 +354,9 @@ export class ExpenseService {
    * Compute dynamic summary metrics & category-wise expense breakdown directly from the database across all ERP modules.
    */
   static async getExpenseSummary(branchId: string, fromDate?: Date, toDate?: Date) {
-    const bWhere = branchId ? { branchId, deletedAt: null } : { deletedAt: null };
-    const dateFilter = fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : undefined;
+    const rawBranchId = branchId || '';
+    const rawFrom = fromDate || null;
+    const rawTo = toDate || null;
 
     // Today range
     const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
@@ -367,111 +368,88 @@ export class ExpenseService {
     const monthStart = getBusinessDatePresetRange('this_month').start;
 
     const [
-      todayAgg,
-      weekAgg,
-      monthAgg,
-      totalAgg,
+      aggRes,
       paidByGroup,
-      categoryGroup,
-      purchasesAgg,
-      salesAgg,
-      wastageList,
-      salariesAgg,
+      categoryGroup
     ] = await Promise.all([
-      prisma.expense.aggregate({
-        where: { ...bWhere, date: { gte: todayStart, lte: todayEnd } },
-        _sum: { amount: true }, _count: true,
-      }),
-      prisma.expense.aggregate({
-        where: { ...bWhere, date: { gte: weekStart } },
-        _sum: { amount: true }, _count: true,
-      }),
-      prisma.expense.aggregate({
-        where: { ...bWhere, date: { gte: monthStart } },
-        _sum: { amount: true }, _count: true,
-      }),
-      prisma.expense.aggregate({
-        where: {
-          ...bWhere,
-          ...(dateFilter ? { date: dateFilter } : {}),
-        },
-        _sum: { amount: true }, _count: true,
-      }),
-      prisma.expense.groupBy({
-        by: ['paidBy'],
-        where: {
-          ...bWhere,
-          ...(dateFilter ? { date: dateFilter } : {}),
-        },
-        _sum: { amount: true },
-      }),
-      prisma.expense.groupBy({
-        by: ['category'],
-        where: {
-          ...bWhere,
-          ...(dateFilter ? { date: dateFilter } : {}),
-        },
-        _sum: { amount: true },
-        _count: true,
-      }),
-      // Automated Sources Aggregations
-      prisma.purchase.aggregate({
-        where: {
-          ...(branchId ? { branchId } : {}),
-          ...(dateFilter ? { date: dateFilter } : {}),
-        },
-        _sum: { total: true, transportCost: true },
-        _count: true,
-      }),
-      prisma.sale.aggregate({
-        where: {
-          ...(branchId ? { branchId } : {}),
-          status: { not: 'CANCELLED' },
-          ...(dateFilter ? { date: dateFilter } : {}),
-        },
-        _sum: { total: true },
-        _count: true,
-      }),
-      prisma.wastage.findMany({
-        where: {
-          ...(branchId ? { branchId } : {}),
-          ...(dateFilter ? { date: dateFilter } : {}),
-        },
-        select: {
-          qty: true,
-          product: {
-            select: {
-              inventory: branchId ? { where: { branchId }, select: { avgCost: true, currentBuyPrice: true } } : { select: { avgCost: true, currentBuyPrice: true } },
-            },
-          },
-        },
-      }),
-      prisma.employee.aggregate({
-        where: {
-          isActive: true,
-        },
-        _sum: { salary: true },
-        _count: true,
-      }),
+      prisma.$queryRaw<Array<{
+        today: number;
+        todayCount: number;
+        thisWeek: number;
+        thisWeekCount: number;
+        thisMonth: number;
+        thisMonthCount: number;
+        total: number;
+        totalCount: number;
+        purchasesTotal: number;
+        purchasesTransport: number;
+        purchasesCount: number;
+        totalRevenue: number;
+        salesCount: number;
+        salariesTotal: number;
+        salariesCount: number;
+        wastageLoss: number;
+        wastageCount: number;
+      }>>`
+        SELECT
+          (SELECT COALESCE(SUM(amount), 0)::float FROM expenses WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd}) as "today",
+          (SELECT COUNT(id)::int FROM expenses WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd}) as "todayCount",
+          (SELECT COALESCE(SUM(amount), 0)::float FROM expenses WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${weekStart}) as "thisWeek",
+          (SELECT COUNT(id)::int FROM expenses WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${weekStart}) as "thisWeekCount",
+          (SELECT COALESCE(SUM(amount), 0)::float FROM expenses WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${monthStart}) as "thisMonth",
+          (SELECT COUNT(id)::int FROM expenses WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${monthStart}) as "thisMonthCount",
+          (SELECT COALESCE(SUM(amount), 0)::float FROM expenses WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})) as "total",
+          (SELECT COUNT(id)::int FROM expenses WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})) as "totalCount",
+          (SELECT COALESCE(SUM(total), 0)::float FROM purchases WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})) as "purchasesTotal",
+          (SELECT COALESCE(SUM("transportCost"), 0)::float FROM purchases WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})) as "purchasesTransport",
+          (SELECT COUNT(id)::int FROM purchases WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})) as "purchasesCount",
+          (SELECT COALESCE(SUM(total), 0)::float FROM sales WHERE status != 'CANCELLED' AND "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})) as "totalRevenue",
+          (SELECT COUNT(id)::int FROM sales WHERE status != 'CANCELLED' AND "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})) as "salesCount",
+          (SELECT COALESCE(SUM(salary), 0)::float FROM employees WHERE "isActive" = true) as "salariesTotal",
+          (SELECT COUNT(id)::int FROM employees WHERE "isActive" = true) as "salariesCount",
+          (SELECT COALESCE(SUM(w.qty * (CASE WHEN i."avgCost" > 0 THEN i."avgCost" ELSE i."currentBuyPrice" END)), 0)::float 
+           FROM wastages w 
+           LEFT JOIN inventory i ON i."productId" = w."productId" AND (${rawBranchId} = '' OR i."branchId" = ${rawBranchId}) 
+           WHERE (${rawBranchId} = '' OR w."branchId" = ${rawBranchId}) AND (${rawFrom}::timestamptz IS NULL OR w.date >= ${rawFrom}) AND (${rawTo}::timestamptz IS NULL OR w.date <= ${rawTo})) as "wastageLoss",
+          (SELECT COUNT(id)::int FROM wastages WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})) as "wastageCount"
+      `,
+      prisma.$queryRaw<Array<{ paidBy: string; total: number }>>`
+        SELECT 
+          "paidBy"::text, 
+          COALESCE(SUM(amount), 0)::float as total 
+        FROM expenses 
+        WHERE "deletedAt" IS NULL 
+          AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) 
+          AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) 
+          AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})
+        GROUP BY "paidBy"
+      `,
+      prisma.$queryRaw<Array<{ category: string; total: number; count: number }>>`
+        SELECT 
+          category::text, 
+          COALESCE(SUM(amount), 0)::float as total, 
+          COUNT(id)::int as count 
+        FROM expenses 
+        WHERE "deletedAt" IS NULL 
+          AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) 
+          AND (${rawFrom}::timestamptz IS NULL OR date >= ${rawFrom}) 
+          AND (${rawTo}::timestamptz IS NULL OR date <= ${rawTo})
+        GROUP BY category
+      `,
     ]);
 
-    const payMap = Object.fromEntries(paidByGroup.map(g => [g.paidBy, g._sum.amount ?? 0]));
+    const agg = aggRes[0] || ({} as any);
+    const payMap = Object.fromEntries(paidByGroup.map(g => [g.paidBy, g.total ?? 0]));
     const cash = payMap['CASH'] ?? 0;
     const bank = payMap['BANK'] ?? 0;
     const online = payMap['ONLINE'] ?? 0;
 
-    // Calculate wastage financial loss
-    const wastageLoss = wastageList.reduce((sum, w) => {
-      const inv = w.product?.inventory?.[0];
-      const cost = (inv?.avgCost && inv.avgCost > 0) ? inv.avgCost : (inv?.currentBuyPrice ?? 0);
-      return sum + (w.qty * cost);
-    }, 0);
-
-    const manualExpensesTotal = totalAgg._sum.amount ?? 0;
-    const purchasesTotal = purchasesAgg._sum.total ?? 0;
-    const purchasesTransport = purchasesAgg._sum.transportCost ?? 0;
-    const salariesTotal = salariesAgg._sum?.salary ?? 0;
-    const totalRevenue = salesAgg._sum.total ?? 0;
+    const manualExpensesTotal = Number(agg.total ?? 0);
+    const purchasesTotal = Number(agg.purchasesTotal ?? 0);
+    const purchasesTransport = Number(agg.purchasesTransport ?? 0);
+    const salariesTotal = Number(agg.salariesTotal ?? 0);
+    const totalRevenue = Number(agg.totalRevenue ?? 0);
+    const wastageLoss = Number(agg.wastageLoss ?? 0);
 
     const totalBusinessExpenses = manualExpensesTotal + purchasesTotal + wastageLoss + salariesTotal;
     const grossProfit = totalRevenue - purchasesTotal;
@@ -481,15 +459,15 @@ export class ExpenseService {
     // Build unified category breakdown
     const categoryBreakdown: any[] = categoryGroup.map((item) => ({
       category: item.category,
-      total: item._sum.amount ?? 0,
-      count: item._count,
+      total: Number(item.total ?? 0),
+      count: Number(item.count ?? 0),
     }));
 
     if (purchasesTotal > 0) {
       categoryBreakdown.push({
         category: 'PURCHASE',
         total: purchasesTotal,
-        count: purchasesAgg._count ?? 0,
+        count: Number(agg.purchasesCount ?? 0),
       });
     }
 
@@ -497,7 +475,7 @@ export class ExpenseService {
       categoryBreakdown.push({
         category: 'INVENTORY_WASTAGE',
         total: wastageLoss,
-        count: wastageList.length,
+        count: Number(agg.wastageCount ?? 0),
       });
     }
 
@@ -505,32 +483,32 @@ export class ExpenseService {
       categoryBreakdown.push({
         category: 'SALARY',
         total: salariesTotal,
-        count: (salariesAgg._count && typeof salariesAgg._count === 'number') ? salariesAgg._count : 0,
+        count: Number(agg.salariesCount ?? 0),
       });
     }
 
     return {
-      today: todayAgg._sum.amount ?? 0,
-      todayCount: todayAgg._count ?? 0,
-      thisWeek: weekAgg._sum.amount ?? 0,
-      thisWeekCount: weekAgg._count ?? 0,
-      thisMonth: monthAgg._sum.amount ?? 0,
-      thisMonthCount: monthAgg._count ?? 0,
+      today: Number(agg.today ?? 0),
+      todayCount: Number(agg.todayCount ?? 0),
+      thisWeek: Number(agg.thisWeek ?? 0),
+      thisWeekCount: Number(agg.thisWeekCount ?? 0),
+      thisMonth: Number(agg.thisMonth ?? 0),
+      thisMonthCount: Number(agg.thisMonthCount ?? 0),
       total: manualExpensesTotal,
-      totalCount: totalAgg._count ?? 0,
+      totalCount: Number(agg.totalCount ?? 0),
       cash,
       bank,
       online,
       // Automated Cross-Module Analytics
       purchasesTotal,
-      purchasesCount: purchasesAgg._count ?? 0,
+      purchasesCount: Number(agg.purchasesCount ?? 0),
       purchasesTransport,
       wastageLoss,
-      wastageCount: wastageList.length,
+      wastageCount: Number(agg.wastageCount ?? 0),
       salariesTotal,
-      salariesCount: salariesAgg._count ?? 0,
+      salariesCount: Number(agg.salariesCount ?? 0),
       totalRevenue,
-      salesCount: salesAgg._count ?? 0,
+      salesCount: Number(agg.salesCount ?? 0),
       grossProfit,
       netProfit,
       operatingCost,

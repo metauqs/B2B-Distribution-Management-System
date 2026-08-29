@@ -43,12 +43,22 @@ export async function findActiveEditableSale(clientId: string, branchId?: string
     },
     include: {
       client: { select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, address: true, deliveryLocation: true, creditLimit: true, currentBalance: true } },
-      items: { include: { product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } } } },
-      deliveries: { include: { driver: true, vehicle: true, employee: true } },
-      employee: true,
+      items: true,
+      deliveries: { select: { id: true, status: true, date: true, scheduledTime: true, driverId: true, vehicleId: true } },
+      employee: { select: { id: true, name: true } },
     },
     orderBy: { createdAt: 'desc' }
   });
+
+  if (sale && Array.isArray(sale.items)) {
+    const activeProducts = await getCachedActiveProducts();
+    const prodMap = new Map<string, any>();
+    for (const p of activeProducts) prodMap.set(p.id, p);
+
+    for (const item of sale.items) {
+      (item as any).product = item.productId ? (prodMap.get(item.productId) || null) : null;
+    }
+  }
 
   return sale;
 }

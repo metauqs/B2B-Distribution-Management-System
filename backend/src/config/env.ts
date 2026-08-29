@@ -14,16 +14,7 @@ import crypto from 'crypto';
 
 // ─── JWT Secret Resolution ───────────────────────────────────────────────────
 const DEFAULT_JWT_SECRET = 'sabzi_ledger_jwt_secret_fallback_key_2026_production_safe';
-let resolvedJwtSecret = process.env.JWT_SECRET;
-
-if (!resolvedJwtSecret) {
-  if (isProd) {
-    resolvedJwtSecret = crypto.randomBytes(48).toString('hex');
-    console.warn('🔒 [SECURITY] No JWT_SECRET set in production. Generated a secure random ephemeral secret for this process runtime.');
-  } else {
-    resolvedJwtSecret = DEFAULT_JWT_SECRET;
-  }
-}
+const resolvedJwtSecret = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 // ─── Server & CORS Configuration ─────────────────────────────────────────────

@@ -17,80 +17,126 @@ export interface ReportFilterParams {
 }
 
 export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) {
-  const bWhere = filters.branchId ? { branchId: filters.branchId } : {};
-  const dateRange = (filters.from && filters.to) ? { gte: filters.from, lte: filters.to } : undefined;
-  const dateWhere = dateRange ? { date: dateRange } : {};
-
-  const saleWhere = { ...bWhere, ...dateWhere, status: { not: 'CANCELLED' as const }, deletedAt: null };
-  const purchaseWhere = { ...bWhere, ...dateWhere, deletedAt: null };
-  const expenseWhere = { ...bWhere, ...dateWhere, deletedAt: null };
-  const collectionWhere = { ...bWhere, ...dateWhere, deletedAt: null };
+  const rawBranchId = filters.branchId || '';
+  const fromDate = filters.from || null;
+  const toDate = filters.to || null;
 
   const [
-    salesAgg,
-    paymentModeAgg,
-    purchasesAgg,
-    expensesAgg,
-    collectionsAgg,
-    wastageAgg,
-    receivablesAgg,
-    inventoryItems,
-    allSuppliers,
-    supplierPurchases,
-    supplierPayments,
-    saleItemsAgg,
+    salesRes,
+    cogsRes,
+    opsRes,
+    bsRes,
+    payRes
   ] = await Promise.all([
-    prisma.sale.aggregate({ where: saleWhere, _sum: { total: true, subtotal: true, discount: true, deliveryCharge: true, paid: true }, _count: true }),
-    prisma.sale.groupBy({ by: ['paymentMode'], where: saleWhere, _sum: { total: true } }),
-    prisma.purchase.aggregate({ where: purchaseWhere, _sum: { total: true, subtotal: true, transportCost: true }, _count: true }),
-    prisma.expense.aggregate({ where: expenseWhere, _sum: { amount: true }, _count: true }),
-    prisma.collection.aggregate({ where: collectionWhere, _sum: { amount: true }, _count: true }),
-    prisma.wastage.aggregate({ where: { ...bWhere, ...dateWhere }, _sum: { qty: true }, _count: true }),
-    prisma.client.aggregate({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, _sum: { currentBalance: true } }),
-    prisma.inventory.findMany({
-      where: bWhere,
-      include: { product: { select: { id: true, name: true, minStock: true, category: true } } },
-    }),
-    prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, openingBalance: true } }),
-    prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
-    prisma.supplierPayment.groupBy({ by: ['supplierId'], where: bWhere, _sum: { amount: true } }),
-    prisma.saleItem.findMany({
-      where: { sale: saleWhere },
-      select: {
-        qty: true,
-        rate: true,
-        amount: true,
-        costPrice: true,
-        returnedQty: true,
-        productId: true,
-      },
-    }),
+    prisma.$queryRaw<Array<{
+      grossSales: number;
+      discounts: number;
+      deliveryCharge: number;
+      totalRevenue: number;
+      salesPaidSum: number;
+      salesCount: number;
+      cashSales: number;
+      creditSales: number;
+    }>>`
+      SELECT 
+        COALESCE(SUM(s.subtotal), 0)::float as "grossSales",
+        COALESCE(SUM(s.discount), 0)::float as "discounts",
+        COALESCE(SUM(s."deliveryCharge"), 0)::float as "deliveryCharge",
+        COALESCE(SUM(s.total), 0)::float as "totalRevenue",
+        COALESCE(SUM(s.paid), 0)::float as "salesPaidSum",
+        COUNT(s.id)::int as "salesCount",
+        COALESCE(SUM(CASE WHEN s."paymentMode" = 'CASH' THEN s.total ELSE 0 END), 0)::float as "cashSales",
+        COALESCE(SUM(CASE WHEN s."paymentMode" = 'CREDIT' THEN s.total ELSE 0 END), 0)::float as "creditSales"
+      FROM sales s
+      WHERE s.status != 'CANCELLED' AND s."deletedAt" IS NULL
+        AND (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+        AND (${fromDate}::timestamptz IS NULL OR s.date >= ${fromDate})
+        AND (${toDate}::timestamptz IS NULL OR s.date <= ${toDate})
+    `,
+    prisma.$queryRaw<Array<{
+      totalCogs: number;
+      returnedQty: number;
+      returnedValue: number;
+    }>>`
+      SELECT
+        COALESCE(SUM(si.qty * (CASE WHEN si."costPrice" > 0 THEN si."costPrice" ELSE 0 END)), 0)::float as "totalCogs",
+        COALESCE(SUM(CASE WHEN si."returnedQty" > 0 THEN si."returnedQty" ELSE 0 END), 0)::float as "returnedQty",
+        COALESCE(SUM(CASE WHEN si."returnedQty" > 0 THEN si."returnedQty" * si.rate ELSE 0 END), 0)::float as "returnedValue"
+      FROM sale_items si
+      JOIN sales s ON s.id = si."saleId"
+      WHERE s.status != 'CANCELLED' AND s."deletedAt" IS NULL
+        AND (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+        AND (${fromDate}::timestamptz IS NULL OR s.date >= ${fromDate})
+        AND (${toDate}::timestamptz IS NULL OR s.date <= ${toDate})
+    `,
+    prisma.$queryRaw<Array<{
+      totalPurchases: number;
+      transportCost: number;
+      purchaseCount: number;
+      totalExpenses: number;
+      totalCollections: number;
+      collectionCount: number;
+      wastageCount: number;
+      wastageQty: number;
+    }>>`
+      SELECT
+        (SELECT COALESCE(SUM(total), 0)::float FROM purchases WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${fromDate}::timestamptz IS NULL OR date >= ${fromDate}) AND (${toDate}::timestamptz IS NULL OR date <= ${toDate})) as "totalPurchases",
+        (SELECT COALESCE(SUM("transportCost"), 0)::float FROM purchases WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${fromDate}::timestamptz IS NULL OR date >= ${fromDate}) AND (${toDate}::timestamptz IS NULL OR date <= ${toDate})) as "transportCost",
+        (SELECT COUNT(id)::int FROM purchases WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${fromDate}::timestamptz IS NULL OR date >= ${fromDate}) AND (${toDate}::timestamptz IS NULL OR date <= ${toDate})) as "purchaseCount",
+        (SELECT COALESCE(SUM(amount), 0)::float FROM expenses WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${fromDate}::timestamptz IS NULL OR date >= ${fromDate}) AND (${toDate}::timestamptz IS NULL OR date <= ${toDate})) as "totalExpenses",
+        (SELECT COALESCE(SUM(amount), 0)::float FROM collections WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${fromDate}::timestamptz IS NULL OR date >= ${fromDate}) AND (${toDate}::timestamptz IS NULL OR date <= ${toDate})) as "totalCollections",
+        (SELECT COUNT(id)::int FROM collections WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${fromDate}::timestamptz IS NULL OR date >= ${fromDate}) AND (${toDate}::timestamptz IS NULL OR date <= ${toDate})) as "collectionCount",
+        (SELECT COUNT(id)::int FROM wastages WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${fromDate}::timestamptz IS NULL OR date >= ${fromDate}) AND (${toDate}::timestamptz IS NULL OR date <= ${toDate})) as "wastageCount",
+        (SELECT COALESCE(SUM(qty), 0)::float FROM wastages WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND (${fromDate}::timestamptz IS NULL OR date >= ${fromDate}) AND (${toDate}::timestamptz IS NULL OR date <= ${toDate})) as "wastageQty"
+    `,
+    prisma.$queryRaw<Array<{
+      totalReceivables: number;
+      cashBalance: number;
+      bankBalance: number;
+      inventoryValue: number;
+      inventoryCount: number;
+      lowStockCount: number;
+    }>>`
+      SELECT
+        (SELECT COALESCE(SUM("currentBalance"), 0)::float FROM clients WHERE "deletedAt" IS NULL AND "currentBalance" > 0 AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId})) as "totalReceivables",
+        (SELECT COALESCE(SUM(balance), 0)::float FROM cash_accounts WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId})) as "cashBalance",
+        (SELECT COALESCE(SUM(balance), 0)::float FROM bank_accounts WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId})) as "bankBalance",
+        (SELECT COALESCE(SUM(GREATEST(0, qty) * (CASE WHEN "avgCost" > 0 THEN "avgCost" ELSE "currentBuyPrice" END)), 0)::float FROM inventory WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId})) as "inventoryValue",
+        (SELECT COUNT(id)::int FROM inventory WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId})) as "inventoryCount",
+        (SELECT COUNT(i.id)::int FROM inventory i JOIN products p ON p.id = i."productId" WHERE (${rawBranchId} = '' OR i."branchId" = ${rawBranchId}) AND i.qty <= p."minStock") as "lowStockCount"
+    `,
+    prisma.$queryRaw<Array<{ totalPayables: number }>>`
+      SELECT COALESCE(SUM(
+        GREATEST(0, s."openingBalance" + COALESCE(p.total_purch, 0) - COALESCE(pay.total_pay, 0))
+      ), 0)::float as "totalPayables"
+      FROM suppliers s
+      LEFT JOIN (
+        SELECT "supplierId", SUM(total) as total_purch FROM purchases WHERE "deletedAt" IS NULL AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) GROUP BY "supplierId"
+      ) p ON p."supplierId" = s.id
+      LEFT JOIN (
+        SELECT "supplierId", SUM(amount) as total_pay FROM supplier_payments WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) GROUP BY "supplierId"
+      ) pay ON pay."supplierId" = s.id
+      WHERE s."deletedAt" IS NULL AND (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+    `
   ]);
 
-  // Financial Calculations (using single authoritative gross sales calculation)
-  const grossSales = Math.round(salesAgg._sum.subtotal ?? 0);
-  const discounts = Math.round(salesAgg._sum.discount ?? 0);
-  const deliveryCharge = Math.round(salesAgg._sum.deliveryCharge ?? 0);
+  const sales = salesRes[0] || ({} as any);
+  const cogs = cogsRes[0] || ({} as any);
+  const ops = opsRes[0] || ({} as any);
+  const bs = bsRes[0] || ({} as any);
+  const pay = payRes[0] || ({} as any);
+
+  const grossSales = Math.round(Number(sales.grossSales ?? 0));
+  const discounts = Math.round(Number(sales.discounts ?? 0));
+  const deliveryCharge = Math.round(Number(sales.deliveryCharge ?? 0));
   const netSales = Math.max(0, grossSales - discounts);
-  const totalRevenue = Math.round(salesAgg._sum.total ?? 0);
-  const payModeMap = Object.fromEntries(paymentModeAgg.map(x => [x.paymentMode, x._sum.total ?? 0]));
-  const cashSales = payModeMap['CASH'] ?? 0;
-  const creditSales = payModeMap['CREDIT'] ?? 0;
+  const totalRevenue = Math.round(Number(sales.totalRevenue ?? 0));
+  const cashSales = Number(sales.cashSales ?? 0);
+  const creditSales = Number(sales.creditSales ?? 0);
 
-  let totalCogs = 0;
-  let returnedProductsQty = 0;
-  let returnedValue = 0;
-
-  for (const item of saleItemsAgg) {
-    // Use locked historical cost basis. If missing (legacy data), fall back to
-    // inventory avgCost resolved at query time (done in backfill). Final resort: 0 (no estimation).
-    const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
-    totalCogs += (item.qty * effectiveCost);
-    if (item.returnedQty > 0) {
-      returnedProductsQty += item.returnedQty;
-      returnedValue += (item.returnedQty * item.rate);
-    }
-  }
+  const totalCogs = Number(cogs.totalCogs ?? 0);
+  const returnedProductsQty = Number(cogs.returnedQty ?? 0);
+  const returnedValue = Number(cogs.returnedValue ?? 0);
 
   const grossProfit = netSales - totalCogs;
   const grossMarginPct = netSales > 0 ? (grossProfit / netSales) * 100 : 0;
@@ -98,42 +144,23 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
   const contributionProfit = grossProfit - deliveryCharge;
   const contributionMarginPct = netSales > 0 ? (contributionProfit / netSales) * 100 : 0;
 
-  const totalPurchases = purchasesAgg._sum.total ?? 0;
-  const transportCost = purchasesAgg._sum.transportCost ?? 0;
-  const totalExpenses = expensesAgg._sum.amount ?? 0;
+  const totalPurchases = Number(ops.totalPurchases ?? 0);
+  const transportCost = Number(ops.transportCost ?? 0);
+  const totalExpenses = Number(ops.totalExpenses ?? 0);
 
   const netOperatingProfit = contributionProfit - totalExpenses;
   const netMarginPct = netSales > 0 ? (netOperatingProfit / netSales) * 100 : 0;
 
-  const salesPaidSum = salesAgg._sum.paid ?? 0;
-  const dbCollectionsSum = collectionsAgg._sum.amount ?? 0;
-  // Use whichever is higher: sale.paid already includes all amounts
-  // collected against invoices; standalone collections table may double-count checkout payments.
+  const salesPaidSum = Number(sales.salesPaidSum ?? 0);
+  const dbCollectionsSum = Number(ops.totalCollections ?? 0);
   const totalCollections = salesPaidSum > dbCollectionsSum ? salesPaidSum : dbCollectionsSum;
-  const totalReceivables = receivablesAgg._sum.currentBalance ?? 0;
 
-  const suppPurchMap = Object.fromEntries(supplierPurchases.map(x => [x.supplierId, x._sum.total ?? 0]));
-  const suppPayMap = Object.fromEntries(supplierPayments.map(x => [x.supplierId, x._sum.amount ?? 0]));
-  const totalPayables = allSuppliers.reduce((sum, s) => {
-    const bal = s.openingBalance + (suppPurchMap[s.id] ?? 0) - (suppPayMap[s.id] ?? 0);
-    return sum + Math.max(0, bal);
-  }, 0);
-
-  const totalInventoryValue = inventoryItems.reduce((sum, inv) => {
-    const rate = inv.avgCost > 0 ? inv.avgCost : inv.currentBuyPrice;
-    return sum + (Math.max(0, inv.qty) * rate);
-  }, 0);
-
-  // Cash / Bank Total Asset balances
-  const [cashAccts, bankAccts] = await Promise.all([
-    prisma.cashAccount.aggregate({ where: bWhere, _sum: { balance: true } }),
-    prisma.bankAccount.aggregate({ where: bWhere, _sum: { balance: true } }),
-  ]);
-  const cashBankTotal = (cashAccts._sum.balance ?? 0) + (bankAccts._sum.balance ?? 0);
+  const totalReceivables = Number(bs.totalReceivables ?? 0);
+  const cashBankTotal = Number(bs.cashBalance ?? 0) + Number(bs.bankBalance ?? 0);
+  const totalInventoryValue = Number(bs.inventoryValue ?? 0);
+  const totalPayables = Number(pay.totalPayables ?? 0);
 
   const workingCapital = (cashBankTotal + totalReceivables + totalInventoryValue) - totalPayables;
-
-  const lowStockItems = inventoryItems.filter(i => i.qty <= (i.product?.minStock ?? 0));
 
   return {
     period: {
@@ -148,8 +175,8 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
       cashSales,
       creditSales,
       deliveryCharge,
-      salesCount: salesAgg._count,
-      avgOrderValue: salesAgg._count > 0 ? Math.round(totalRevenue / salesAgg._count) : 0,
+      salesCount: Number(sales.salesCount ?? 0),
+      avgOrderValue: Number(sales.salesCount ?? 0) > 0 ? Math.round(totalRevenue / Number(sales.salesCount ?? 0)) : 0,
       returnedQty: returnedProductsQty,
       returnedValue,
     },
@@ -166,11 +193,11 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
     purchases: {
       totalPurchases,
       transportCost,
-      purchaseCount: purchasesAgg._count,
+      purchaseCount: Number(ops.purchaseCount ?? 0),
     },
     collections: {
       totalCollections,
-      collectionCount: collectionsAgg._count,
+      collectionCount: Number(ops.collectionCount ?? 0),
     },
     balanceSheetSummary: {
       cashBankTotal,
@@ -183,49 +210,37 @@ export async function getExecutiveDashboardMetrics(filters: ReportFilterParams) 
     },
     inventoryKpis: {
       totalValue: totalInventoryValue,
-      totalCount: inventoryItems.length,
-      lowStockCount: lowStockItems.length,
-      wastageCount: wastageAgg._count,
-      wastageQty: wastageAgg._sum.qty ?? 0,
+      totalCount: Number(bs.inventoryCount ?? 0),
+      lowStockCount: Number(bs.lowStockCount ?? 0),
+      wastageCount: Number(ops.wastageCount ?? 0),
+      wastageQty: Number(ops.wastageQty ?? 0),
     },
   };
 }
 
 export async function getFinancialAlerts(branchId?: string) {
-  const bWhere = branchId ? { branchId } : {};
+  const rawBranchId = branchId || '';
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
   const alerts: Array<{ id: string; type: 'DANGER' | 'WARNING' | 'INFO'; title: string; message: string; value?: string }> = [];
 
-  const [salesItemsBelowCost, lowMarginSales, highDiscounts, slowStockItems, inventoryValueAgg, recentPurchases] = await Promise.all([
-    prisma.saleItem.findMany({
-      where: { sale: { ...bWhere, deletedAt: null, date: { gte: new Date(Date.now() - 7 * 86400000) } } },
-      include: { sale: { select: { invoiceNo: true, date: true } }, product: { select: { name: true } } },
-    }),
-    prisma.sale.findMany({
-      where: { ...bWhere, deletedAt: null, date: { gte: new Date(Date.now() - 7 * 86400000) } },
-      include: { items: true, client: { select: { name: true } } },
-    }),
-    prisma.sale.findMany({
-      where: { ...bWhere, deletedAt: null, discount: { gt: 0 }, date: { gte: new Date(Date.now() - 7 * 86400000) } },
-      include: { client: { select: { name: true } } },
-    }),
-    prisma.inventory.findMany({
-      where: { ...bWhere, qty: { gt: 0 } },
-      include: { product: { select: { name: true } } },
-    }),
-    prisma.inventory.findMany({ where: bWhere }),
-    prisma.inventory.findMany({
-      where: { ...bWhere, currentBuyPrice: { gt: 0 }, previousBuyPrice: { gt: 0 } },
-      include: { product: { select: { name: true } } },
-    }),
+  const [aggRes, priceSpikes] = await Promise.all([
+    prisma.$queryRaw<Array<{ belowCostCount: number; highDiscountCount: number }>>`
+      SELECT
+        (SELECT COUNT(*)::int FROM sale_items si JOIN sales s ON s.id = si."saleId" WHERE s."deletedAt" IS NULL AND s.date >= ${sevenDaysAgo} AND (${rawBranchId} = '' OR s."branchId" = ${rawBranchId}) AND si."costPrice" > 0 AND si.rate < si."costPrice") as "belowCostCount",
+        (SELECT COUNT(*)::int FROM sales s WHERE s."deletedAt" IS NULL AND s.date >= ${sevenDaysAgo} AND (${rawBranchId} = '' OR s."branchId" = ${rawBranchId}) AND s.subtotal > 0 AND (s.discount / s.subtotal) > 0.05) as "highDiscountCount"
+    `,
+    prisma.$queryRaw<Array<{ productName: string; currentBuyPrice: number; previousBuyPrice: number }>>`
+      SELECT p.name as "productName", i."currentBuyPrice"::float, i."previousBuyPrice"::float
+      FROM inventory i
+      JOIN products p ON p.id = i."productId"
+      WHERE (${rawBranchId} = '' OR i."branchId" = ${rawBranchId})
+        AND i."currentBuyPrice" > 0 AND i."previousBuyPrice" > 0
+        AND (i."currentBuyPrice" / i."previousBuyPrice") > 1.15
+      LIMIT 5
+    `,
   ]);
 
-  // 1. Selling Below Cost
-  let belowCostCount = 0;
-  for (const item of salesItemsBelowCost) {
-    if (item.costPrice > 0 && item.rate < item.costPrice) {
-      belowCostCount++;
-    }
-  }
+  const belowCostCount = aggRes[0]?.belowCostCount ?? 0;
   if (belowCostCount > 0) {
     alerts.push({
       id: 'below-cost',
@@ -235,13 +250,7 @@ export async function getFinancialAlerts(branchId?: string) {
     });
   }
 
-  // 2. High Discounts
-  let highDiscountCount = 0;
-  for (const sale of highDiscounts) {
-    if (sale.subtotal > 0 && (sale.discount / sale.subtotal) > 0.05) {
-      highDiscountCount++;
-    }
-  }
+  const highDiscountCount = aggRes[0]?.highDiscountCount ?? 0;
   if (highDiscountCount > 0) {
     alerts.push({
       id: 'high-discount',
@@ -251,14 +260,12 @@ export async function getFinancialAlerts(branchId?: string) {
     });
   }
 
-  // 3. Price Spikes on Mandi Purchases
-  const priceSpikes = recentPurchases.filter(i => (i.currentBuyPrice / i.previousBuyPrice) > 1.15);
   if (priceSpikes.length > 0) {
     alerts.push({
       id: 'price-spike',
       type: 'WARNING',
       title: 'Supplier Purchase Price Spike',
-      message: `${priceSpikes.length} products experienced a purchase rate increase over 15% (e.g. ${priceSpikes[0]?.product?.name}).`,
+      message: `${priceSpikes.length} products experienced a purchase rate increase over 15% (e.g. ${priceSpikes[0]?.productName}).`,
     });
   }
 

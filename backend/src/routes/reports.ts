@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { getCurrentBusinessDateRange, getBusinessDateRange, getBusinessDateString, getBusinessDatePresetRange } from '../lib/businessDate';
 import { getExecutiveDashboardMetrics, getFinancialAlerts } from '../lib/financialEngine';
 import { getAuthoritativeGrossSales, calculateGrossSalesFromSales } from '../services/grossSalesService';
+import { getCachedActiveProducts } from './pricelist';
 
 const router = Router();
 
@@ -1042,80 +1043,98 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
     const fetchInvoicesProfPromise = (async () => {
       const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
       const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
+      const rawBranchId = branchId || '';
+      const rawClientId = clientId ? String(clientId) : '';
+      const rawStatus = (status && status !== 'all') ? String(status) : '';
+      const rawSearch = search ? String(search).trim() : '';
 
-      const where: any = {
-        deletedAt: null,
-        ...(branchId ? { branchId } : {}),
-        ...(clientId ? { clientId: String(clientId) } : {}),
-        ...(status && status !== 'all' ? { status: status as any } : { status: { not: 'CANCELLED' as const } }),
-        date: { gte: fromDate, lte: toDate },
-        ...(search ? {
-          OR: [
-            { invoiceNo: { contains: String(search), mode: 'insensitive' } },
-            { client: { name: { contains: String(search), mode: 'insensitive' } } }
-          ]
-        } : {}),
-      };
-
-      const [sales, allInventories] = await Promise.all([
-        prisma.sale.findMany({
-          where,
-          select: {
-            id: true,
-            invoiceNo: true,
-            date: true,
-            subtotal: true,
-            discount: true,
-            deliveryCharge: true,
-            status: true,
-            paymentMode: true,
-            client: { select: { id: true, clientId: true, name: true, type: true } },
-            items: {
-              select: {
-                id: true,
-                productId: true,
-                itemName: true,
-                qty: true,
-                unit: true,
-                rate: true,
-                amount: true,
-                costPrice: true,
-                product: {
-                  select: {
-                    id: true,
-                    name: true,
-                    category: true,
-                  },
-                },
-              },
-            },
-          },
-          orderBy: { date: 'desc' },
-          take: 500,
-        }),
-        prisma.inventory.findMany({
-          where: { ...(branchId ? { branchId } : {}) },
-          select: { productId: true, avgCost: true, currentBuyPrice: true },
-        }),
+      const [sales, activeProducts] = await Promise.all([
+        prisma.$queryRaw<Array<{
+          id: string;
+          invoiceNo: string;
+          date: Date;
+          grossSales: number;
+          discount: number;
+          deliveryCharge: number;
+          status: string;
+          paymentMode: string;
+          clientName: string;
+          clientType: string;
+          items: Array<{
+            id: string;
+            productId: string | null;
+            itemName: string;
+            qty: number;
+            unit: string;
+            rate: number;
+            amount: number;
+            costPrice: number;
+          }>;
+        }>>`
+          SELECT 
+            s.id,
+            s."invoiceNo",
+            s.date,
+            s.subtotal::float as "grossSales",
+            s.discount::float as "discount",
+            s."deliveryCharge"::float as "deliveryCharge",
+            s.status,
+            s."paymentMode",
+            COALESCE(c.name, '—') as "clientName",
+            COALESCE(c.type, 'RETAIL') as "clientType",
+            COALESCE(
+              (
+                SELECT json_agg(
+                  json_build_object(
+                    'id', si.id,
+                    'productId', si."productId",
+                    'itemName', si."itemName",
+                    'qty', si.qty::float,
+                    'unit', si.unit,
+                    'rate', si.rate::float,
+                    'amount', si.amount::float,
+                    'costPrice', si."costPrice"::float
+                  )
+                )
+                FROM sale_items si
+                WHERE si."saleId" = s.id
+              ),
+              '[]'::json
+            ) as items
+          FROM sales s
+          LEFT JOIN clients c ON c.id = s."clientId"
+          WHERE s."deletedAt" IS NULL
+            AND (${rawStatus} = '' AND s.status != 'CANCELLED' OR ${rawStatus} != '' AND s.status::text = ${rawStatus})
+            AND (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+            AND (${rawClientId} = '' OR s."clientId" = ${rawClientId})
+            AND s.date >= ${fromDate} AND s.date <= ${toDate}
+            AND (${rawSearch} = '' OR (
+              s."invoiceNo" ILIKE ${'%' + rawSearch + '%'} OR 
+              c.name ILIKE ${'%' + rawSearch + '%'}
+            ))
+          ORDER BY s.date DESC
+          LIMIT 500
+        `,
+        getCachedActiveProducts(),
       ]);
 
-      const invMap = new Map(allInventories.map(inv => [inv.productId, inv]));
+      const prodMap = new Map<string, any>();
+      for (const p of activeProducts) prodMap.set(p.id, p);
 
-      const rows = sales.map(s => {
-        const grossSales = Number(s.subtotal);
+      const rows = (sales as any[]).map((s: any) => {
+        const grossSales = Number(s.grossSales);
         const discount = Number(s.discount);
         const deliveryCharge = Number(s.deliveryCharge);
         const netSales = Math.max(0, grossSales - discount);
 
         let invoiceCogs = 0;
-        const itemBreakdown = s.items.map(item => {
-          const inv = item.productId ? invMap.get(item.productId) : null;
-          const fallbackCost = (inv?.avgCost && inv.avgCost > 0) ? inv.avgCost : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : (item.rate * 0.75));
-          const costBasis = ((item as any).costPrice > 0) ? (item as any).costPrice : fallbackCost;
-          const itemCogs = item.qty * costBasis;
+        const itemBreakdown = ((s.items || []) as any[]).map((item: any) => {
+          const prod = item.productId ? prodMap.get(item.productId) : null;
+          const costBasis = Number(item.costPrice) > 0 ? Number(item.costPrice) : (Number(item.rate) * 0.75);
+          const itemCogs = Number(item.qty) * costBasis;
           invoiceCogs += itemCogs;
 
-          const itemRevenue = item.qty * item.rate;
+          const itemRevenue = Number(item.qty) * Number(item.rate);
           const itemGrossProfit = itemRevenue - itemCogs;
           const itemMarginPct = itemRevenue > 0 ? (itemGrossProfit / itemRevenue) * 100 : 0;
 
@@ -1123,11 +1142,11 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
             id: item.id,
             productId: item.productId,
             itemName: item.itemName,
-            category: item.product?.category ?? 'VEGETABLE',
-            qty: item.qty,
+            category: prod?.category ?? 'VEGETABLE',
+            qty: Number(item.qty),
             unit: item.unit,
-            rate: item.rate,
-            amount: item.amount,
+            rate: Number(item.rate),
+            amount: Number(item.amount),
             costPrice: costBasis,
             itemCogs,
             grossProfit: itemGrossProfit,
@@ -1144,8 +1163,8 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
           id: s.id,
           invoiceNo: s.invoiceNo,
           date: s.date.toISOString(),
-          clientName: s.client?.name ?? '—',
-          clientType: s.client?.type ?? 'RETAIL',
+          clientName: s.clientName,
+          clientType: s.clientType,
           grossSales,
           discount,
           netSales,
@@ -1161,7 +1180,7 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
         };
       });
 
-      const totals = rows.reduce((acc, r) => ({
+      const totals = rows.reduce((acc: any, r: any) => ({
         grossSales: acc.grossSales + r.grossSales,
         discount: acc.discount + r.discount,
         netSales: acc.netSales + r.netSales,
@@ -1178,7 +1197,7 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
         success: true,
         data: {
           rows,
-          summary: {
+          totals: {
             ...totals,
             grossMarginPct: Number(grossMarginPct.toFixed(2)),
             contributionMarginPct: Number(contributionMarginPct.toFixed(2)),
@@ -1199,11 +1218,11 @@ router.get('/sales/invoices', async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     console.error('Error in GET /api/reports/sales/invoices:', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load invoice profitability' });
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load invoice profitability report' });
   }
 });
 
-// GET /api/reports/sales/customers — Customer Profitability Report
+// GET /api/reports/sales/customers — Customer Profitability & Volume Report
 router.get('/sales/customers', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
@@ -1213,112 +1232,64 @@ router.get('/sales/customers', async (req: Request, res: Response) => {
     const cached = REPORT_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < REPORT_CACHE_TTL) {
       res.setHeader('X-Cache', 'HIT');
-      return res.json({ success: true, data: cached.data });
+      return res.json(cached.data);
     }
 
     if (REPORT_IN_FLIGHT.has(cacheKey)) {
       const coalesced = await REPORT_IN_FLIGHT.get(cacheKey);
       res.setHeader('X-Cache', 'COALESCED');
-      return res.json({ success: true, data: coalesced });
+      return res.json(coalesced);
     }
 
     const fetchCustProfPromise = (async () => {
       const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
       const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
+      const rawBranchId = branchId || '';
 
-      const [sales, allInventories] = await Promise.all([
-        prisma.sale.findMany({
-          where: {
-            ...(branchId ? { branchId } : {}),
-            status: { not: 'CANCELLED' },
-            deletedAt: null,
-            date: { gte: fromDate, lte: toDate },
-          },
-          select: {
-            id: true,
-            clientId: true,
-            subtotal: true,
-            discount: true,
-            deliveryCharge: true,
-            client: {
-              select: {
-                id: true,
-                clientId: true,
-                name: true,
-                type: true,
-                rating: true,
-                currentBalance: true,
-              },
-            },
-            items: {
-              select: {
-                productId: true,
-                qty: true,
-                rate: true,
-                costPrice: true,
-              },
-            },
-          },
-          take: 2000,
-        }),
-        prisma.inventory.findMany({
-          where: { ...(branchId ? { branchId } : {}) },
-          select: { productId: true, avgCost: true, currentBuyPrice: true },
-        }),
-      ]);
-
-      const invMap = new Map(allInventories.map(inv => [inv.productId, inv]));
-
-      const clientMap: Record<string, {
+      const rows: Array<{
         clientId: string;
         clientCode: string;
         clientName: string;
         type: string;
         rating: string;
+        currentBalance: number;
         invoiceCount: number;
         grossSales: number;
         discounts: number;
         deliveryCharges: number;
-        totalCogs: number;
-        currentBalance: number;
-      }> = {};
+        cogs: number;
+      }> = await prisma.$queryRaw`
+        SELECT 
+          c.id as "clientId",
+          COALESCE(c."clientId", '—') as "clientCode",
+          COALESCE(c.name, '—') as "clientName",
+          COALESCE(c.type, 'RETAIL') as "type",
+          COALESCE(c.rating::text, 'GREEN') as "rating",
+          COALESCE(c."currentBalance", 0)::float as "currentBalance",
+          COUNT(s.id)::int as "invoiceCount",
+          COALESCE(SUM(s.subtotal), 0)::float as "grossSales",
+          COALESCE(SUM(s.discount), 0)::float as "discounts",
+          COALESCE(SUM(s."deliveryCharge"), 0)::float as "deliveryCharges",
+          COALESCE(SUM(items_cogs.cogs), 0)::float as "cogs"
+        FROM sales s
+        JOIN clients c ON c.id = s."clientId"
+        LEFT JOIN (
+          SELECT 
+            si."saleId",
+            SUM(si.qty * (CASE WHEN si."costPrice" > 0 THEN si."costPrice" ELSE si.rate * 0.75 END)) as cogs
+          FROM sale_items si
+          GROUP BY si."saleId"
+        ) items_cogs ON items_cogs."saleId" = s.id
+        WHERE s.status != 'CANCELLED' AND s."deletedAt" IS NULL
+          AND (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+          AND s.date >= ${fromDate} AND s.date <= ${toDate}
+        GROUP BY c.id, c."clientId", c.name, c.type, c.rating, c."currentBalance"
+        ORDER BY (SUM(s.subtotal) - SUM(s.discount)) DESC
+      `;
 
-      for (const sale of sales) {
-        const cid = sale.clientId;
-        if (!clientMap[cid]) {
-          clientMap[cid] = {
-            clientId: cid,
-            clientCode: sale.client?.clientId ?? '—',
-            clientName: sale.client?.name ?? '—',
-            type: sale.client?.type ?? 'RETAIL',
-            rating: sale.client?.rating ?? 'A',
-            invoiceCount: 0,
-            grossSales: 0,
-            discounts: 0,
-            deliveryCharges: 0,
-            totalCogs: 0,
-            currentBalance: sale.client?.currentBalance ?? 0,
-          };
-        }
-
-        clientMap[cid].invoiceCount += 1;
-        clientMap[cid].grossSales += Number(sale.subtotal);
-        clientMap[cid].discounts += Number(sale.discount);
-        clientMap[cid].deliveryCharges += Number(sale.deliveryCharge);
-
-        for (const item of sale.items) {
-          const inv = item.productId ? invMap.get(item.productId) : null;
-          const fallbackCost = (inv?.avgCost && inv.avgCost > 0)
-            ? inv.avgCost
-            : (inv?.currentBuyPrice && inv.currentBuyPrice > 0 ? inv.currentBuyPrice : item.rate * 0.75);
-          const cost = Number(item.costPrice) > 0 ? Number(item.costPrice) : fallbackCost;
-          clientMap[cid].totalCogs += (Number(item.qty) * cost);
-        }
-      }
-
-      return Object.values(clientMap).map(c => {
+      return rows.map(c => {
         const netSales = Math.max(0, c.grossSales - c.discounts);
-        const grossProfit = netSales - c.totalCogs;
+        const grossProfit = netSales - c.cogs;
         const grossMarginPct = netSales > 0 ? (grossProfit / netSales) * 100 : 0;
         const contributionProfit = grossProfit - c.deliveryCharges;
         const contributionMarginPct = netSales > 0 ? (contributionProfit / netSales) * 100 : 0;
@@ -1333,14 +1304,14 @@ router.get('/sales/customers', async (req: Request, res: Response) => {
           grossSales: c.grossSales,
           discounts: c.discounts,
           netSales,
-          cogs: c.totalCogs,
+          cogs: c.cogs,
           grossProfit,
           grossMarginPct: Number(grossMarginPct.toFixed(2)),
           contributionProfit,
           contributionMarginPct: Number(contributionMarginPct.toFixed(2)),
           currentBalance: c.currentBalance,
         };
-      }).sort((a, b) => b.netSales - a.netSales);
+      });
     })();
 
     REPORT_IN_FLIGHT.set(cacheKey, fetchCustProfPromise);
@@ -1355,11 +1326,11 @@ router.get('/sales/customers', async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     console.error('Error in GET /api/reports/sales/customers:', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load customer profitability' });
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load customer profitability report' });
   }
 });
 
-// GET /api/reports/sales/products — Product Profitability Report
+// GET /api/reports/sales/products — Product Profitability & Velocity Report
 router.get('/sales/products', async (req: Request, res: Response) => {
   try {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
@@ -1375,37 +1346,16 @@ router.get('/sales/products', async (req: Request, res: Response) => {
     if (REPORT_IN_FLIGHT.has(cacheKey)) {
       const coalesced = await REPORT_IN_FLIGHT.get(cacheKey);
       res.setHeader('X-Cache', 'COALESCED');
-      return res.json({ success: true, data: coalesced });
+      return res.json(coalesced);
     }
 
     const fetchProdProfPromise = (async () => {
       const fromDate = from ? getBusinessDateRange(String(from)).start : new Date(Date.now() - 30 * 86400000);
       const toDate = to ? getBusinessDateRange(String(to)).end : getCurrentBusinessDateRange().end;
+      const rawBranchId = branchId || '';
+      const rawCategory = category ? String(category) : 'ALL';
 
-      const saleItems = await prisma.saleItem.findMany({
-        where: {
-          sale: {
-            ...(branchId ? { branchId } : {}),
-            status: { not: 'CANCELLED' },
-            deletedAt: null,
-            date: { gte: fromDate, lte: toDate },
-          },
-          ...(category && category !== 'ALL' ? { product: { category: category as any } } : {}),
-        },
-        select: {
-          productId: true,
-          itemName: true,
-          qty: true,
-          unit: true,
-          rate: true,
-          amount: true,
-          costPrice: true,
-          product: { select: { id: true, name: true, category: true, defaultUnit: true } },
-        },
-        take: 5000,
-      });
-
-      const prodMap: Record<string, {
+      const rows: Array<{
         productId: string;
         name: string;
         category: string;
@@ -1413,29 +1363,27 @@ router.get('/sales/products', async (req: Request, res: Response) => {
         totalQty: number;
         grossRevenue: number;
         totalCogs: number;
-      }> = {};
+      }> = await prisma.$queryRaw`
+        SELECT 
+          COALESCE(si."productId", si."itemName") as "productId",
+          COALESCE(p.name, si."itemName") as "name",
+          COALESCE(p.category::text, 'VEGETABLE') as "category",
+          si.unit,
+          SUM(si.qty)::float as "totalQty",
+          SUM(si.amount)::float as "grossRevenue",
+          SUM(si.qty * (CASE WHEN si."costPrice" > 0 THEN si."costPrice" ELSE si.rate * 0.75 END))::float as "totalCogs"
+        FROM sale_items si
+        JOIN sales s ON s.id = si."saleId"
+        LEFT JOIN products p ON p.id = si."productId"
+        WHERE s.status != 'CANCELLED' AND s."deletedAt" IS NULL
+          AND (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+          AND (${rawCategory} = '' OR ${rawCategory} = 'ALL' OR p.category::text = ${rawCategory})
+          AND s.date >= ${fromDate} AND s.date <= ${toDate}
+        GROUP BY COALESCE(si."productId", si."itemName"), COALESCE(p.name, si."itemName"), COALESCE(p.category::text, 'VEGETABLE'), si.unit
+        ORDER BY SUM(si.amount) DESC
+      `;
 
-      for (const item of saleItems) {
-        const pid = item.productId || item.itemName;
-        if (!prodMap[pid]) {
-          prodMap[pid] = {
-            productId: pid,
-            name: item.product?.name ?? item.itemName,
-            category: item.product?.category ?? 'VEGETABLE',
-            unit: item.unit,
-            totalQty: 0,
-            grossRevenue: 0,
-            totalCogs: 0,
-          };
-        }
-
-        const cost = Number(item.costPrice) > 0 ? Number(item.costPrice) : (Number(item.rate) * 0.75);
-        prodMap[pid].totalQty += Number(item.qty);
-        prodMap[pid].grossRevenue += Number(item.amount);
-        prodMap[pid].totalCogs += (Number(item.qty) * cost);
-      }
-
-      return Object.values(prodMap).map(p => {
+      return rows.map(p => {
         const grossProfit = p.grossRevenue - p.totalCogs;
         const marginPct = p.grossRevenue > 0 ? (grossProfit / p.grossRevenue) * 100 : 0;
         const avgSellRate = p.totalQty > 0 ? p.grossRevenue / p.totalQty : 0;
@@ -1448,7 +1396,7 @@ router.get('/sales/products', async (req: Request, res: Response) => {
           avgSellRate: Number(avgSellRate.toFixed(2)),
           avgUnitCost: Number(avgUnitCost.toFixed(2)),
         };
-      }).sort((a, b) => b.grossRevenue - a.grossRevenue);
+      });
     })();
 
     REPORT_IN_FLIGHT.set(cacheKey, fetchProdProfPromise);
@@ -1463,7 +1411,7 @@ router.get('/sales/products', async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     console.error('Error in GET /api/reports/sales/products:', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load product profitability' });
+    return res.status(500).json({ success: false, error: err.message ?? 'Failed to load product profitability report' });
   }
 });
 
@@ -1485,32 +1433,47 @@ router.get('/purchases/cost-analysis', async (req: Request, res: Response) => {
     }
 
     const fetchCostAnalysisPromise = (async () => {
-      const history = await prisma.purchasePriceHistory.findMany({
-        where: branchId ? { branchId } : {},
-        select: {
-          id: true,
-          date: true,
-          buyPrice: true,
-          qty: true,
-          product: { select: { id: true, name: true, category: true } },
-          supplier: { select: { id: true, name: true } },
-        },
-        orderBy: { date: 'desc' },
-        take: 200,
-      });
+      const rawBranchId = branchId || '';
+      const rows: Array<{
+        id: string;
+        date: Date;
+        productName: string;
+        category: string;
+        supplierName: string;
+        buyPrice: number;
+        qty: number;
+        totalSpent: number;
+      }> = await prisma.$queryRaw`
+        SELECT 
+          pph.id,
+          pph.date,
+          p.name as "productName",
+          COALESCE(p.category::text, 'VEGETABLE') as "category",
+          COALESCE(s.name, 'Mandi / General') as "supplierName",
+          pph."buyPrice"::float as "buyPrice",
+          pph.qty::float as "qty",
+          (pph."buyPrice" * pph.qty)::float as "totalSpent"
+        FROM purchase_price_histories pph
+        JOIN products p ON p.id = pph."productId"
+        LEFT JOIN suppliers s ON s.id = pph."supplierId"
+        WHERE (${rawBranchId} = '' OR pph."branchId" = ${rawBranchId})
+        ORDER BY pph.date DESC
+        LIMIT 200
+      `;
 
-      const rows = history.map(h => ({
-        id: h.id,
-        date: h.date.toISOString(),
-        productName: h.product.name,
-        category: h.product.category,
-        supplierName: h.supplier?.name ?? 'Mandi / General',
-        buyPrice: h.buyPrice,
-        qty: h.qty,
-        totalSpent: h.buyPrice * h.qty,
-      }));
-
-      return { success: true, data: rows };
+      return {
+        success: true,
+        data: rows.map(h => ({
+          id: h.id,
+          date: h.date.toISOString(),
+          productName: h.productName,
+          category: h.category,
+          supplierName: h.supplierName,
+          buyPrice: h.buyPrice,
+          qty: h.qty,
+          totalSpent: h.totalSpent,
+        }))
+      };
     })();
 
     REPORT_IN_FLIGHT.set(cacheKey, fetchCostAnalysisPromise);
@@ -1547,52 +1510,57 @@ router.get('/inventory/valuation', async (req: Request, res: Response) => {
     }
 
     const fetchValuationPromise = (async () => {
-      const inventory = await prisma.inventory.findMany({
-        where: branchId ? { branchId } : {},
-        select: {
-          id: true,
-          productId: true,
-          qty: true,
-          avgCost: true,
-          currentBuyPrice: true,
-          previousBuyPrice: true,
-          lastPurchaseDate: true,
-          product: { select: { id: true, name: true, category: true, defaultUnit: true, minStock: true } },
-        },
-        orderBy: { product: { name: 'asc' } },
-      });
+      const rawBranchId = branchId || '';
+      const rows: Array<{
+        id: string;
+        productId: string;
+        productName: string;
+        category: string;
+        unit: string;
+        qty: number;
+        minStock: number;
+        avgCost: number;
+        currentBuyPrice: number;
+        previousBuyPrice: number;
+        avgCostValuation: number;
+        latestBuyValuation: number;
+        lastPurchaseDate: Date | null;
+      }> = await prisma.$queryRaw`
+        SELECT 
+          i.id,
+          i."productId",
+          p.name as "productName",
+          COALESCE(p.category::text, 'VEGETABLE') as "category",
+          p."defaultUnit" as "unit",
+          i.qty::float as "qty",
+          COALESCE(p."minStock", 0)::float as "minStock",
+          i."avgCost"::float as "avgCost",
+          i."currentBuyPrice"::float as "currentBuyPrice",
+          i."previousBuyPrice"::float as "previousBuyPrice",
+          (GREATEST(0, i.qty) * i."avgCost")::float as "avgCostValuation",
+          (GREATEST(0, i.qty) * (CASE WHEN i."currentBuyPrice" > 0 THEN i."currentBuyPrice" ELSE i."avgCost" END))::float as "latestBuyValuation",
+          i."lastPurchaseDate"
+        FROM inventory i
+        JOIN products p ON p.id = i."productId"
+        WHERE (${rawBranchId} = '' OR i."branchId" = ${rawBranchId})
+        ORDER BY p.name ASC
+      `;
 
-      const rows = inventory.map(inv => {
-        const avgCostValuation = Math.max(0, inv.qty) * inv.avgCost;
-        const latestBuyValuation = Math.max(0, inv.qty) * (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : inv.avgCost);
+      const formattedRows = rows.map(inv => ({
+        ...inv,
+        lastPurchaseDate: inv.lastPurchaseDate ? inv.lastPurchaseDate.toISOString() : null,
+      }));
 
-        return {
-          id: inv.id,
-          productId: inv.productId,
-          productName: inv.product.name,
-          category: inv.product.category,
-          unit: inv.product.defaultUnit,
-          qty: inv.qty,
-          minStock: inv.product.minStock,
-          avgCost: inv.avgCost,
-          currentBuyPrice: inv.currentBuyPrice,
-          previousBuyPrice: inv.previousBuyPrice,
-          avgCostValuation,
-          latestBuyValuation,
-          lastPurchaseDate: inv.lastPurchaseDate ? inv.lastPurchaseDate.toISOString() : null,
-        };
-      });
-
-      const totalAvgCostValue = rows.reduce((s, r) => s + r.avgCostValuation, 0);
-      const totalLatestBuyValue = rows.reduce((s, r) => s + r.latestBuyValuation, 0);
+      const totalAvgCostValue = formattedRows.reduce((s, r) => s + r.avgCostValuation, 0);
+      const totalLatestBuyValue = formattedRows.reduce((s, r) => s + r.latestBuyValuation, 0);
 
       return {
         success: true,
         data: {
-          rows,
+          rows: formattedRows,
           summary: {
-            totalItems: rows.length,
-            totalQty: rows.reduce((s, r) => s + r.qty, 0),
+            totalItems: formattedRows.length,
+            totalQty: formattedRows.reduce((s, r) => s + r.qty, 0),
             totalAvgCostValue,
             totalLatestBuyValue,
           },

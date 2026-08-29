@@ -60,15 +60,41 @@ router.get('/', async (req: Request, res: Response) => {
       }
 
       if (minimal === 'true') {
-        return await prisma.client.findMany({
-          where,
-          select: {
-            id: true, clientId: true, name: true, currentBalance: true, rating: true,
-            phone: true, whatsapp: true, address: true, deliveryLocation: true,
-            type: true, creditLimit: true, paymentTerms: true, openingBalance: true
-          },
-          orderBy: { name: 'asc' },
-        });
+        const rawBranchId = branchId || '';
+        const rawStatus = status ? String(status) : '';
+        const rawType = type ? String(type) : '';
+        const rawRating = rating ? String(rating) : '';
+        const rawSearch = search ? String(search).trim() : '';
+
+        return await prisma.$queryRaw`
+          SELECT 
+            c.id, 
+            c."clientId", 
+            c.name, 
+            c."currentBalance"::float, 
+            c.rating,
+            c.phone, 
+            c.whatsapp, 
+            c.address, 
+            c."deliveryLocation",
+            c.type, 
+            c."creditLimit"::float, 
+            c."paymentTerms", 
+            c."openingBalance"::float
+          FROM clients c
+          WHERE (${isArchived} = true AND c."deletedAt" IS NOT NULL OR ${isArchived} = false AND c."deletedAt" IS NULL)
+            AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
+            AND (${rawStatus} = '' OR c.status::text = ${rawStatus})
+            AND (${rawType} = '' OR c.type::text = ${rawType})
+            AND (${rawRating} = '' OR c.rating::text = ${rawRating})
+            AND (${rawSearch} = '' OR (
+              c.name ILIKE ${'%' + rawSearch + '%'} OR
+              c."ownerName" ILIKE ${'%' + rawSearch + '%'} OR
+              c.phone ILIKE ${'%' + rawSearch + '%'} OR
+              c.address ILIKE ${'%' + rawSearch + '%'}
+            ))
+          ORDER BY c.name ASC
+        `;
       }
 
       const clients = await prisma.client.findMany({
