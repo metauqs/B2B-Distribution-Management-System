@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { generateInvoiceNo, writeAuditLog, getClientBalance, getValidUserId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, deriveInvoiceStatus, syncPriceListFromSale, reconcileClientBalancesAndAllocations } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
@@ -99,67 +100,105 @@ router.get('/', async (req: Request, res: Response) => {
         throw new Error('Invalid to date');
       }
 
-      const where: any = {
-        deletedAt: null,
-        ...(branchId ? { branchId } : {}),
-        ...(clientId ? { clientId: String(clientId) } : {}),
-        ...(status && status !== 'all' ? { status: status as any } : { status: { not: 'CANCELLED' } }),
-        ...(mode && mode !== 'all' ? { paymentMode: mode as any } : {}),
-        ...(search ? {
-          OR: [
-            { invoiceNo: { contains: String(search), mode: 'insensitive' } },
-            { client: { name: { contains: String(search), mode: 'insensitive' } } },
-          ]
-        } : {}),
-        ...(dateFrom || dateTo ? {
-          date: {
-            ...(dateFrom ? { gte: dateFrom } : {}),
-            ...(dateTo ? { lte: dateTo } : {}),
-          },
-        } : {}),
-      };
+      const conditions: Prisma.Sql[] = [Prisma.sql`s."deletedAt" IS NULL`];
 
-      return await prisma.sale.findMany({
-        where,
-        select: {
-          id: true,
-          invoiceNo: true,
-          clientId: true,
-          date: true,
-          subtotal: true,
-          discount: true,
-          deliveryCharge: true,
-          previousBalance: true,
-          total: true,
-          paid: true,
-          balance: true,
-          status: true,
-          paymentMode: true,
-          isLocked: true,
-          deliveryStatus: true,
-          notes: true,
-          createdAt: true,
-          client: { select: { id: true, clientId: true, name: true, phone: true, whatsapp: true, type: true } },
-          items: {
-            select: {
-              id: true,
-              productId: true,
-              itemName: true,
-              unit: true,
-              qty: true,
-              rate: true,
-              amount: true,
-              costPrice: true,
-              returnedQty: true,
-              returnReason: true,
-              product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } },
-            },
-          },
-          employee: { select: { id: true, name: true, role: true, phone: true } },
-        },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-        take: limit,
-      });
+      if (branchId) {
+        conditions.push(Prisma.sql`s."branchId" = ${branchId}`);
+      }
+      if (clientId) {
+        conditions.push(Prisma.sql`s."clientId" = ${String(clientId)}`);
+      }
+      if (status && status !== 'all') {
+        conditions.push(Prisma.sql`s.status = ${status}::"TransactionStatus"`);
+      } else {
+        conditions.push(Prisma.sql`s.status != 'CANCELLED'::"TransactionStatus"`);
+      }
+      if (mode && mode !== 'all') {
+        conditions.push(Prisma.sql`s."paymentMode" = ${mode}::"SalePaymentMode"`);
+      }
+      if (search) {
+        const searchPattern = `%${String(search).trim()}%`;
+        conditions.push(Prisma.sql`(s."invoiceNo" ILIKE ${searchPattern} OR c.name ILIKE ${searchPattern})`);
+      }
+      if (dateFrom) {
+        conditions.push(Prisma.sql`s.date >= ${dateFrom}`);
+      }
+      if (dateTo) {
+        conditions.push(Prisma.sql`s.date <= ${dateTo}`);
+      }
+
+      const whereClause = Prisma.join(conditions, ' AND ');
+
+      const sales: any[] = await prisma.$queryRaw`
+        SELECT 
+          s.id,
+          s."invoiceNo",
+          s."clientId",
+          s.date,
+          s.subtotal::float as subtotal,
+          s.discount::float as discount,
+          s."deliveryCharge"::float as "deliveryCharge",
+          s."previousBalance"::float as "previousBalance",
+          s.total::float as total,
+          s.paid::float as paid,
+          s.balance::float as balance,
+          s.status,
+          s."paymentMode",
+          s."isLocked",
+          s."deliveryStatus",
+          s.notes,
+          s."createdAt",
+          CASE WHEN c.id IS NOT NULL THEN json_build_object(
+            'id', c.id,
+            'clientId', c."clientId",
+            'name', c.name,
+            'phone', c.phone,
+            'whatsapp', c.whatsapp,
+            'type', c.type
+          ) ELSE NULL END as client,
+          CASE WHEN e.id IS NOT NULL THEN json_build_object(
+            'id', e.id,
+            'name', e.name,
+            'role', e.role,
+            'phone', e.phone
+          ) ELSE NULL END as employee,
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id', si.id,
+                  'productId', si."productId",
+                  'itemName', si."itemName",
+                  'unit', si.unit,
+                  'qty', si.qty::float,
+                  'rate', si.rate::float,
+                  'amount', si.amount::float,
+                  'costPrice', si."costPrice"::float,
+                  'returnedQty', si."returnedQty"::float,
+                  'returnReason', si."returnReason",
+                  'product', CASE WHEN pr.id IS NOT NULL THEN json_build_object(
+                    'id', pr.id,
+                    'name', pr.name,
+                    'urduName', pr."urduName",
+                    'emoji', pr.emoji,
+                    'imageUrl', pr."imageUrl"
+                  ) ELSE NULL END
+                )
+              )
+              FROM sale_items si
+              LEFT JOIN products pr ON pr.id = si."productId"
+              WHERE si."saleId" = s.id
+            ),
+            '[]'::json
+          ) as items
+        FROM sales s
+        LEFT JOIN clients c ON c.id = s."clientId"
+        LEFT JOIN employees e ON e.id = s."employeeId"
+        WHERE ${whereClause}
+        ORDER BY s.date DESC, s."createdAt" DESC
+        LIMIT ${limit}
+      `;
+      return sales;
     })();
 
     SALES_IN_FLIGHT.set(cacheKey, fetchSalesPromise);
