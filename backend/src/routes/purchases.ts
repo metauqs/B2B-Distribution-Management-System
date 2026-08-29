@@ -38,37 +38,84 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     const fetchPurchasesPromise = (async () => {
-      return await prisma.purchase.findMany({
-        where: { ...(branchId ? { branchId } : {}), deletedAt: null },
-        select: {
-          id: true,
-          date: true,
-          subtotal: true,
-          total: true,
-          paid: true,
-          balance: true,
-          status: true,
-          transportCost: true,
-          notes: true,
-          supplierId: true,
-          createdAt: true,
-          supplier: { select: { id: true, name: true } },
-          items: {
-            select: {
-              id: true,
-              productId: true,
-              itemName: true,
-              unit: true,
-              qty: true,
-              rate: true,
-              amount: true,
-              product: { select: { id: true, name: true, urduName: true, emoji: true, imageUrl: true } },
-            },
-          },
-        },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-        take: limit,
-      });
+      const rawBranchId = branchId || '';
+      const purchases: Array<{
+        id: string;
+        date: Date;
+        subtotal: number;
+        total: number;
+        paid: number;
+        balance: number;
+        status: string;
+        transportCost: number;
+        notes: string | null;
+        supplierId: string;
+        createdAt: Date;
+        supplier: { id: string; name: string } | null;
+        items: Array<{
+          id: string;
+          productId: string | null;
+          itemName: string;
+          unit: string;
+          qty: number;
+          rate: number;
+          amount: number;
+          product: {
+            id: string;
+            name: string;
+            urduName: string | null;
+            emoji: string | null;
+            imageUrl: string | null;
+          } | null;
+        }>;
+      }> = await prisma.$queryRaw`
+        SELECT 
+          p.id,
+          p.date,
+          p.subtotal::float as subtotal,
+          p.total::float as total,
+          p.paid::float as paid,
+          p.balance::float as balance,
+          p.status,
+          p."transportCost"::float as "transportCost",
+          p.notes,
+          p."supplierId",
+          p."createdAt",
+          CASE WHEN s.id IS NOT NULL THEN json_build_object('id', s.id, 'name', s.name) ELSE NULL END as supplier,
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id', pi.id,
+                  'productId', pi."productId",
+                  'itemName', pi."itemName",
+                  'unit', pi.unit,
+                  'qty', pi.qty::float,
+                  'rate', pi.rate::float,
+                  'amount', pi.amount::float,
+                  'product', CASE WHEN pr.id IS NOT NULL THEN json_build_object(
+                    'id', pr.id,
+                    'name', pr.name,
+                    'urduName', pr."urduName",
+                    'emoji', pr.emoji,
+                    'imageUrl', pr."imageUrl"
+                  ) ELSE NULL END
+                )
+              )
+              FROM purchase_items pi
+              LEFT JOIN products pr ON pr.id = pi."productId"
+              WHERE pi."purchaseId" = p.id
+            ),
+            '[]'::json
+          ) as items
+        FROM purchases p
+        LEFT JOIN suppliers s ON s.id = p."supplierId"
+        WHERE (${rawBranchId} = '' OR p."branchId" = ${rawBranchId})
+          AND p."deletedAt" IS NULL
+        ORDER BY p.date DESC, p."createdAt" DESC
+        LIMIT ${limit}
+      `;
+      return purchases;
     })();
 
     PURCHASE_IN_FLIGHT.set(cacheKey, fetchPurchasesPromise);
