@@ -46,8 +46,11 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     const fetchInventoryPromise = (async () => {
-      // 1. Fetch active products and branch inventory in parallel
-      const [allProducts, existingInventory] = await Promise.all([
+      const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
+      const rawBranchId = branchId ?? '';
+
+      // 1. Fetch active products, branch inventory, and stock movements concurrently in parallel
+      const [allProducts, existingInventory, moveAggs] = await Promise.all([
         prisma.product.findMany({
           orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
           select: {
@@ -78,11 +81,20 @@ router.get('/', async (req: Request, res: Response) => {
             updatedAt: true,
           },
         }),
+        prisma.$queryRaw<Array<{ today_stock_in: number; today_stock_out: number; today_wastage: number }>>`
+          SELECT 
+            COALESCE(SUM(CASE WHEN qty > 0 THEN qty ELSE 0 END), 0)::float as today_stock_in,
+            COALESCE(SUM(CASE WHEN qty < 0 AND type != 'WASTAGE' THEN ABS(qty) ELSE 0 END), 0)::float as today_stock_out,
+            COALESCE(SUM(CASE WHEN type = 'WASTAGE' THEN ABS(qty) ELSE 0 END), 0)::float as today_wastage
+          FROM stock_movements
+          WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
+            AND date >= ${todayStart} AND date <= ${todayEnd}
+        `,
       ]);
 
       const inventoryMap = new Map(existingInventory.map(inv => [inv.productId, inv]));
 
-      // 3. Merge: Every product in master catalog gets an inventory entry
+      // 2. Merge: Every product in master catalog gets an inventory entry
       const mergedInventory = allProducts.map(prod => {
         const inv = inventoryMap.get(prod.id);
         if (inv) {
@@ -109,19 +121,10 @@ router.get('/', async (req: Request, res: Response) => {
         };
       });
 
-      const { start: todayStart, end: todayEnd } = getCurrentBusinessDateRange();
-
-      const todayMoves = await prisma.stockMovement.findMany({
-        where: {
-          ...(branchId ? { branchId } : {}),
-          date: { gte: todayStart, lte: todayEnd },
-        },
-        select: { type: true, qty: true },
-      });
-
-      const todayStockIn = todayMoves.filter(m => m.qty > 0).reduce((s, m) => s + m.qty, 0);
-      const todayStockOut = todayMoves.filter(m => m.qty < 0 && m.type !== 'WASTAGE').reduce((s, m) => s + Math.abs(m.qty), 0);
-      const todayWastage = todayMoves.filter(m => m.type === 'WASTAGE').reduce((s, m) => s + Math.abs(m.qty), 0);
+      const moveRow = (moveAggs && moveAggs[0]) || ({} as any);
+      const todayStockIn = Number(moveRow.today_stock_in ?? 0);
+      const todayStockOut = Number(moveRow.today_stock_out ?? 0);
+      const todayWastage = Number(moveRow.today_wastage ?? 0);
 
       const data = mergedInventory
         .filter(inv => !search || inv.product?.name.toLowerCase().includes(String(search).toLowerCase()) || inv.product?.urduName?.includes(String(search)))

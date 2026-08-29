@@ -4,6 +4,7 @@ import { writeAuditLog, syncPriceListFromPurchase, PurchaseItemForSync } from '.
 import { stockIn, recalcAvgCostFromHistory } from '../lib/inventoryService';
 import { parseInputDateToUtc } from '../lib/businessDate';
 import { postPurchaseLedger } from '../lib/financialLedgerService';
+import { getCachedActiveProducts } from './pricelist';
 
 const router = Router();
 
@@ -39,82 +40,91 @@ router.get('/', async (req: Request, res: Response) => {
 
     const fetchPurchasesPromise = (async () => {
       const rawBranchId = branchId || '';
-      const purchases: Array<{
-        id: string;
-        date: Date;
-        subtotal: number;
-        total: number;
-        paid: number;
-        balance: number;
-        status: string;
-        transportCost: number;
-        notes: string | null;
-        supplierId: string;
-        createdAt: Date;
-        supplier: { id: string; name: string } | null;
-        items: Array<{
+      const [purchases, activeProducts] = await Promise.all([
+        prisma.$queryRaw<Array<{
           id: string;
-          productId: string | null;
-          itemName: string;
-          unit: string;
-          qty: number;
-          rate: number;
-          amount: number;
-          product: {
+          date: Date;
+          subtotal: number;
+          total: number;
+          paid: number;
+          balance: number;
+          status: string;
+          transportCost: number;
+          notes: string | null;
+          supplierId: string;
+          createdAt: Date;
+          supplier: { id: string; name: string } | null;
+          items: Array<{
             id: string;
-            name: string;
-            urduName: string | null;
-            emoji: string | null;
-            imageUrl: string | null;
-          } | null;
-        }>;
-      }> = await prisma.$queryRaw`
-        SELECT 
-          p.id,
-          p.date,
-          p.subtotal::float as subtotal,
-          p.total::float as total,
-          p.paid::float as paid,
-          p.balance::float as balance,
-          p.status,
-          p."transportCost"::float as "transportCost",
-          p.notes,
-          p."supplierId",
-          p."createdAt",
-          CASE WHEN s.id IS NOT NULL THEN json_build_object('id', s.id, 'name', s.name) ELSE NULL END as supplier,
-          COALESCE(
-            (
-              SELECT json_agg(
-                json_build_object(
-                  'id', pi.id,
-                  'productId', pi."productId",
-                  'itemName', pi."itemName",
-                  'unit', pi.unit,
-                  'qty', pi.qty::float,
-                  'rate', pi.rate::float,
-                  'amount', pi.amount::float,
-                  'product', CASE WHEN pr.id IS NOT NULL THEN json_build_object(
-                    'id', pr.id,
-                    'name', pr.name,
-                    'urduName', pr."urduName",
-                    'emoji', pr.emoji,
-                    'imageUrl', pr."imageUrl"
-                  ) ELSE NULL END
+            productId: string | null;
+            itemName: string;
+            unit: string;
+            qty: number;
+            rate: number;
+            amount: number;
+            product?: any;
+          }>;
+        }>>`
+          SELECT 
+            p.id,
+            p.date,
+            p.subtotal::float as subtotal,
+            p.total::float as total,
+            p.paid::float as paid,
+            p.balance::float as balance,
+            p.status,
+            p."transportCost"::float as "transportCost",
+            p.notes,
+            p."supplierId",
+            p."createdAt",
+            CASE WHEN s.id IS NOT NULL THEN json_build_object('id', s.id, 'name', s.name) ELSE NULL END as supplier,
+            COALESCE(
+              (
+                SELECT json_agg(
+                  json_build_object(
+                    'id', pi.id,
+                    'productId', pi."productId",
+                    'itemName', pi."itemName",
+                    'unit', pi.unit,
+                    'qty', pi.qty::float,
+                    'rate', pi.rate::float,
+                    'amount', pi.amount::float
+                  )
                 )
-              )
-              FROM purchase_items pi
-              LEFT JOIN products pr ON pr.id = pi."productId"
-              WHERE pi."purchaseId" = p.id
-            ),
-            '[]'::json
-          ) as items
-        FROM purchases p
-        LEFT JOIN suppliers s ON s.id = p."supplierId"
-        WHERE (${rawBranchId} = '' OR p."branchId" = ${rawBranchId})
-          AND p."deletedAt" IS NULL
-        ORDER BY p.date DESC, p."createdAt" DESC
-        LIMIT ${limit}
-      `;
+                FROM purchase_items pi
+                WHERE pi."purchaseId" = p.id
+              ),
+              '[]'::json
+            ) as items
+          FROM purchases p
+          LEFT JOIN suppliers s ON s.id = p."supplierId"
+          WHERE (${rawBranchId} = '' OR p."branchId" = ${rawBranchId})
+            AND p."deletedAt" IS NULL
+          ORDER BY p.date DESC, p."createdAt" DESC
+          LIMIT ${limit}
+        `,
+        getCachedActiveProducts(),
+      ]);
+
+      const productMap = new Map<string, any>();
+      for (const p of activeProducts) {
+        productMap.set(p.id, {
+          id: p.id,
+          name: p.name,
+          urduName: p.urduName,
+          emoji: p.emoji,
+          imageUrl: p.imageUrl,
+        });
+      }
+
+      for (const purchase of purchases) {
+        if (Array.isArray(purchase.items)) {
+          for (const item of purchase.items) {
+            item.product = item.productId ? (productMap.get(item.productId) || null) : null;
+          }
+        }
+      }
+
       return purchases;
     })();
 

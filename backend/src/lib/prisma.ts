@@ -9,10 +9,11 @@ if (!connectionString) throw new Error('DATABASE_URL is not set');
 
 const pool = new Pool({
   connectionString,
-  max: 6, // 6 pooled connections is optimal for Neon Serverless to prevent socket exhaustion and contention
-  idleTimeoutMillis: 30000, // Keep warm sockets alive for 30s
-  connectionTimeoutMillis: 15000,
+  max: 10, // 10 pooled connections for optimal Neon Serverless throughput
+  idleTimeoutMillis: 60000, // Keep warm sockets alive for 60s
+  connectionTimeoutMillis: 10000,
   keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
   ssl: connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
 });
 

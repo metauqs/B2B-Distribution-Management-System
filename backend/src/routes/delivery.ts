@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { stockReturn } from '../lib/inventoryService';
 import { getBusinessDateRange, parseInputDateToUtc, getBusinessDateString } from '../lib/businessDate';
@@ -123,57 +124,98 @@ router.get('/', async (req: Request, res: Response) => {
     });
 
     const fetchDeliveryPromise = (async () => {
-      const deliveries = await prisma.delivery.findMany({
-        where: {
-          ...(branchId ? { branchId } : {}),
-          ...(status ? { status: status as any } : {}),
-          ...(targetEmployeeId ? { employeeId: targetEmployeeId } : {}),
-          ...(dayStart && dayEnd ? {
-            date: {
-              gte: dayStart,
-              lte: dayEnd,
-            }
-          } : {}),
-        },
-        include: {
-          sale: {
-            select: {
-              id: true,
-              invoiceNo: true,
-              subtotal: true,
-              discount: true,
-              deliveryCharge: true,
-              total: true,
-              paid: true,
-              balance: true,
-              status: true,
-              deliveryStatus: true,
-              failureReason: true,
-              deliveryDate: true,
-              deliveryTime: true,
-              items: {
-                select: {
-                  id: true,
-                  productId: true,
-                  itemName: true,
-                  qty: true,
-                  unit: true,
-                  rate: true,
-                  amount: true,
-                  returnedQty: true,
-                  returnReason: true,
-                }
-              },
-            },
-          },
-          client: { select: { id: true, name: true, address: true, phone: true, currentBalance: true } },
-          vehicle: { select: { id: true, plateNo: true, type: true } },
-          driver: { select: { id: true, name: true, phone: true } },
-          employee: { select: { id: true, name: true, phone: true, whatsapp: true } },
-        },
-        orderBy: { date: 'asc' },
-        take: 200,
-      });
+      const rawBranchId = branchId || '';
+      const rawStatus = status ? String(status) : '';
+      const rawEmployeeId = targetEmployeeId || '';
+
+      const deliveries = await prisma.$queryRaw<any[]>`
+        SELECT 
+          d.id,
+          d."saleId",
+          d."clientId",
+          d.status,
+          d.zone,
+          d."scheduledTime",
+          d."employeeId",
+          d."vehicleId",
+          d."driverId",
+          d.notes,
+          d."failureReason",
+          d.date,
+          d."branchId",
+          d."createdAt",
+          d."updatedAt",
+          CASE WHEN s.id IS NOT NULL THEN json_build_object(
+            'id', s.id,
+            'invoiceNo', s."invoiceNo",
+            'subtotal', s.subtotal::float,
+            'discount', s.discount::float,
+            'deliveryCharge', s."deliveryCharge"::float,
+            'total', s.total::float,
+            'paid', s.paid::float,
+            'balance', s.balance::float,
+            'status', s.status,
+            'deliveryStatus', s."deliveryStatus",
+            'failureReason', s."failureReason",
+            'deliveryDate', s."deliveryDate",
+            'deliveryTime', s."deliveryTime",
+            'items', COALESCE(
+              (
+                SELECT json_agg(
+                  json_build_object(
+                    'id', si.id,
+                    'productId', si."productId",
+                    'itemName', si."itemName",
+                    'qty', si.qty::float,
+                    'unit', si.unit,
+                    'rate', si.rate::float,
+                    'amount', si.amount::float,
+                    'returnedQty', si."returnedQty"::float,
+                    'returnReason', si."returnReason"
+                  )
+                )
+                FROM sale_items si
+                WHERE si."saleId" = s.id
+              ),
+              '[]'::json
+            )
+          ) ELSE NULL END as sale,
+          CASE WHEN cl.id IS NOT NULL THEN json_build_object(
+            'id', cl.id,
+            'name', cl.name,
+            'address', cl.address,
+            'phone', cl.phone,
+            'currentBalance', cl."currentBalance"::float
+          ) ELSE NULL END as client,
+          CASE WHEN v.id IS NOT NULL THEN json_build_object(
+            'id', v.id,
+            'plateNo', v."plateNo",
+            'type', v.type
+          ) ELSE NULL END as vehicle,
+          CASE WHEN dr.id IS NOT NULL THEN json_build_object(
+            'id', dr.id,
+            'name', dr.name,
+            'phone', dr.phone
+          ) ELSE NULL END as driver,
+          CASE WHEN emp.id IS NOT NULL THEN json_build_object(
+            'id', emp.id,
+            'name', emp.name,
+            'phone', emp.phone,
+            'whatsapp', emp.whatsapp
+          ) ELSE NULL END as employee
+        FROM deliveries d
+        LEFT JOIN sales s ON s.id = d."saleId"
+        LEFT JOIN clients cl ON cl.id = d."clientId"
+        LEFT JOIN vehicles v ON v.id = d."vehicleId"
+        LEFT JOIN drivers dr ON dr.id = d."driverId"
+        LEFT JOIN employees emp ON emp.id = d."employeeId"
+        WHERE (${rawBranchId} = '' OR d."branchId" = ${rawBranchId})
+          AND (${rawStatus} = '' OR d.status::text = ${rawStatus})
+          AND (${rawEmployeeId} = '' OR d."employeeId" = ${rawEmployeeId})
+          ${dayStart && dayEnd ? Prisma.sql`AND d.date >= ${dayStart} AND d.date <= ${dayEnd}` : Prisma.empty}
+        ORDER BY d.date ASC, d."createdAt" ASC
+        LIMIT 200
+      `;
 
       return deliveries;
     })();
