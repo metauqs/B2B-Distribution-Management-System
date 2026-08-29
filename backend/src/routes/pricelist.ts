@@ -570,18 +570,60 @@ router.get('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data: cachedLists.data });
     }
 
-    const lists = await prisma.priceList.findMany({
-      where: { ...(branchId ? { branchId } : {}), isActive: true },
-      include: {
-        _count: { select: { items: true } },
-        createdBy: { select: { id: true, name: true } },
-      },
-      orderBy: { date: 'desc' },
-      take: limit,
-    });
+    if (PRICELIST_IN_FLIGHT.has(listCacheKey)) {
+      const coalesced = await PRICELIST_IN_FLIGHT.get(listCacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json({ success: true, data: coalesced });
+    }
 
-    PRICELIST_CACHE.set(listCacheKey, { ts: Date.now(), data: lists });
-    return res.json({ success: true, data: lists });
+    const fetchListsPromise = (async () => {
+      const rawBranchId = branchId || '';
+      const lists: Array<{
+        id: string;
+        date: Date;
+        branchId: string;
+        isActive: boolean;
+        notes: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        createdBy: { id: string; name: string } | null;
+        _count: { items: number };
+      }> = await prisma.$queryRaw`
+        SELECT 
+          pl.id,
+          pl.date,
+          pl."branchId",
+          pl."isActive",
+          pl.notes,
+          pl."createdAt",
+          pl."updatedAt",
+          CASE WHEN u.id IS NOT NULL THEN json_build_object('id', u.id, 'name', u.name) ELSE NULL END as "createdBy",
+          json_build_object('items', COALESCE(ic.item_count, 0)::int) as "_count"
+        FROM price_lists pl
+        LEFT JOIN users u ON u.id = pl."createdById"
+        LEFT JOIN (
+          SELECT "priceListId", COUNT(id) as item_count
+          FROM price_items
+          GROUP BY "priceListId"
+        ) ic ON ic."priceListId" = pl.id
+        WHERE (${rawBranchId} = '' OR pl."branchId" = ${rawBranchId})
+          AND pl."isActive" = true
+        ORDER BY pl.date DESC
+        LIMIT ${limit}
+      `;
+      return lists;
+    })();
+
+    PRICELIST_IN_FLIGHT.set(listCacheKey, fetchListsPromise);
+    try {
+      const lists = await fetchListsPromise;
+      if (PRICELIST_CACHE.size > 50) PRICELIST_CACHE.clear();
+      PRICELIST_CACHE.set(listCacheKey, { ts: Date.now(), data: lists });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({ success: true, data: lists });
+    } finally {
+      PRICELIST_IN_FLIGHT.delete(listCacheKey);
+    }
   } catch (err: any) {
     console.error('Error in GET /api/pricelist:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load price lists', data: [] });
