@@ -196,6 +196,68 @@ export function clearPriceListCache(): void {
   PRICELIST_CACHE.clear();
 }
 
+// Optimized helper: fetch PriceList and items using single PostgreSQL query with JSON aggregation
+async function fetchPriceListWithItems(branchId: string | undefined, startDate: Date, endDate: Date): Promise<any> {
+  const rawBranchId = branchId || '';
+  const rows: Array<{
+    id: string;
+    date: Date;
+    branchId: string;
+    isActive: boolean;
+    notes: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    createdBy: { id: string; name: string } | null;
+    items: Array<{
+      id: string;
+      priceListId: string;
+      productId: string | null;
+      itemName: string;
+      unit: string;
+      buyRate: number;
+      sellRate: number;
+      notes: string | null;
+    }>;
+  }> = await prisma.$queryRaw`
+    SELECT 
+      pl.id,
+      pl.date,
+      pl."branchId",
+      pl."isActive",
+      pl.notes,
+      pl."createdAt",
+      pl."updatedAt",
+      CASE WHEN u.id IS NOT NULL THEN json_build_object('id', u.id, 'name', u.name) ELSE NULL END as "createdBy",
+      COALESCE(
+        (
+          SELECT json_agg(
+            json_build_object(
+              'id', pi.id,
+              'priceListId', pi."priceListId",
+              'productId', pi."productId",
+              'itemName', pi."itemName",
+              'unit', pi.unit,
+              'buyRate', pi."buyRate",
+              'sellRate', pi."sellRate",
+              'notes', pi.notes
+            ) ORDER BY pi."itemName" ASC
+          )
+          FROM price_items pi
+          WHERE pi."priceListId" = pl.id
+        ),
+        '[]'::json
+      ) as items
+    FROM price_lists pl
+    LEFT JOIN users u ON u.id = pl."createdById"
+    WHERE (${rawBranchId} = '' OR pl."branchId" = ${rawBranchId})
+      AND pl.date >= ${startDate}
+      AND pl.date <= ${endDate}
+      AND pl."isActive" = true
+    LIMIT 1
+  `;
+  return rows[0] || null;
+}
+
 // GET /api/pricelist/active — Get today's active Price List with Inventory buy rates & stock
 router.get('/active', async (req: Request, res: Response) => {
   try {
@@ -218,39 +280,7 @@ router.get('/active', async (req: Request, res: Response) => {
 
       // Fetch active price list, inventory, and cached active products in parallel
       const [list, inventories, activeProducts] = await Promise.all([
-        prisma.priceList.findFirst({
-          where: {
-            ...(branchId ? { branchId } : {}),
-            date: { gte: todayStart, lte: todayEnd },
-            isActive: true,
-          },
-          select: {
-            id: true,
-            date: true,
-            branchId: true,
-            isActive: true,
-            notes: true,
-            createdAt: true,
-            updatedAt: true,
-            createdBy: { select: { id: true, name: true } },
-            items: {
-              select: {
-                id: true,
-                priceListId: true,
-                productId: true,
-                itemName: true,
-                unit: true,
-                buyRate: true,
-                sellRate: true,
-                notes: true,
-                product: {
-                  select: { id: true, name: true, urduName: true, category: true, availability: true, emoji: true, imageUrl: true }
-                }
-              },
-              orderBy: { itemName: 'asc' },
-            },
-          },
-        }),
+        fetchPriceListWithItems(branchId, todayStart, todayEnd),
         branchId ? prisma.inventory.findMany({
           where: { branchId },
           select: {
@@ -484,39 +514,7 @@ router.get('/', async (req: Request, res: Response) => {
 
       const fetchDateListPromise = (async () => {
         const [list, inventories, activeProducts] = await Promise.all([
-          prisma.priceList.findFirst({
-            where: {
-              ...(branchId ? { branchId } : {}),
-              date: { gte: day, lte: dayEnd },
-              isActive: true,
-            },
-            select: {
-              id: true,
-              date: true,
-              branchId: true,
-              isActive: true,
-              notes: true,
-              createdAt: true,
-              updatedAt: true,
-              createdBy: { select: { id: true, name: true } },
-              items: {
-                select: {
-                  id: true,
-                  priceListId: true,
-                  productId: true,
-                  itemName: true,
-                  unit: true,
-                  buyRate: true,
-                  sellRate: true,
-                  notes: true,
-                  product: {
-                    select: { id: true, name: true, urduName: true, category: true, availability: true, emoji: true, imageUrl: true }
-                  }
-                },
-                orderBy: { itemName: 'asc' }
-              },
-            },
-          }),
+          fetchPriceListWithItems(branchId, day, dayEnd),
           branchId ? prisma.inventory.findMany({
             where: { branchId },
             select: {
