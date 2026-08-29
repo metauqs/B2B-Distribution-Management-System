@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { recordWastage, manualAdjust, recalculateProductStock } from '../lib/inventoryService';
 import { getCurrentBusinessDateRange, getBusinessDateRange } from '../lib/businessDate';
@@ -11,7 +12,7 @@ const INVENTORY_CACHE_TTL = 30000;
 const INVENTORY_IN_FLIGHT = new Map<string, Promise<any>>();
 
 const MOVEMENTS_CACHE = new Map<string, { ts: number; data: any }>();
-const MOVEMENTS_CACHE_TTL = 15000;
+const MOVEMENTS_CACHE_TTL = 30000;
 const MOVEMENTS_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearInventoryCache(): void {
@@ -474,49 +475,77 @@ router.get('/movements', async (req: Request, res: Response) => {
     }
 
     const fetchMovementsPromise = (async () => {
-      const where: any = {
-        ...(branchId ? { branchId } : {}),
-        ...(productId ? { productId: String(productId) } : {}),
-        ...(type && type !== 'all' ? { type: type as any } : {}),
-      };
-
-      if (from || to) {
-        where.date = {
-          ...(from ? { gte: getBusinessDateRange(String(from)).start } : {}),
-          ...(to ? { lte: getBusinessDateRange(String(to)).end } : {}),
-        };
+      const conditions: Prisma.Sql[] = [];
+      if (branchId) {
+        conditions.push(Prisma.sql`m."branchId" = ${branchId}`);
+      }
+      if (productId) {
+        conditions.push(Prisma.sql`m."productId" = ${String(productId)}`);
+      }
+      if (type && type !== 'all') {
+        conditions.push(Prisma.sql`m.type = ${type}::"StockMovementType"`);
+      }
+      if (from) {
+        const startDate = getBusinessDateRange(String(from)).start;
+        conditions.push(Prisma.sql`m.date >= ${startDate}`);
+      }
+      if (to) {
+        const endDate = getBusinessDateRange(String(to)).end;
+        conditions.push(Prisma.sql`m.date <= ${endDate}`);
       }
 
-      const movements = await prisma.stockMovement.findMany({
-        where,
-        include: {
-          product: { select: { id: true, name: true, urduName: true, defaultUnit: true, imageUrl: true, emoji: true } },
-          user: { select: { id: true, name: true } },
-        },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-        take: limit,
-      });
+      const whereClause = conditions.length > 0
+        ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
+        : Prisma.empty;
 
-      return movements.map(m => ({
-        id: m.id,
-        date: m.createdAt || m.date,
-        productId: m.productId,
-        productName: m.product?.name ?? '—',
-        productUrdu: m.product?.urduName ?? '',
-        imageUrl: m.product?.imageUrl ?? null,
-        emoji: m.product?.emoji ?? null,
-        unit: m.product?.defaultUnit ?? 'KG',
-        type: m.type,
-        qty: m.qty,
-        previousStock: m.previousStock,
-        newStock: m.newStock,
-        stockIn: m.qty > 0 ? m.qty : 0,
-        stockOut: m.qty < 0 ? Math.abs(m.qty) : 0,
-        refType: m.refType ?? '',
-        refId: m.refId ?? '',
-        userName: m.user?.name ?? 'System',
-        note: m.note ?? '',
-      }));
+      const rows = await prisma.$queryRaw<Array<{
+        id: string;
+        date: Date;
+        productId: string;
+        productName: string;
+        productUrdu: string;
+        imageUrl: string | null;
+        emoji: string | null;
+        unit: string;
+        type: string;
+        qty: number;
+        previousStock: number;
+        newStock: number;
+        stockIn: number;
+        stockOut: number;
+        refType: string;
+        refId: string;
+        userName: string;
+        note: string;
+      }>>(Prisma.sql`
+        SELECT 
+          m.id,
+          COALESCE(m."createdAt", m.date) as date,
+          m."productId",
+          COALESCE(p.name, '—') as "productName",
+          COALESCE(p."urduName", '') as "productUrdu",
+          p."imageUrl",
+          p.emoji,
+          COALESCE(p."defaultUnit", 'KG') as unit,
+          m.type,
+          m.qty::float as qty,
+          m."previousStock"::float as "previousStock",
+          m."newStock"::float as "newStock",
+          CASE WHEN m.qty > 0 THEN m.qty::float ELSE 0::float END as "stockIn",
+          CASE WHEN m.qty < 0 THEN ABS(m.qty)::float ELSE 0::float END as "stockOut",
+          COALESCE(m."refType", '') as "refType",
+          COALESCE(m."refId", '') as "refId",
+          COALESCE(u.name, 'System') as "userName",
+          COALESCE(m.note, '') as note
+        FROM stock_movements m
+        LEFT JOIN products p ON p.id = m."productId"
+        LEFT JOIN users u ON u.id = m."userId"
+        ${whereClause}
+        ORDER BY m.date DESC, m."createdAt" DESC
+        LIMIT ${limit}
+      `);
+
+      return rows;
     })();
 
     MOVEMENTS_IN_FLIGHT.set(cacheKey, fetchMovementsPromise);
