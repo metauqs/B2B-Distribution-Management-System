@@ -2,15 +2,15 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { writeAuditLog, generateClientId, recordCustomerLedgerEntry, recalculateClientLedgerAndBalance, reconcileClientBalancesAndAllocations, getAuthoritativeClientOutstanding } from '../lib/business';
 import { Prisma } from '@prisma/client';
-import { calculateClientCreditRisk, updateClientCreditRating } from '../lib/creditRisk';
-import { calculateCollectionBehaviour } from '../lib/collectionBehaviour';
+import { calculateClientCreditRisk, updateClientCreditRating, PreFetchedClientData } from '../lib/creditRisk';
+import { calculateCollectionBehaviour, PreFetchedBehaviourData } from '../lib/collectionBehaviour';
 
 const router = Router();
 
 // In-Memory cache for client listings and profiles (30s TTL)
 const CLIENT_CACHE = new Map<string, { ts: number; data: any }>();
 const CLIENT_PROFILE_CACHE = new Map<string, { ts: number; data: any }>();
-const CLIENT_CACHE_TTL = 30000;
+const CLIENT_CACHE_TTL = 90000;
 const CLIENT_IN_FLIGHT = new Map<string, Promise<any>>();
 const CLIENT_PROFILE_IN_FLIGHT = new Map<string, Promise<any>>();
 
@@ -317,11 +317,11 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const fetchProfilePromise = (async () => {
-      const [client, sales, collections, deliveries, ledger, creditRisk, collectionBehaviour] = await Promise.all([
+      // Step 1: Fetch core data in parallel
+      const [client, sales, collections, deliveries, ledger] = await Promise.all([
         prisma.client.findFirst({
           where: { id, ...(branchId ? { branchId } : {}) }
         }),
-        // Sales
         prisma.sale.findMany({
           where: { clientId: id, deletedAt: null },
           select: {
@@ -350,7 +350,6 @@ router.get('/:id', async (req: Request, res: Response) => {
           orderBy: { date: 'desc' },
           take: 100,
         }),
-        // Collections
         prisma.collection.findMany({
           where: { clientId: id, deletedAt: null },
           select: {
@@ -377,7 +376,6 @@ router.get('/:id', async (req: Request, res: Response) => {
           orderBy: { date: 'desc' },
           take: 100,
         }),
-        // Deliveries
         prisma.delivery.findMany({
           where: { sale: { clientId: id } },
           select: {
@@ -392,14 +390,48 @@ router.get('/:id', async (req: Request, res: Response) => {
           orderBy: { createdAt: 'desc' },
           take: 50,
         }),
-        // Ledger
         prisma.customerLedger.findMany({
           where: { clientId: id },
           orderBy: { date: 'asc' },
           take: 500,
         }),
-        calculateClientCreditRisk(id),
-        calculateCollectionBehaviour(id),
+      ]);
+
+      // Step 2: Build slim datasets reusing already-fetched data for analytics (zero extra DB calls)
+      const salesForAnalytics = (sales as any[])
+        .map((s: any) => ({
+          id: s.id, total: s.total, paid: s.paid, balance: s.balance,
+          status: s.status, date: new Date(s.date), createdAt: new Date(s.date),
+        }))
+        .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      const collectionsForAnalytics = (collections as any[])
+        .filter((c: any) => c.status !== 'CANCELLED')
+        .map((c: any) => ({ id: c.id, amount: c.amount, method: c.method, date: new Date(c.date), createdAt: new Date(c.date) }))
+        .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      const clientForAnalytics = client ? {
+        id: (client as any).id,
+        name: (client as any).name,
+        creditLimit: (client as any).creditLimit ?? null,
+        currentBalance: (client as any).currentBalance ?? 0,
+        openingBalance: (client as any).openingBalance ?? null,
+        paymentTerms: (client as any).paymentTerms ?? null,
+      } : undefined;
+
+      // Step 3: Compute analytics in parallel using pre-fetched data (zero extra DB round-trips)
+      const [creditRisk, collectionBehaviour] = await Promise.all([
+        calculateClientCreditRisk(id, undefined, {
+          client: clientForAnalytics,
+          sales: salesForAnalytics,
+          collections: collectionsForAnalytics,
+        }),
+        calculateCollectionBehaviour(id, undefined, {
+          sales: salesForAnalytics,
+          collections: collectionsForAnalytics,
+          paymentTerms: clientForAnalytics?.paymentTerms ?? null,
+          currentBalance: clientForAnalytics?.currentBalance ?? 0,
+        }),
       ]);
 
       if (!client) {

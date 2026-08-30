@@ -5,7 +5,7 @@ const router = Router();
 
 // ── In-Memory cache for vehicles (30s TTL) ─────────────────────────────────
 const VEHICLE_CACHE = new Map<string, { ts: number; data: any }>();
-const VEHICLE_CACHE_TTL = 30000;
+const VEHICLE_CACHE_TTL = 300000;
 const VEHICLE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearVehicleCache(): void {

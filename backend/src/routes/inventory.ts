@@ -6,13 +6,27 @@ import { getCurrentBusinessDateRange, getBusinessDateRange } from '../lib/busine
 
 const router = Router();
 
+// Cache the default branch ID to avoid per-request DB round-trip
+let DEFAULT_BRANCH_ID_CACHE: { ts: number; id: string } | null = null;
+const DEFAULT_BRANCH_ID_TTL = 3600000; // 1 hour
+
+async function getDefaultBranchId(): Promise<string> {
+  if (DEFAULT_BRANCH_ID_CACHE && (Date.now() - DEFAULT_BRANCH_ID_CACHE.ts) < DEFAULT_BRANCH_ID_TTL) {
+    return DEFAULT_BRANCH_ID_CACHE.id;
+  }
+  const firstBranch = await prisma.branch.findFirst();
+  const id = firstBranch?.id ?? '';
+  DEFAULT_BRANCH_ID_CACHE = { ts: Date.now(), id };
+  return id;
+}
+
 // ── In-Memory cache for inventory queries (30s TTL) ─────────────────────────
 const INVENTORY_CACHE = new Map<string, { ts: number; data: any }>();
-const INVENTORY_CACHE_TTL = 30000;
+const INVENTORY_CACHE_TTL = 120000;
 const INVENTORY_IN_FLIGHT = new Map<string, Promise<any>>();
 
 const MOVEMENTS_CACHE = new Map<string, { ts: number; data: any }>();
-const MOVEMENTS_CACHE_TTL = 30000;
+const MOVEMENTS_CACHE_TTL = 120000;
 const MOVEMENTS_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearInventoryCache(): void {
@@ -27,8 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     let branchId = (req.headers['x-branch-id'] as string) || undefined;
     if (!branchId) {
-      const firstBranch = await prisma.branch.findFirst();
-      branchId = firstBranch?.id ?? '';
+      branchId = await getDefaultBranchId();
     }
     const { search } = req.query;
 

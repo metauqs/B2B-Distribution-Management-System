@@ -35,7 +35,7 @@ function isDeliveryDue(deliveryDate: Date, scheduledTime: string | null | undefi
 
 // ── In-Memory cache for deliveries (15s TTL) ───────────────────────────────
 const DELIVERY_CACHE = new Map<string, { ts: number; data: any }>();
-const DELIVERY_CACHE_TTL = 15000;
+const DELIVERY_CACHE_TTL = 90000;
 const DELIVERY_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearDeliveryCache(): void {

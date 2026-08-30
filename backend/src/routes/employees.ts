@@ -39,7 +39,7 @@ router.get('/generate-id', async (req: Request, res: Response) => {
 
 // ── In-Memory cache for employees (60s TTL) ───────────────────────────────
 const EMPLOYEE_CACHE = new Map<string, { ts: number; data: any }>();
-const EMPLOYEE_CACHE_TTL = 60000;
+const EMPLOYEE_CACHE_TTL = 300000;
 const EMPLOYEE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearEmployeeCache(): void {

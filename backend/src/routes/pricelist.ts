@@ -156,7 +156,7 @@ function buildSynchronizedPriceListItems(
 
 // ── In-Memory cache for Product catalog queries (60s TTL) ────────────────────
 let ACTIVE_PRODUCTS_CACHE: { ts: number; data: any[] } | null = null;
-const ACTIVE_PRODUCTS_CACHE_TTL = 60000;
+const ACTIVE_PRODUCTS_CACHE_TTL = 300000;
 
 export async function getCachedActiveProducts(): Promise<any[]> {
   if (ACTIVE_PRODUCTS_CACHE && (Date.now() - ACTIVE_PRODUCTS_CACHE.ts) < ACTIVE_PRODUCTS_CACHE_TTL) {
@@ -189,7 +189,7 @@ export function clearActiveProductsCache(): void {
 
 // In-Memory cache for Price List queries (30s TTL)
 const PRICELIST_CACHE = new Map<string, { ts: number; data: any }>();
-const PRICELIST_CACHE_TTL = 30000;
+const PRICELIST_CACHE_TTL = 120000;
 const PRICELIST_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearPriceListCache(): void {

@@ -11,11 +11,11 @@ const router = Router();
 
 // In-memory cache for Dashboard & Report endpoints (30-second TTL)
 const DASHBOARD_CACHE = new Map<string, { ts: number; data: any }>();
-const DASHBOARD_CACHE_TTL = 30000;
+const DASHBOARD_CACHE_TTL = 60000;
 const DASHBOARD_IN_FLIGHT = new Map<string, Promise<any>>();
 
 const REPORT_CACHE = new Map<string, { ts: number; data: any }>();
-const REPORT_CACHE_TTL = 30000;
+const REPORT_CACHE_TTL = 60000;
 const REPORT_IN_FLIGHT = new Map<string, Promise<any>>();
 
 // 30-day rolling aggregate cache (5-minute TTL) to avoid repeated heavy scans

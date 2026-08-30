@@ -27,6 +27,19 @@ export interface CreditRiskAssessment {
   recommendedAction: string;    // Recommended Action
 }
 
+export interface PreFetchedClientData {
+  client?: {
+    id: string;
+    name: string;
+    creditLimit: number | null;
+    currentBalance: number;
+    openingBalance: number | null;
+    paymentTerms: number | null;
+  };
+  sales?: Array<{ id: string; total: number; paid: number; balance: number; status: string; date: Date; createdAt: Date }>;
+  collections?: Array<{ id: string; amount: number; date: Date; createdAt: Date }>;
+}
+
 /**
  * ClientCreditRiskService
  * Calculates AOV using last 30 orders, Credit Limit, Exposure, Overdue Invoices,
@@ -34,11 +47,12 @@ export interface CreditRiskAssessment {
  */
 export async function calculateClientCreditRisk(
   clientId: string,
-  tx?: any
+  tx?: any,
+  prefetched?: PreFetchedClientData
 ): Promise<CreditRiskAssessment> {
   const db = tx || prisma;
 
-  const client = await db.client.findUnique({
+  const client = prefetched?.client ?? await db.client.findUnique({
     where: { id: clientId },
     select: {
       id: true,
@@ -54,8 +68,8 @@ export async function calculateClientCreditRisk(
     throw new Error(`Client with id ${clientId} not found`);
   }
 
-  // Fetch non-deleted sales for this client
-  const sales = await db.sale.findMany({
+  // Use pre-fetched sales if provided, else fetch from DB
+  const sales = prefetched?.sales ?? await db.sale.findMany({
     where: { clientId, deletedAt: null },
     select: {
       id: true,
@@ -69,8 +83,8 @@ export async function calculateClientCreditRisk(
     orderBy: { date: 'asc' },
   });
 
-  // Fetch non-deleted collections for this client
-  const collections = await db.collection.findMany({
+  // Use pre-fetched collections if provided, else fetch from DB
+  const collections = prefetched?.collections ?? await db.collection.findMany({
     where: { clientId, deletedAt: null, status: { not: 'CANCELLED' } },
     select: {
       id: true,

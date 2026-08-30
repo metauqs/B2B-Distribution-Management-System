@@ -12,7 +12,7 @@ import { clearPriceListCache, clearActiveProductsCache } from './pricelist';
 
 // In-Memory cache for Product catalog queries (60s TTL)
 const PRODUCT_CACHE = new Map<string, { ts: number; data: any }>();
-const PRODUCT_CACHE_TTL = 60000;
+const PRODUCT_CACHE_TTL = 300000;
 const PRODUCTS_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearProductCache(): void {
@@ -226,6 +226,19 @@ function sendSvg(res: any, svg: string) {
   res.end(svg);
 }
 
+// In-Memory cache for product image DB lookups (10-minute TTL) — prevents repeated DB hits per image request
+const IMAGE_LOOKUP_CACHE = new Map<string, { ts: number; data: any }>();
+const IMAGE_LOOKUP_CACHE_TTL = 600000;
+
+async function getCachedProductForImage(key: string, fetcher: () => Promise<any>): Promise<any> {
+  const cached = IMAGE_LOOKUP_CACHE.get(key);
+  if (cached && (Date.now() - cached.ts) < IMAGE_LOOKUP_CACHE_TTL) return cached.data;
+  const data = await fetcher();
+  if (IMAGE_LOOKUP_CACHE.size > 200) IMAGE_LOOKUP_CACHE.clear();
+  IMAGE_LOOKUP_CACHE.set(key, { ts: Date.now(), data });
+  return data;
+}
+
 export async function serveProductImageOrFallback(filenameOrId: string, res: Response, isId = false, req?: Request) {
   const safeFilename = path.basename(filenameOrId.split('?')[0]);
   let filePath = isId ? null : findImageFile(safeFilename);
@@ -244,17 +257,21 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
   try {
     let product: any = null;
     if (isId) {
-      product = await prisma.product.findUnique({ where: { id: filenameOrId }, select: { name: true, emoji: true, imageUrl: true } });
+      product = await getCachedProductForImage(`id:${filenameOrId}`, () =>
+        prisma.product.findUnique({ where: { id: filenameOrId }, select: { name: true, emoji: true, imageUrl: true } })
+      );
     } else {
-      product = await prisma.product.findFirst({
-        where: {
-          OR: [
-            { imageUrl: { contains: safeFilename } },
-            { id: safeFilename.replace(/\.[^/.]+$/, '') },
-          ]
-        },
-        select: { name: true, emoji: true, imageUrl: true },
-      });
+      product = await getCachedProductForImage(`fn:${safeFilename}`, () =>
+        prisma.product.findFirst({
+          where: {
+            OR: [
+              { imageUrl: { contains: safeFilename } },
+              { id: safeFilename.replace(/\.[^/.]+$/, '') },
+            ]
+          },
+          select: { name: true, emoji: true, imageUrl: true },
+        })
+      );
     }
 
     if (product && product.imageUrl) {

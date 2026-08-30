@@ -20,17 +20,25 @@ export interface CollectionBehaviourProfile {
   recommendedAction: string;
 }
 
+export interface PreFetchedBehaviourData {
+  sales?: Array<{ id: string; total: number; paid: number; balance: number; status: string; date: Date; createdAt: Date }>;
+  collections?: Array<{ id: string; amount: number; method?: string; date: Date; createdAt: Date }>;
+  paymentTerms?: number | null;
+  currentBalance?: number;
+}
+
 /**
  * Calculates collection behaviour and pattern anomalies for a client.
  */
 export async function calculateCollectionBehaviour(
   clientId: string,
-  tx?: any
+  tx?: any,
+  prefetched?: PreFetchedBehaviourData
 ): Promise<CollectionBehaviourProfile> {
   const db = tx || prisma;
 
-  // 1. Fetch non-deleted sales and collections
-  const sales = await db.sale.findMany({
+  // 1. Use pre-fetched sales and collections if available, else fetch from DB
+  const sales = prefetched?.sales ?? await db.sale.findMany({
     where: { clientId, deletedAt: null },
     select: {
       id: true,
@@ -44,7 +52,7 @@ export async function calculateCollectionBehaviour(
     orderBy: { date: 'asc' },
   });
 
-  const collections = await db.collection.findMany({
+  const collections = prefetched?.collections ?? await db.collection.findMany({
     where: { clientId, deletedAt: null, status: { not: 'CANCELLED' } },
     select: {
       id: true,
@@ -189,11 +197,16 @@ export async function calculateCollectionBehaviour(
   const partialPaymentsCount = sales.filter((s: any) => s.status === 'PARTIAL').length;
 
   // Delayed payments: gap is longer than allowed credit/payment terms (default 7)
-  const client = await db.client.findUnique({
-    where: { id: clientId },
-    select: { paymentTerms: true, currentBalance: true },
-  });
-  const allowedTerms = client?.paymentTerms && client.paymentTerms > 0 ? client.paymentTerms : 7;
+  let allowedTerms = 7;
+  if (prefetched?.paymentTerms !== undefined) {
+    allowedTerms = prefetched.paymentTerms && prefetched.paymentTerms > 0 ? prefetched.paymentTerms : 7;
+  } else {
+    const clientRow = await db.client.findUnique({
+      where: { id: clientId },
+      select: { paymentTerms: true, currentBalance: true },
+    });
+    allowedTerms = clientRow?.paymentTerms && clientRow.paymentTerms > 0 ? clientRow.paymentTerms : 7;
+  }
   const delayedPaymentsCount = saleGaps.filter(g => g > allowedTerms).length;
 
   // 6. Behaviour Trend
@@ -215,7 +228,7 @@ export async function calculateCollectionBehaviour(
   // Check Cash to Credit Shift
   // E.g. Historically cash preferred, now credit is used or cash collections dropped below 30% of sales value
   const totalSalesVal = sales.reduce((s: number, sa: any) => s + sa.total, 0);
-  const totalOutstanding = client?.currentBalance ?? 0;
+  const totalOutstanding = prefetched?.currentBalance ?? 0;
   const creditUsagePct = totalSalesVal > 0 ? Math.round((totalOutstanding / totalSalesVal) * 100) : 0;
 
   if (preferredMethodHist === 'CASH' && preferredMethodCurr !== 'CASH') {

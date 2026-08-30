@@ -10,7 +10,7 @@ const router = Router();
 
 // ── In-Memory cache for purchases (20s TTL) ───────────────────────────────
 const PURCHASE_CACHE = new Map<string, { ts: number; data: any }>();
-const PURCHASE_CACHE_TTL = 20000;
+const PURCHASE_CACHE_TTL = 120000;
 const PURCHASE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearPurchaseCache(): void {

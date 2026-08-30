@@ -169,3 +169,8 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 app.listen(Number(port), '0.0.0.0', () => {
   console.log(`🚀 Server running on http://127.0.0.1:${port}`);
 });
+
+// Warm-up Neon connection on startup to eliminate first-request cold start latency
+setImmediate(() => {
+  prisma.$queryRaw`SELECT 1`.catch((e: any) => console.warn('[WARMUP] Neon warm-up failed:', e?.message));
+});
