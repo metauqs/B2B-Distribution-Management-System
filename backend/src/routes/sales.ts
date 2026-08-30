@@ -63,13 +63,13 @@ export async function findActiveEditableSale(clientId: string, branchId?: string
   return sale;
 }
 
-// ── In-Memory cache for sales queries (20s TTL) ─────────────────────────────
+// ── In-Memory cache for sales queries (120s TTL) ────────────────────────────
 const SALES_CACHE = new Map<string, { ts: number; data: any }>();
-const SALES_CACHE_TTL = 20000;
+const SALES_CACHE_TTL = 120000;
 const SALES_IN_FLIGHT = new Map<string, Promise<any>>();
 
 const ACTIVE_SALE_CACHE = new Map<string, { ts: number; data: any }>();
-const ACTIVE_SALE_CACHE_TTL = 10000;
+const ACTIVE_SALE_CACHE_TTL = 60000;
 const ACTIVE_SALE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearSalesCache(): void {
