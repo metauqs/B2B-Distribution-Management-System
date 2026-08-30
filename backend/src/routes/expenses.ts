@@ -63,8 +63,9 @@ router.get('/integrated', async (req: Request, res: Response) => {
     const branchId = (req.headers['x-branch-id'] as string) || undefined;
     if (!branchId) return res.status(400).json({ success: false, error: 'Missing branch' });
 
-    const { from, to, range } = req.query;
-    const cacheKey = `integrated_${branchId}_${from || 'none'}_${to || 'none'}_${range || 'none'}`;
+    const { from, to, range, limit: limitQuery } = req.query;
+    const limit = Math.min(parseInt(String(limitQuery ?? '100'), 10) || 100, 500);
+    const cacheKey = `integrated_${branchId}_${from || 'none'}_${to || 'none'}_${range || 'none'}_${limit}`;
     const cached = EXPENSE_CACHE.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < EXPENSE_CACHE_TTL) {
       res.setHeader('X-Cache', 'HIT');
@@ -80,13 +81,16 @@ router.get('/integrated', async (req: Request, res: Response) => {
     const fetchIntegratedPromise = (async () => {
       const fromDate = from ? getBusinessDateRange(String(from)).start : undefined;
       const toDate = to ? getBusinessDateRange(String(to)).end : undefined;
-      return await ExpenseService.getIntegratedExpenses(branchId, fromDate, toDate);
+      return await ExpenseService.getIntegratedExpenses(branchId, fromDate, toDate, limit);
     })();
 
     EXPENSE_IN_FLIGHT.set(cacheKey, fetchIntegratedPromise);
     try {
       const integrated = await fetchIntegratedPromise;
-      if (EXPENSE_CACHE.size > 50) EXPENSE_CACHE.clear();
+      if (EXPENSE_CACHE.size > 50) {
+        const oldestKey = EXPENSE_CACHE.keys().next().value;
+        if (oldestKey) EXPENSE_CACHE.delete(oldestKey);
+      }
       EXPENSE_CACHE.set(cacheKey, { ts: Date.now(), data: integrated });
       res.setHeader('X-Cache', 'MISS');
       return res.json({ success: true, data: integrated });

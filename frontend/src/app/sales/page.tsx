@@ -13,6 +13,7 @@ import { ProductVisual } from '@/components/ui/ProductVisual';
 import { loadBrandConfig, loadBrandConfigWithLogo, generateInvoiceHTML, openPrintWindow, writeAndPrint, generateTemplateImageBase64, generateTemplateJpgBase64, downloadImage, shareDocumentAsImageOnWhatsApp } from '@/utils/documentTemplates';
 import Icon from '@mdi/react';
 import { mdiReceipt } from '@mdi/js';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
@@ -1273,7 +1274,7 @@ export default function SalesPage() {
                     ⚠️ Client does not exist. Please create the client profile first in the Clients module.
                   </div>
                   <div style={{ marginTop: 8 }}>
-                    <a href="/clients" className="va-btn primary small" style={{ display: 'inline-block', textDecoration: 'none' }}>Go to Clients Module →</a>
+                    <Link href="/clients" className="va-btn primary small" style={{ display: 'inline-block', textDecoration: 'none' }}>Go to Clients Module →</Link>
                   </div>
                 </div>
               ) : (

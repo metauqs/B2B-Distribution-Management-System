@@ -199,6 +199,7 @@ router.get('/', async (req: Request, res: Response) => {
         WHERE ${whereClause}
         ORDER BY s.date DESC, s."createdAt" DESC
         LIMIT ${limit}
+        OFFSET ${(Math.max(1, parseInt(String(page || '1'), 10)) - 1) * limit}
       `;
 
       return sales;
@@ -207,7 +208,10 @@ router.get('/', async (req: Request, res: Response) => {
     SALES_IN_FLIGHT.set(cacheKey, fetchSalesPromise);
     try {
       const sales = await fetchSalesPromise;
-      if (SALES_CACHE.size >= 50) SALES_CACHE.clear();
+      if (SALES_CACHE.size >= 50) {
+        const oldestKey = SALES_CACHE.keys().next().value;
+        if (oldestKey) SALES_CACHE.delete(oldestKey);
+      }
       SALES_CACHE.set(cacheKey, { ts: Date.now(), data: sales });
       res.setHeader('X-Cache', 'MISS');
       return res.json({ success: true, data: sales });
@@ -699,7 +703,8 @@ router.get('/:id/audit-trail', async (req: Request, res: Response) => {
       include: {
         user: { select: { id: true, name: true, email: true, role: true } }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: 50,
     });
     return res.json({ success: true, data: logs });
   } catch (err: any) {

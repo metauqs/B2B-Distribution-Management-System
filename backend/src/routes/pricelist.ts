@@ -192,8 +192,14 @@ const PRICELIST_CACHE = new Map<string, { ts: number; data: any }>();
 const PRICELIST_CACHE_TTL = 120000;
 const PRICELIST_IN_FLIGHT = new Map<string, Promise<any>>();
 
+// In-Memory cache for Price History (5-min TTL)
+const PRICE_HISTORY_CACHE = new Map<string, { ts: number; data: any }>();
+const PRICE_HISTORY_CACHE_TTL = 300000;
+const PRICE_HISTORY_IN_FLIGHT = new Map<string, Promise<any>>();
+
 export function clearPriceListCache(): void {
   PRICELIST_CACHE.clear();
+  PRICE_HISTORY_CACHE.clear();
 }
 
 // Optimized helper: fetch PriceList and items using single PostgreSQL query with JSON aggregation
@@ -357,60 +363,90 @@ router.get('/history', async (req: Request, res: Response) => {
     const { productId, itemName, days: daysQuery } = req.query;
     const days = Math.min(parseInt(String(daysQuery ?? '30')), 90);
 
-    const since = new Date(Date.now() - days * 86400000);
+    const cacheKey = `history_${branchId || 'all'}_${productId || 'all'}_${itemName ? String(itemName).trim().toLowerCase() : 'all'}_${days}`;
+    const cached = PRICE_HISTORY_CACHE.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < PRICE_HISTORY_CACHE_TTL) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.data);
+    }
 
-    const items = await prisma.priceItem.findMany({
-      where: {
-        priceList: {
-          ...(branchId ? { branchId } : {}),
-          date: { gte: since },
-          isActive: true,
+    if (PRICE_HISTORY_IN_FLIGHT.has(cacheKey)) {
+      const coalesced = await PRICE_HISTORY_IN_FLIGHT.get(cacheKey);
+      res.setHeader('X-Cache', 'COALESCED');
+      return res.json(coalesced);
+    }
+
+    const fetchHistoryPromise = (async () => {
+      const since = new Date(Date.now() - days * 86400000);
+
+      const items = await prisma.priceItem.findMany({
+        where: {
+          priceList: {
+            ...(branchId ? { branchId } : {}),
+            date: { gte: since },
+            isActive: true,
+          },
+          ...(productId ? { productId: String(productId) } : {}),
+          ...(itemName ? { itemName: { contains: String(itemName), mode: 'insensitive' } } : {}),
         },
-        ...(productId ? { productId: String(productId) } : {}),
-        ...(itemName ? { itemName: { contains: String(itemName), mode: 'insensitive' } } : {}),
-      },
-      include: {
-        priceList: { select: { id: true, date: true } },
-        product: { select: { id: true, name: true, urduName: true, category: true, emoji: true, imageUrl: true } },
-      },
-      orderBy: [{ itemName: 'asc' }, { priceList: { date: 'asc' } }],
-    });
-
-    const grouped: Record<string, any[]> = {};
-    items.forEach(item => {
-      const key = item.itemName;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push({
-        date: item.priceList.date,
-        buyRate: item.buyRate,
-        sellRate: item.sellRate,
-        unit: item.unit,
-        margin: +(item.sellRate - item.buyRate).toFixed(2),
-        marginPct: item.buyRate > 0 ? +((item.sellRate - item.buyRate) / item.buyRate * 100).toFixed(1) : 0,
-        priceListId: item.priceList.id,
-        product: item.product,
+        include: {
+          priceList: { select: { id: true, date: true } },
+          product: { select: { id: true, name: true, urduName: true, category: true, emoji: true, imageUrl: true } },
+        },
+        orderBy: [{ itemName: 'asc' }, { priceList: { date: 'asc' } }],
+        take: 200,
       });
-    });
 
-    const history = Object.entries(grouped).map(([name, entries]) => {
-      const sorted = entries;
-      const withChange = sorted.map((entry, i) => {
-        const prev = sorted[i - 1];
-        const sellChange = prev ? +(((entry.sellRate - prev.sellRate) / prev.sellRate) * 100).toFixed(1) : null;
-        const buyChange = prev ? +(((entry.buyRate - prev.buyRate) / prev.buyRate) * 100).toFixed(1) : null;
-        return { ...entry, sellChange, buyChange };
+      const grouped: Record<string, any[]> = {};
+      items.forEach(item => {
+        const key = item.itemName;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push({
+          date: item.priceList.date,
+          buyRate: item.buyRate,
+          sellRate: item.sellRate,
+          unit: item.unit,
+          margin: +(item.sellRate - item.buyRate).toFixed(2),
+          marginPct: item.buyRate > 0 ? +((item.sellRate - item.buyRate) / item.buyRate * 100).toFixed(1) : 0,
+          priceListId: item.priceList.id,
+          product: item.product,
+        });
       });
-      return {
-        itemName: name,
-        product: entries[0]?.product ?? null,
-        latest: withChange[withChange.length - 1] ?? null,
-        history: withChange,
-      };
-    });
 
-    history.sort((a, b) => a.itemName.localeCompare(b.itemName));
+      const history = Object.entries(grouped).map(([name, entries]) => {
+        const sorted = entries;
+        const withChange = sorted.map((entry, i) => {
+          const prev = sorted[i - 1];
+          const sellChange = prev ? +(((entry.sellRate - prev.sellRate) / prev.sellRate) * 100).toFixed(1) : null;
+          const buyChange = prev ? +(((entry.buyRate - prev.buyRate) / prev.buyRate) * 100).toFixed(1) : null;
+          return { ...entry, sellChange, buyChange };
+        });
+        return {
+          itemName: name,
+          product: entries[0]?.product ?? null,
+          latest: withChange[withChange.length - 1] ?? null,
+          history: withChange,
+        };
+      });
 
-    return res.json({ success: true, data: history, days });
+      history.sort((a, b) => a.itemName.localeCompare(b.itemName));
+
+      return { success: true, data: history, days };
+    })();
+
+    PRICE_HISTORY_IN_FLIGHT.set(cacheKey, fetchHistoryPromise);
+    try {
+      const responsePayload = await fetchHistoryPromise;
+      if (PRICE_HISTORY_CACHE.size >= 50) {
+        const oldestKey = PRICE_HISTORY_CACHE.keys().next().value;
+        if (oldestKey) PRICE_HISTORY_CACHE.delete(oldestKey);
+      }
+      PRICE_HISTORY_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
+      res.setHeader('X-Cache', 'MISS');
+      return res.json(responsePayload);
+    } finally {
+      PRICE_HISTORY_IN_FLIGHT.delete(cacheKey);
+    }
   } catch (err: any) {
     console.error('Error in GET /api/pricelist/history:', err);
     return res.status(500).json({ success: false, error: err.message ?? 'Failed to load price history' });
@@ -665,10 +701,10 @@ router.post('/', async (req: Request, res: Response) => {
     const validatedUserId = await getValidUserId(userId);
 
     if (existing) {
-      // Upsert item sell rates into existing list
-      for (const it of items) {
+      // Upsert item sell rates into existing list in parallel
+      await Promise.all(items.map((it: any) => {
         const buyRate = it.productId ? (invBuyMap.get(it.productId) ?? it.buyRate ?? 0) : (it.buyRate ?? 0);
-        await prisma.priceItem.upsert({
+        return prisma.priceItem.upsert({
           where: { priceListId_itemName: { priceListId: existing.id, itemName: it.itemName } },
           update: {
             sellRate: Number(it.sellRate ?? 0),
@@ -687,7 +723,7 @@ router.post('/', async (req: Request, res: Response) => {
             notes: it.notes ?? undefined,
           },
         });
-      }
+      }));
 
       const updated = await prisma.priceList.findUnique({
         where: { id: existing.id },
@@ -806,9 +842,9 @@ router.patch('/:id', async (req: Request, res: Response) => {
         invBuyMap.set(inv.productId, effectiveBuyRate);
       });
 
-      for (const item of items) {
+      await Promise.all(items.map((item: any) => {
         const buyRate = item.productId ? (invBuyMap.get(item.productId) ?? item.buyRate ?? 0) : (item.buyRate ?? 0);
-        await prisma.priceItem.upsert({
+        return prisma.priceItem.upsert({
           where: { priceListId_itemName: { priceListId: id, itemName: item.itemName } },
           update: {
             buyRate,
@@ -827,7 +863,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
             notes: item.notes ?? undefined,
           },
         });
-      }
+      }));
     }
 
     const updated = await prisma.priceList.findUnique({

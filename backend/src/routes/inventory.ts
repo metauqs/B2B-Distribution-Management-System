@@ -65,6 +65,12 @@ router.get('/', async (req: Request, res: Response) => {
       // 1. Fetch active products, branch inventory, and stock movements concurrently in parallel
       const [allProducts, existingInventory, moveAggs] = await Promise.all([
         prisma.product.findMany({
+          where: search ? {
+            OR: [
+              { name: { contains: String(search), mode: 'insensitive' } },
+              { urduName: { contains: String(search) } },
+            ]
+          } : undefined,
           orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
           select: {
             id: true,
@@ -139,34 +145,32 @@ router.get('/', async (req: Request, res: Response) => {
       const todayStockOut = Number(moveRow.today_stock_out ?? 0);
       const todayWastage = Number(moveRow.today_wastage ?? 0);
 
-      const data = mergedInventory
-        .filter(inv => !search || inv.product?.name.toLowerCase().includes(String(search).toLowerCase()) || inv.product?.urduName?.includes(String(search)))
-        .map(inv => {
-          const availableQty = Math.max(0, inv.qty - (inv.reservedQty ?? 0));
-          const effectiveMinStock = ((inv as any).minStock && (inv as any).minStock > 0) ? (inv as any).minStock : (inv.product?.minStock ?? 0);
-          const stockStatus = inv.qty <= 0
-            ? 'OUT_OF_STOCK'
-            : inv.qty <= effectiveMinStock
-            ? 'LOW'
-            : 'OK';
-          
-          const avgBuyCost = (inv.avgCost && inv.avgCost > 0)
-            ? inv.avgCost
-            : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
-          const latestPurchasePrice = inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
-          const totalValue = Math.max(0, inv.qty) * avgBuyCost;
+      const data = mergedInventory.map(inv => {
+        const availableQty = Math.max(0, inv.qty - (inv.reservedQty ?? 0));
+        const effectiveMinStock = ((inv as any).minStock && (inv as any).minStock > 0) ? (inv as any).minStock : (inv.product?.minStock ?? 0);
+        const stockStatus = inv.qty <= 0
+          ? 'OUT_OF_STOCK'
+          : inv.qty <= effectiveMinStock
+          ? 'LOW'
+          : 'OK';
+        
+        const avgBuyCost = (inv.avgCost && inv.avgCost > 0)
+          ? inv.avgCost
+          : (inv.currentBuyPrice > 0 ? inv.currentBuyPrice : 0);
+        const latestPurchasePrice = inv.currentBuyPrice > 0 ? inv.currentBuyPrice : avgBuyCost;
+        const totalValue = Math.max(0, inv.qty) * avgBuyCost;
 
-          return {
-            ...inv,
-            avgCost: avgBuyCost,
-            currentBuyPrice: latestPurchasePrice,
-            latestPurchasePrice,
-            availableQty,
-            stockStatus,
-            effectiveMinStock,
-            totalValue,
-          };
-        });
+        return {
+          ...inv,
+          avgCost: avgBuyCost,
+          currentBuyPrice: latestPurchasePrice,
+          latestPurchasePrice,
+          availableQty,
+          stockStatus,
+          effectiveMinStock,
+          totalValue,
+        };
+      });
 
       const summary = {
         totalProducts: data.length,
@@ -186,7 +190,10 @@ router.get('/', async (req: Request, res: Response) => {
     INVENTORY_IN_FLIGHT.set(cacheKey, fetchInventoryPromise);
     try {
       const responsePayload = await fetchInventoryPromise;
-      if (INVENTORY_CACHE.size > 50) INVENTORY_CACHE.clear();
+      if (INVENTORY_CACHE.size > 50) {
+        const oldestKey = INVENTORY_CACHE.keys().next().value;
+        if (oldestKey) INVENTORY_CACHE.delete(oldestKey);
+      }
       INVENTORY_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
       res.setHeader('X-Cache', 'MISS');
       return res.json(responsePayload);

@@ -393,7 +393,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         prisma.customerLedger.findMany({
           where: { clientId: id },
           orderBy: { date: 'asc' },
-          take: 500,
+          take: 50,
         }),
       ]);
 
@@ -794,7 +794,8 @@ router.get('/:id/audit-trail', async (req: Request, res: Response) => {
       include: {
         user: { select: { id: true, name: true, role: true } }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: 50,
     });
     return res.json({ success: true, data: logs });
   } catch (err: any) {

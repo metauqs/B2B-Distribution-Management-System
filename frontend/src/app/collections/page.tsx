@@ -93,9 +93,15 @@ export default function CollectionsPage() {
   const [dailyEmployee, setDailyEmployee] = useState<string>('all');
   const [dailyMethod,  setDailyMethod]  = useState<string>('all');
   const [dailySearch,  setDailySearch]  = useState<string>('');
+  const [debouncedDailySearch, setDebouncedDailySearch] = useState<string>('');
   const [dailyData,    setDailyData]    = useState<any | null>(null);
   const [loadingDaily, setLoadingDaily] = useState<boolean>(false);
   const [dailyPreviewModal, setDailyPreviewModal] = useState<any | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedDailySearch(dailySearch), 350);
+    return () => clearTimeout(t);
+  }, [dailySearch]);
 
   // ── Payment Cancellation Modal state ──
   const [cancelModal, setCancelModal] = useState<any | null>(null);
@@ -114,7 +120,7 @@ export default function CollectionsPage() {
       const targetDate = dateVal !== undefined ? dateVal : dailyDate;
       const targetEmp = empVal !== undefined ? empVal : dailyEmployee;
       const targetMethod = methodVal !== undefined ? methodVal : dailyMethod;
-      const targetSearch = searchVal !== undefined ? searchVal : dailySearch;
+      const targetSearch = searchVal !== undefined ? searchVal : debouncedDailySearch;
 
       const params = new URLSearchParams();
       if (targetDate) params.append('date', targetDate);
@@ -132,7 +138,7 @@ export default function CollectionsPage() {
     } finally {
       setLoadingDaily(false);
     }
-  }, [dailyDate, dailyEmployee, dailyMethod, dailySearch, dailyData]);
+  }, [dailyDate, dailyEmployee, dailyMethod, debouncedDailySearch, dailyData]);
 
   const handleViewDues = (clientId: string) => {
     const client = clients.find(c => c.id === clientId);
@@ -207,7 +213,7 @@ export default function CollectionsPage() {
     if (activeTab === 'daily_history') {
       loadDailyHistory();
     }
-  }, [activeTab, dailyDate, dailyEmployee, dailyMethod, dailySearch, loadDailyHistory]);
+  }, [activeTab, dailyDate, dailyEmployee, dailyMethod, debouncedDailySearch, loadDailyHistory]);
 
   useEffect(() => {
     const handleRevalidate = () => {
@@ -1207,7 +1213,7 @@ export default function CollectionsPage() {
                 <input
                   placeholder="Search Client or Ref…"
                   value={dailySearch}
-                  onChange={e => { setDailySearch(e.target.value); loadDailyHistory(dailyDate, dailyEmployee, dailyMethod, e.target.value); }}
+                  onChange={e => setDailySearch(e.target.value)}
                   style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 12, width: 160 }}
                 />
 

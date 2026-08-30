@@ -154,6 +154,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         createdAt: true,
         salaryPayments: {
           orderBy: { paidOn: 'desc' },
+          take: 20,
         },
         deliveries: {
           include: {
@@ -161,6 +162,7 @@ router.get('/:id', async (req: Request, res: Response) => {
             client: { select: { name: true } },
           },
           orderBy: { createdAt: 'desc' },
+          take: 20,
         },
       },
     });
@@ -169,7 +171,10 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
 
-    if (EMPLOYEE_CACHE.size >= 50) EMPLOYEE_CACHE.clear();
+    if (EMPLOYEE_CACHE.size >= 50) {
+      const oldestKey = EMPLOYEE_CACHE.keys().next().value;
+      if (oldestKey) EMPLOYEE_CACHE.delete(oldestKey);
+    }
     EMPLOYEE_CACHE.set(cacheKey, { ts: Date.now(), data: employee });
     res.setHeader('X-Cache', 'MISS');
     return res.json({ success: true, data: employee });

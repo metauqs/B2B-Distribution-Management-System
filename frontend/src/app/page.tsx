@@ -7,6 +7,7 @@ import { getTodayBusinessDateString, fmtBusinessDate } from '@/utils/businessDat
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import Icon from '@mdi/react';
 import { mdiChartLine, mdiCalendarSync, mdiTruckDelivery, mdiScaleBalance, mdiAlertCircleOutline, mdiPackageVariant } from '@mdi/js';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAppSelector } from '@/store';
 import { getDefaultRouteForRole } from '@/utils/rbac';
@@ -120,7 +121,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadForDate(selectedDate, true);
+    loadForDate(selectedDate, false);
   }, [selectedDate, loadForDate]);
 
   useEffect(() => {
@@ -335,9 +336,9 @@ export default function DashboardPage() {
                 {(today.wastageCount || 0) > 0 ? ` · ${today.wastageCount} wastage entry recorded (${today.wastageQty || 0} KG)` : ''}
               </span>
             </div>
-            <a href="/inventory" className="va-btn secondary small" style={{ fontWeight: 700 }}>
+            <Link href="/inventory" className="va-btn secondary small" style={{ fontWeight: 700 }}>
               View Stock Hub →
-            </a>
+            </Link>
           </div>
         </div>
       )}
@@ -347,7 +348,7 @@ export default function DashboardPage() {
         <div className="va-panel">
           <div className="va-panel-head">
             <h3><Icon path={mdiScaleBalance} size={0.8} style={{ verticalAlign: 'middle', marginRight: 6 }} /> Needs Collection (High Dues)</h3>
-            <a href="/collections" className="va-btn secondary small" style={{ fontWeight: 700 }}>Collect Payment</a>
+            <Link href="/collections" className="va-btn secondary small" style={{ fontWeight: 700 }}>Collect Payment</Link>
           </div>
           {attention.map(c => (
             <div className="va-attn-row" key={c.id}>
@@ -482,7 +483,7 @@ export default function DashboardPage() {
         <div className="va-panel">
           <div className="va-panel-head">
             <h3>Orders for {fmtBusinessDate(selectedDate)}</h3>
-            <a href="/sales" className="va-btn secondary small" style={{ fontWeight: 700 }}>View Sales Register</a>
+            <Link href="/sales" className="va-btn secondary small" style={{ fontWeight: 700 }}>View Sales Register</Link>
           </div>
           
           <div className="hide-mobile">
@@ -523,13 +524,13 @@ export default function DashboardPage() {
                   title={s.invoiceNo}
                   headerBadge={fmtDate(s.date)}
                   footer={
-                    <a 
+                    <Link 
                       href="/sales" 
                       className="va-btn small" 
                       style={{ width: '100%', textAlign: 'center', textDecoration: 'none', fontWeight: 700 }}
                     >
                       👁️ View Sales Register
-                    </a>
+                    </Link>
                   }
                 >
                   <MobileCardRow label="Customer" value={s.client} />

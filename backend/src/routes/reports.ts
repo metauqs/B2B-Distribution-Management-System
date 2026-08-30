@@ -15,7 +15,7 @@ const DASHBOARD_CACHE_TTL = 60000;
 const DASHBOARD_IN_FLIGHT = new Map<string, Promise<any>>();
 
 const REPORT_CACHE = new Map<string, { ts: number; data: any }>();
-const REPORT_CACHE_TTL = 60000;
+const REPORT_CACHE_TTL = 300000; // 5 min — stable reports (aging, balance-sheet, customers, products)
 const REPORT_IN_FLIGHT = new Map<string, Promise<any>>();
 
 // 30-day rolling aggregate cache (5-minute TTL) to avoid repeated heavy scans
@@ -136,7 +136,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
 
       const [
         rawAggs,
-        todaySalesRecords,
+        recentSalesRaw,
         attentionRaw,
         receivablesData,
       ] = await Promise.all([
@@ -158,6 +158,16 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           l30_sales: number;
           l30_purchases: number;
           l30_expenses: number;
+          today_sales: number;
+          today_gross_sales: number;
+          today_discounts: number;
+          today_paid: number;
+          today_cash_sales: number;
+          today_credit_sales: number;
+          today_sales_count: number;
+          today_cogs: number;
+          today_returned_qty: number;
+          today_return_value: number;
         }>>`
           SELECT 
             (SELECT COALESCE(SUM(total), 0) FROM purchases WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL)::float as today_purchases,
@@ -190,47 +200,58 @@ router.get('/dashboard', async (req: Request, res: Response) => {
             )::int as low_stock_count,
             (SELECT COALESCE(SUM(total), 0) FROM sales WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${l30Start} AND status != 'CANCELLED' AND "deletedAt" IS NULL)::float as l30_sales,
             (SELECT COALESCE(SUM(total), 0) FROM purchases WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${l30Start} AND "deletedAt" IS NULL)::float as l30_purchases,
-            (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${l30Start} AND "deletedAt" IS NULL)::float as l30_expenses
+            (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${l30Start} AND "deletedAt" IS NULL)::float as l30_expenses,
+            -- ── Today sales aggregates computed in SQL — eliminates full items fetch ──
+            (SELECT COALESCE(SUM(total), 0) FROM sales WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL AND status != 'CANCELLED')::float as today_sales,
+            (SELECT COALESCE(SUM(subtotal), 0) FROM sales WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL AND status != 'CANCELLED')::float as today_gross_sales,
+            (SELECT COALESCE(SUM(discount), 0) FROM sales WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL AND status != 'CANCELLED')::float as today_discounts,
+            (SELECT COALESCE(SUM(paid), 0) FROM sales WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL AND status != 'CANCELLED')::float as today_paid,
+            (SELECT COALESCE(SUM(CASE WHEN "paymentMode" = 'CASH' THEN total ELSE 0 END), 0) FROM sales WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL AND status != 'CANCELLED')::float as today_cash_sales,
+            (SELECT COALESCE(SUM(CASE WHEN "paymentMode" = 'CREDIT' THEN total ELSE 0 END), 0) FROM sales WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL AND status != 'CANCELLED')::float as today_credit_sales,
+            (SELECT COUNT(*) FROM sales WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL AND status != 'CANCELLED')::int as today_sales_count,
+            (
+              SELECT COALESCE(SUM(si.qty * CASE WHEN si."costPrice" > 0 THEN si."costPrice" ELSE 0 END), 0)
+              FROM sale_items si
+              JOIN sales s ON s.id = si."saleId"
+              WHERE (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+                AND s.date >= ${todayStart} AND s.date <= ${todayEnd}
+                AND s."deletedAt" IS NULL AND s.status != 'CANCELLED'
+            )::float as today_cogs,
+            (
+              SELECT COALESCE(SUM(si."returnedQty"), 0)
+              FROM sale_items si
+              JOIN sales s ON s.id = si."saleId"
+              WHERE (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+                AND s.date >= ${todayStart} AND s.date <= ${todayEnd}
+                AND s."deletedAt" IS NULL AND s.status != 'CANCELLED'
+                AND si."returnedQty" > 0
+            )::float as today_returned_qty,
+            (
+              SELECT COALESCE(SUM(si."returnedQty" * si.rate), 0)
+              FROM sale_items si
+              JOIN sales s ON s.id = si."saleId"
+              WHERE (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+                AND s.date >= ${todayStart} AND s.date <= ${todayEnd}
+                AND s."deletedAt" IS NULL AND s.status != 'CANCELLED'
+                AND si."returnedQty" > 0
+            )::float as today_return_value
         `,
+        // ── Recent sales: lean LIMIT 5 — no sale_items needed ────────────────
         prisma.$queryRaw<Array<{
           id: string;
           invoiceNo: string;
           date: Date;
-          subtotal: number;
-          discount: number;
           total: number;
-          paid: number;
-          paymentMode: string;
           status: string;
           clientName: string;
-          items: Array<{ qty: number; costPrice: number; returnedQty: number; rate: number }>;
         }>>`
           SELECT 
             s.id,
             s."invoiceNo",
             s.date,
-            s.subtotal::float as subtotal,
-            s.discount::float as discount,
             s.total::float as total,
-            s.paid::float as paid,
-            s."paymentMode",
             s.status,
-            COALESCE(c.name, '—') as "clientName",
-            COALESCE(
-              (
-                SELECT json_agg(
-                  json_build_object(
-                    'qty', si.qty::float,
-                    'costPrice', si."costPrice"::float,
-                    'returnedQty', si."returnedQty"::float,
-                    'rate', si.rate::float
-                  )
-                )
-                FROM sale_items si
-                WHERE si."saleId" = s.id
-              ),
-              '[]'::json
-            ) as items
+            COALESCE(c.name, '—') as "clientName"
           FROM sales s
           LEFT JOIN clients c ON c.id = s."clientId"
           WHERE (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
@@ -239,6 +260,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
             AND s."deletedAt" IS NULL
             AND s.status != 'CANCELLED'::"TransactionStatus"
           ORDER BY s.date DESC, s."createdAt" DESC
+          LIMIT 5
         `,
         prisma.$queryRaw<Array<{ id: string; name: string; balance: number }>>`
           SELECT id, name, "currentBalance"::float as balance
@@ -274,37 +296,17 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       const l30Pur = Number(aggRow.l30_purchases ?? 0);
       const l30Exp = Number(aggRow.l30_expenses ?? 0);
 
-      let todaySales = 0;
-      let grossSales = 0;
-      let todayDiscounts = 0;
-      let todaySalesPaid = 0;
-      let cashSales = 0;
-      let creditSales = 0;
-      let totalCogs = 0;
-      let returnedProductsToday = 0;
-      let returnValueToday = 0;
+      // ── All today sales metrics from SQL aggregates — no JS loop needed ───
+      const todaySales = Number(aggRow.today_sales ?? 0);
+      const grossSales = Number(aggRow.today_gross_sales ?? 0);
+      const todayDiscounts = Number(aggRow.today_discounts ?? 0);
+      const cashSales = Number(aggRow.today_cash_sales ?? 0);
+      const creditSales = Number(aggRow.today_credit_sales ?? 0);
+      const todaySalesCount = Number(aggRow.today_sales_count ?? 0);
+      const totalCogs = Number(aggRow.today_cogs ?? 0);
+      const returnedProductsToday = Number(aggRow.today_returned_qty ?? 0);
+      const returnValueToday = Number(aggRow.today_return_value ?? 0);
 
-      for (const s of todaySalesRecords) {
-        todaySales += s.total;
-        grossSales += s.subtotal;
-        todayDiscounts += s.discount;
-        todaySalesPaid += s.paid;
-        if (s.paymentMode === 'CASH') cashSales += s.total;
-        else if (s.paymentMode === 'CREDIT') creditSales += s.total;
-
-        for (const item of s.items || []) {
-          const effectiveCost = item.costPrice > 0 ? item.costPrice : 0;
-          totalCogs += item.qty * effectiveCost;
-          if (item.returnedQty > 0) {
-            returnedProductsToday += item.returnedQty;
-            returnValueToday += item.returnedQty * item.rate;
-          }
-        }
-      }
-      const todaySalesCount = todaySalesRecords.length;
-      const recentSales = todaySalesRecords.slice(0, 5);
-
-      // Collections = active collection entries received today
       const todayCollections = dbCollectionsSum;
 
       // ── Gross Profit: same formula as Reports module (financialEngine.ts) ─────────
@@ -369,7 +371,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           atRiskClients,
         },
         attention,
-        recentSales: recentSales.map(s => ({
+        recentSales: recentSalesRaw.map(s => ({
           id: s.id,
           invoiceNo: s.invoiceNo,
           clientName: s.clientName ?? '—',
@@ -384,7 +386,8 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     try {
       const responsePayload = await fetchDashboardPromise;
       if (DASHBOARD_CACHE.size >= 20) {
-        DASHBOARD_CACHE.clear();
+        const oldestKey = DASHBOARD_CACHE.keys().next().value;
+        if (oldestKey) DASHBOARD_CACHE.delete(oldestKey);
       }
       DASHBOARD_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
       res.setHeader('X-Cache', 'MISS');
@@ -710,49 +713,42 @@ router.get('/aging', async (req: Request, res: Response) => {
     }
 
     const fetchAgingPromise = (async () => {
-      const bWhere = branchId ? { branchId } : {};
-      const now = new Date();
+      const rawBranchId = branchId || '';
 
-      const unpaidSales = await prisma.sale.findMany({
-        where: {
-          ...bWhere,
-          status: { in: ['PENDING', 'PARTIAL'] },
-          deletedAt: null,
-        },
-        include: { client: { select: { id: true, clientId: true, name: true, phone: true, rating: true } } },
-        orderBy: { date: 'asc' },
-      });
-
-      interface AgingClient {
-        id: string; clientId?: string | null; name: string; phone?: string | null; rating: string;
-        current: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; total: number;
-      }
-
-      const clientMap: Record<string, AgingClient> = {};
-
-      for (const sale of unpaidSales) {
-        const age = Math.floor((now.getTime() - new Date(sale.date).getTime()) / 86400000);
-        const due = sale.balance;
-        const cid = sale.clientId;
-
-        if (!clientMap[cid]) {
-          clientMap[cid] = {
-            id: cid, clientId: sale.client.clientId, name: sale.client.name,
-            phone: sale.client.phone,
-            rating: sale.client.rating,
-            current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, total: 0,
-          };
-        }
-
-        clientMap[cid].total += due;
-        if (age === 0) clientMap[cid].current += due;
-        else if (age <= 30) clientMap[cid].d1_30 += due;
-        else if (age <= 60) clientMap[cid].d31_60 += due;
-        else if (age <= 90) clientMap[cid].d61_90 += due;
-        else clientMap[cid].d90plus += due;
-      }
-
-      const clients = Object.values(clientMap).sort((a, b) => b.total - a.total);
+      const clients = await prisma.$queryRaw<Array<{
+        id: string;
+        clientId: string | null;
+        name: string;
+        phone: string | null;
+        rating: string;
+        current: number;
+        d1_30: number;
+        d31_60: number;
+        d61_90: number;
+        d90plus: number;
+        total: number;
+      }>>`
+        SELECT 
+          c.id,
+          c."clientId",
+          c.name,
+          c.phone,
+          COALESCE(c.rating::text, 'GREEN') as rating,
+          SUM(s.balance)::float as total,
+          SUM(CASE WHEN CURRENT_DATE - s.date::date <= 0 THEN s.balance ELSE 0 END)::float as current,
+          SUM(CASE WHEN CURRENT_DATE - s.date::date BETWEEN 1 AND 30 THEN s.balance ELSE 0 END)::float as d1_30,
+          SUM(CASE WHEN CURRENT_DATE - s.date::date BETWEEN 31 AND 60 THEN s.balance ELSE 0 END)::float as d31_60,
+          SUM(CASE WHEN CURRENT_DATE - s.date::date BETWEEN 61 AND 90 THEN s.balance ELSE 0 END)::float as d61_90,
+          SUM(CASE WHEN CURRENT_DATE - s.date::date > 90 THEN s.balance ELSE 0 END)::float as d90plus
+        FROM sales s
+        JOIN clients c ON c.id = s."clientId"
+        WHERE s.status IN ('PENDING', 'PARTIAL') 
+          AND s."deletedAt" IS NULL
+          AND (${rawBranchId} = '' OR s."branchId" = ${rawBranchId})
+        GROUP BY c.id, c."clientId", c.name, c.phone, c.rating
+        HAVING SUM(s.balance) > 0
+        ORDER BY total DESC
+      `;
 
       const totals = clients.reduce((acc, c) => ({
         current: acc.current + c.current,
@@ -769,7 +765,10 @@ router.get('/aging', async (req: Request, res: Response) => {
     REPORT_IN_FLIGHT.set(cacheKey, fetchAgingPromise);
     try {
       const responsePayload = await fetchAgingPromise;
-      if (REPORT_CACHE.size >= 50) REPORT_CACHE.clear();
+      if (REPORT_CACHE.size >= 50) {
+        const oldestKey = REPORT_CACHE.keys().next().value;
+        if (oldestKey) REPORT_CACHE.delete(oldestKey);
+      }
       REPORT_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
       res.setHeader('X-Cache', 'MISS');
       return res.json(responsePayload);
@@ -816,9 +815,30 @@ router.get('/invoice-registry', async (req: Request, res: Response) => {
           : {}),
       };
 
+      if (search) {
+        const searchStr = String(search).trim();
+        where.OR = [
+          { invoiceNo: { contains: searchStr, mode: 'insensitive' } },
+          { client: { name: { contains: searchStr, mode: 'insensitive' } } },
+          { client: { clientId: { contains: searchStr, mode: 'insensitive' } } },
+        ];
+      }
+
       const sales = await prisma.sale.findMany({
         where,
-        include: {
+        select: {
+          id: true,
+          invoiceNo: true,
+          date: true,
+          total: true,
+          paid: true,
+          balance: true,
+          status: true,
+          paymentMode: true,
+          subtotal: true,
+          discount: true,
+          deliveryCharge: true,
+          clientId: true,
           client: { select: { id: true, clientId: true, name: true, openingBalance: true } },
         },
         orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
@@ -899,16 +919,7 @@ router.get('/invoice-registry', async (req: Request, res: Response) => {
         }
       }
 
-      const filtered = search
-        ? sales.filter(
-            s =>
-              s.invoiceNo.toLowerCase().includes(String(search).toLowerCase()) ||
-              (s.client?.name ?? '').toLowerCase().includes(String(search).toLowerCase()) ||
-              (s.client?.clientId ?? '').toLowerCase().includes(String(search).toLowerCase()),
-        )
-        : sales;
-
-      const rows = filtered.map(s => processedRowsMap[s.id]).filter(Boolean);
+      const rows = sales.map(s => processedRowsMap[s.id]).filter(Boolean);
 
       const totals = rows.reduce(
         (acc, r) => ({
@@ -1577,12 +1588,17 @@ router.get('/finance/balance-sheet', async (req: Request, res: Response) => {
 
     const fetchBalSheetPromise = (async () => {
       const bWhere = branchId ? { branchId } : {};
+      const rawBranchId = branchId || '';
 
-      const [cashAccts, bankAccts, receivablesAgg, inventoryItems, suppliers, suppPurchases, suppPayments] = await Promise.all([
+      const [cashAccts, bankAccts, receivablesAgg, invValuationRes, suppliers, suppPurchases, suppPayments] = await Promise.all([
         prisma.cashAccount.findMany({ where: bWhere, select: { name: true, balance: true } }),
         prisma.bankAccount.findMany({ where: bWhere, select: { name: true, bankName: true, balance: true } }),
         prisma.client.aggregate({ where: { ...bWhere, deletedAt: null, currentBalance: { gt: 0 } }, _sum: { currentBalance: true } }),
-        prisma.inventory.findMany({ where: bWhere, select: { qty: true, avgCost: true, currentBuyPrice: true } }),
+        prisma.$queryRaw<Array<{ valuation: number }>>`
+          SELECT COALESCE(SUM(GREATEST(0, qty) * (CASE WHEN "avgCost" > 0 THEN "avgCost" ELSE (CASE WHEN "currentBuyPrice" > 0 THEN "currentBuyPrice" ELSE 0 END) END)), 0)::float as valuation
+          FROM inventory
+          WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
+        `,
         prisma.supplier.findMany({ where: { ...bWhere, deletedAt: null }, select: { id: true, name: true, openingBalance: true } }),
         prisma.purchase.groupBy({ by: ['supplierId'], where: { ...bWhere, deletedAt: null }, _sum: { total: true } }),
         prisma.supplierPayment.groupBy({ by: ['supplierId'], where: bWhere, _sum: { amount: true } }),
@@ -1592,11 +1608,7 @@ router.get('/finance/balance-sheet', async (req: Request, res: Response) => {
       const bankTotal = bankAccts.reduce((s, b) => s + b.balance, 0);
       const totalCashBank = cashTotal + bankTotal;
       const receivables = receivablesAgg._sum.currentBalance ?? 0;
-
-      const inventoryAssetValue = inventoryItems.reduce((s, inv) => {
-        const rate = inv.avgCost > 0 ? inv.avgCost : inv.currentBuyPrice;
-        return s + (Math.max(0, inv.qty) * rate);
-      }, 0);
+      const inventoryAssetValue = Number(invValuationRes?.[0]?.valuation ?? 0);
 
       const totalAssets = totalCashBank + receivables + inventoryAssetValue;
 
@@ -1642,7 +1654,10 @@ router.get('/finance/balance-sheet', async (req: Request, res: Response) => {
     REPORT_IN_FLIGHT.set(cacheKey, fetchBalSheetPromise);
     try {
       const responsePayload = await fetchBalSheetPromise;
-      if (REPORT_CACHE.size >= 50) REPORT_CACHE.clear();
+      if (REPORT_CACHE.size >= 50) {
+        const oldestKey = REPORT_CACHE.keys().next().value;
+        if (oldestKey) REPORT_CACHE.delete(oldestKey);
+      }
       REPORT_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
       res.setHeader('X-Cache', 'MISS');
       return res.json(responsePayload);
@@ -1658,29 +1673,17 @@ router.get('/finance/balance-sheet', async (req: Request, res: Response) => {
 // POST /api/reports/backfill — Safe historical backfill for SaleItem costPrice
 router.post('/backfill', async (req: Request, res: Response) => {
   try {
-    type BackfillItem = Prisma.SaleItemGetPayload<{
-      include: { product: { select: { id: true; inventory: { select: { avgCost: true; currentBuyPrice: true } } } } };
-    }>;
-    const saleItems = await prisma.saleItem.findMany({
-      where: { costPrice: 0 },
-      include: { product: { select: { id: true, inventory: { select: { avgCost: true, currentBuyPrice: true } } } } },
-    }) as BackfillItem[];
-
-    let updatedCount = 0;
-    for (const item of saleItems) {
-      let cost = 0;
-      if (item.product?.inventory && item.product.inventory.length > 0) {
-        const inv = item.product.inventory[0];
-        cost = inv.avgCost > 0 ? inv.avgCost : inv.currentBuyPrice;
-      }
-      if (cost <= 0) cost = item.rate * 0.75;
-
-      await prisma.saleItem.update({
-        where: { id: item.id },
-        data: { costPrice: cost },
-      });
-      updatedCount++;
-    }
+    const updatedCount = await prisma.$executeRaw`
+      UPDATE sale_items si
+      SET "costPrice" = COALESCE(
+        NULLIF(inv."avgCost", 0),
+        NULLIF(inv."currentBuyPrice", 0),
+        si.rate * 0.75
+      )
+      FROM products p
+      LEFT JOIN inventory inv ON inv."productId" = p.id
+      WHERE si."productId" = p.id AND si."costPrice" = 0
+    `;
 
     return res.json({ success: true, message: `Successfully backfilled ${updatedCount} historical sale items with cost basis.` });
   } catch (err: any) {

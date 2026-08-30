@@ -319,15 +319,25 @@ export default function PriceListPage() {
     }
   }, []);
 
-  // Initial resources load on mount (no date dependency)
+  // Initial resources load on mount (only active products needed for today's list)
   useEffect(() => {
-    Promise.all([
-      loadProducts(),
-      loadLists(),
-      loadWaSettings(),
-      loadBroadcastClients(),
-    ]);
-  }, [loadProducts, loadLists, loadWaSettings, loadBroadcastClients]);
+    loadProducts();
+  }, [loadProducts]);
+
+  // Lazy load historical lists only when switching to 'lists' tab
+  useEffect(() => {
+    if (tab === 'lists') {
+      loadLists();
+    }
+  }, [tab, loadLists]);
+
+  // Lazy load broadcast settings & clients only when broadcast modal is opened
+  useEffect(() => {
+    if (showBroadcastModal) {
+      loadWaSettings();
+      loadBroadcastClients();
+    }
+  }, [showBroadcastModal, loadWaSettings, loadBroadcastClients]);
 
   // Load daily price list when targetDate changes
   useEffect(() => {
@@ -338,12 +348,16 @@ export default function PriceListPage() {
     const handleRevalidate = () => {
       loadDateList(targetDate, true);
       loadProducts();
-      loadLists();
+      if (tab === 'lists') loadLists();
       if (tab === 'history') loadHistory();
+      if (showBroadcastModal) {
+        loadWaSettings();
+        loadBroadcastClients();
+      }
     };
     window.addEventListener('app-revalidate', handleRevalidate);
     return () => window.removeEventListener('app-revalidate', handleRevalidate);
-  }, [loadDateList, targetDate, loadProducts, loadLists, tab, loadHistory]);
+  }, [loadDateList, targetDate, loadProducts, loadLists, tab, loadHistory, showBroadcastModal, loadWaSettings, loadBroadcastClients]);
 
   useEffect(() => {
     if (tab === 'history') loadHistory();
@@ -369,18 +383,6 @@ export default function PriceListPage() {
 
     return () => clearInterval(interval);
   }, [activeBroadcastId]);
-
-  // ─── Auto-refresh: reload today's price list when tab regains focus ────────
-  // This ensures Buy Rates update instantly after saving a Purchase in another tab, but pauses while user is editing.
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && tab === 'today' && !isEditing) {
-        loadDateList(targetDate, true); // background update
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [tab, targetDate, loadDateList, isEditing]);
 
   // ─── Auto-refresh: poll every 30 s while on today tab (background purchases) ─
   useEffect(() => {

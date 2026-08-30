@@ -4,9 +4,9 @@ import prisma from '../lib/prisma';
 
 const router = Router();
 
-// ── In-Memory cache for settings users (30s TTL) ───────────────────────────
+// ── In-Memory cache for settings users (5-min TTL) ──────────────────────────
 const SETTINGS_CACHE = new Map<string, { ts: number; data: any }>();
-const SETTINGS_CACHE_TTL = 30000;
+const SETTINGS_CACHE_TTL = 300000;
 const SETTINGS_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearSettingsCache(): void {

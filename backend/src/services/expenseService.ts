@@ -520,9 +520,17 @@ export class ExpenseService {
   /**
    * Get integrated timeline of all financial outflows across the ERP
    */
-  static async getIntegratedExpenses(branchId: string, fromDate?: Date, toDate?: Date) {
+  static async getIntegratedExpenses(branchId: string, fromDate?: Date, toDate?: Date, limit: number = 100) {
     const bWhere = branchId ? { branchId, deletedAt: null } : { deletedAt: null };
-    const dateFilter = fromDate || toDate ? { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } : undefined;
+    
+    // Default to current month if no dates provided to prevent unbounded all-time scans
+    let effectiveFrom = fromDate;
+    let effectiveTo = toDate;
+    if (!effectiveFrom && !effectiveTo) {
+      const now = new Date();
+      effectiveFrom = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    const dateFilter = effectiveFrom || effectiveTo ? { ...(effectiveFrom ? { gte: effectiveFrom } : {}), ...(effectiveTo ? { lte: effectiveTo } : {}) } : undefined;
 
     const [manualExpenses, purchases, wastages] = await Promise.all([
       prisma.expense.findMany({
@@ -545,11 +553,13 @@ export class ExpenseService {
           supplier: { select: { name: true } },
         },
         orderBy: { date: 'desc' },
+        take: limit,
       }),
       prisma.purchase.findMany({
         where: {
           ...(branchId ? { branchId } : {}),
           ...(dateFilter ? { date: dateFilter } : {}),
+          deletedAt: null,
         },
         select: {
           id: true,
@@ -560,6 +570,7 @@ export class ExpenseService {
           _count: { select: { items: true } },
         },
         orderBy: { date: 'desc' },
+        take: limit,
       }),
       prisma.wastage.findMany({
         where: {
@@ -580,6 +591,7 @@ export class ExpenseService {
           },
         },
         orderBy: { date: 'desc' },
+        take: limit,
       }),
     ]);
 

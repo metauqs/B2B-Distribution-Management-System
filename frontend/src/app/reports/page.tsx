@@ -114,46 +114,89 @@ export default function ReportsPage() {
   });
   const [selectedInvoiceModal, setSelectedInvoiceModal] = useState<any | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearchQuery(searchQuery), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   const loadData = useCallback(async (showSpinner = false) => {
-    const mainKey = `/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`;
-    if (showSpinner && !getCachedData(mainKey)) setLoading(true);
     try {
-      const [execRes, invProfRes, custRes, prodRes, valRes, bsRes, costRes] = await Promise.all([
-        fetchWithCache<ExecutiveData>(mainKey, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
-        fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/sales/invoices?from=${from}&to=${to}&search=${encodeURIComponent(searchQuery)}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
-        fetchWithCache<any[]>(`/api/reports/sales/customers?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
-        fetchWithCache<any[]>(`/api/reports/sales/products?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }),
-        fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/inventory/valuation`, { ttl: TTL_MEDIUM, forceRefresh: showSpinner }),
-        fetchWithCache<any>(`/api/reports/finance/balance-sheet`, { ttl: TTL_MEDIUM, forceRefresh: showSpinner }),
-        fetchWithCache<any[]>(`/api/reports/purchases/cost-analysis`, { ttl: TTL_MEDIUM, forceRefresh: showSpinner }),
-      ]);
+      const promises: Promise<any>[] = [];
 
-      if (execRes) setExecData(execRes);
-      if (invProfRes) {
-        const rows = invProfRes.rows || (invProfRes as any).data || (Array.isArray(invProfRes) ? invProfRes : []);
-        const summary = invProfRes.summary || {};
-        setInvoiceReport({ rows, summary });
+      if (mainTab === 'Executive Dashboard' || mainTab === 'Management Analytics') {
+        const mainKey = `/api/reports/executive-dashboard?preset=${datePreset}&from=${from}&to=${to}`;
+        if (showSpinner && !getCachedData(mainKey)) setLoading(true);
+        promises.push(
+          fetchWithCache<ExecutiveData>(mainKey, { ttl: TTL_SHORT, forceRefresh: showSpinner }).then(res => {
+            if (res) setExecData(res);
+          })
+        );
+      } else if (mainTab === 'Sales') {
+        if (salesTab === 'Invoice Profitability') {
+          promises.push(
+            fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/sales/invoices?from=${from}&to=${to}&search=${encodeURIComponent(debouncedSearchQuery)}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }).then(res => {
+              if (res) {
+                const rows = res.rows || (res as any).data || (Array.isArray(res) ? res : []);
+                const summary = res.summary || {};
+                setInvoiceReport({ rows, summary });
+              }
+            })
+          );
+        } else if (salesTab === 'Customer Profitability') {
+          promises.push(
+            fetchWithCache<any[]>(`/api/reports/sales/customers?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }).then(res => {
+              if (Array.isArray(res)) setCustomerReport(res);
+            })
+          );
+        } else if (salesTab === 'Product Profitability') {
+          promises.push(
+            fetchWithCache<any[]>(`/api/reports/sales/products?from=${from}&to=${to}`, { ttl: TTL_SHORT, forceRefresh: showSpinner }).then(res => {
+              if (Array.isArray(res)) setProductReport(res);
+            })
+          );
+        }
+      } else if (mainTab === 'Purchases') {
+        promises.push(
+          fetchWithCache<any[]>(`/api/reports/purchases/cost-analysis`, { ttl: TTL_MEDIUM, forceRefresh: showSpinner }).then(res => {
+            if (Array.isArray(res)) setCostAnalysis(res);
+          })
+        );
+      } else if (mainTab === 'Inventory') {
+        promises.push(
+          fetchWithCache<{ rows: any[]; summary: any }>(`/api/reports/inventory/valuation`, { ttl: TTL_MEDIUM, forceRefresh: showSpinner }).then(res => {
+            if (res) {
+              const rows = res.rows || (res as any).data || (Array.isArray(res) ? res : []);
+              const summary = res.summary || {};
+              setValuationReport({ rows, summary });
+            }
+          })
+        );
+      } else if (mainTab === 'Finance') {
+        promises.push(
+          fetchWithCache<any>(`/api/reports/finance/balance-sheet`, { ttl: TTL_MEDIUM, forceRefresh: showSpinner }).then(res => {
+            if (res) setBalanceSheet(res);
+          })
+        );
       }
-      if (Array.isArray(custRes)) setCustomerReport(custRes);
-      if (Array.isArray(prodRes)) setProductReport(prodRes);
-      if (valRes) {
-        const rows = valRes.rows || (valRes as any).data || (Array.isArray(valRes) ? valRes : []);
-        const summary = valRes.summary || {};
-        setValuationReport({ rows, summary });
-      }
-      if (bsRes) setBalanceSheet(bsRes);
-      if (Array.isArray(costRes)) setCostAnalysis(costRes);
 
+      await Promise.all(promises);
       setLastSyncTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (err) {
       console.error('Failed to fetch reports:', err);
     } finally {
       setLoading(false);
     }
-  }, [datePreset, from, to, searchQuery]);
+  }, [mainTab, salesTab, datePreset, from, to, debouncedSearchQuery]);
 
   useEffect(() => { loadData(false); }, [loadData]);
+
+  useEffect(() => {
+    const handleRevalidate = () => loadData(true);
+    window.addEventListener('app-revalidate', handleRevalidate);
+    return () => window.removeEventListener('app-revalidate', handleRevalidate);
+  }, [loadData]);
 
   // Handle Date Preset Changes
   const handlePresetChange = (preset: string) => {

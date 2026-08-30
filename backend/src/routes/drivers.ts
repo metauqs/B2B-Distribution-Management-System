@@ -3,9 +3,9 @@ import prisma from '../lib/prisma';
 
 const router = Router();
 
-// ── In-Memory cache for drivers (30s TTL) ──────────────────────────────────
+// ── In-Memory cache for drivers (2-min TTL) ──────────────────────────────────
 const DRIVER_CACHE = new Map<string, { ts: number; data: any }>();
-const DRIVER_CACHE_TTL = 30000;
+const DRIVER_CACHE_TTL = 120000;
 const DRIVER_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearDriverCache(): void {

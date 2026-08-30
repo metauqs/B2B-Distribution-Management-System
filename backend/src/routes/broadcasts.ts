@@ -79,7 +79,8 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const clients = await prisma.client.findMany({
-      where: clientsWhere
+      where: clientsWhere,
+      select: { id: true, name: true, phone: true, whatsapp: true },
     });
 
     if (clients.length === 0) {

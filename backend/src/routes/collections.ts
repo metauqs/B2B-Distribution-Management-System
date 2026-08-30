@@ -8,9 +8,9 @@ import { clearReportCache } from './reports';
 
 const router = Router();
 
-// ── In-Memory Cache for Collections (20s TTL) ──────────────────────────────
+// ── In-Memory Cache for Collections (90s TTL) ──────────────────────────────
 const COLLECTIONS_CACHE = new Map<string, { ts: number; data: any }>();
-const COLLECTIONS_CACHE_TTL = 20000;
+const COLLECTIONS_CACHE_TTL = 90000;
 const COLLECTIONS_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearCollectionsCache(): void {
@@ -407,7 +407,10 @@ router.get('/', async (req: Request, res: Response) => {
     COLLECTIONS_IN_FLIGHT.set(cacheKey, fetchCollectionsPromise);
     try {
       const responsePayload = await fetchCollectionsPromise;
-      if (COLLECTIONS_CACHE.size > 50) COLLECTIONS_CACHE.clear();
+      if (COLLECTIONS_CACHE.size > 50) {
+        const oldestKey = COLLECTIONS_CACHE.keys().next().value;
+        if (oldestKey) COLLECTIONS_CACHE.delete(oldestKey);
+      }
       COLLECTIONS_CACHE.set(cacheKey, { ts: Date.now(), data: responsePayload });
       res.setHeader('X-Cache', 'MISS');
       return res.json(responsePayload);
@@ -460,7 +463,19 @@ router.get('/preview', async (req: Request, res: Response) => {
         status: { in: ['PENDING', 'PARTIAL'] },
         deletedAt: null,
       },
+      select: {
+        id: true,
+        invoiceNo: true,
+        date: true,
+        total: true,
+        paid: true,
+        balance: true,
+        status: true,
+        clientId: true,
+        previousBalance: true,
+      },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      take: 100,
     });
 
     if (targetSale && ['PENDING', 'PARTIAL'].includes(targetSale.status)) {
