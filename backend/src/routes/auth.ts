@@ -416,8 +416,18 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
 // POST /api/auth/logout
 router.post('/logout', (req: Request, res: Response) => {
   if (req.user?.sub) ME_CACHE.delete(req.user.sub);
-  res.clearCookie('sabzi_token', { path: '/' });
-  res.clearCookie('sabzi_refresh_token', { path: '/' });
+  res.clearCookie('sabzi_token', {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
+  res.clearCookie('sabzi_refresh_token', {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
   return res.json({ success: true, message: 'Logged out successfully' });
 });
 

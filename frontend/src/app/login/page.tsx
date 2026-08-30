@@ -21,12 +21,20 @@ export default function LoginPage() {
 
   // Verify if valid session cookie exists when opening login page
   useEffect(() => {
-    dispatch(fetchCurrentUser());
+    const hasToken = typeof window !== 'undefined'
+      ? (!!localStorage.getItem('sabzi_token') || document.cookie.includes('sabzi_token='))
+      : false;
+    if (hasToken) {
+      dispatch(fetchCurrentUser(true));
+    }
   }, [dispatch]);
 
-  // If user is already authenticated with a valid session, automatically redirect to Dashboard
+  // If user is already authenticated with a valid verified session token, automatically redirect to Dashboard
   useEffect(() => {
-    if (!isCheckingSession && isAuthenticated && user) {
+    const hasToken = typeof window !== 'undefined'
+      ? (!!localStorage.getItem('sabzi_token') || document.cookie.includes('sabzi_token='))
+      : false;
+    if (!isCheckingSession && isAuthenticated && user && hasToken) {
       const targetRoute = getDefaultRouteForRole(user.role);
       router.replace(targetRoute);
     }

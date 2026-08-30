@@ -15,7 +15,19 @@ export const authService = {
   },
 
   async logout(): Promise<void> {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('sabzi_user');
+      localStorage.removeItem('sabzi_token');
+      localStorage.removeItem('sabzi_refresh_token');
+      sessionStorage.clear();
+      document.cookie = 'sabzi_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+      document.cookie = 'sabzi_refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+    }
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.warn('Backend logout failed:', err);
+    }
   },
 
   async getMe(): Promise<User> {

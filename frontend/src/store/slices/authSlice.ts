@@ -49,12 +49,21 @@ export const login = createAsyncThunk<User, LoginCredentials>(
 
 export const logout = createAsyncThunk('auth/logout', async () => {
   setCachedUser(null);
+  lastFetchTime = 0;
+  inFlightFetch = null;
   if (typeof window !== 'undefined') {
+    localStorage.removeItem('sabzi_user');
     localStorage.removeItem('sabzi_token');
     localStorage.removeItem('sabzi_refresh_token');
     sessionStorage.clear();
+    document.cookie = 'sabzi_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+    document.cookie = 'sabzi_refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
   }
-  await fetch('/api/auth/logout', { method: 'POST' });
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (err) {
+    console.warn('Backend logout failed:', err);
+  }
 });
 
 let lastFetchTime = 0;
@@ -64,6 +73,15 @@ const FETCH_THROTTLE_MS = 60000; // 60s throttle
 export const fetchCurrentUser = createAsyncThunk(
   'auth/fetchCurrentUser',
   async (force: boolean | undefined, { rejectWithValue }) => {
+    const hasToken = typeof window !== 'undefined'
+      ? (localStorage.getItem('sabzi_token') || document.cookie.includes('sabzi_token='))
+      : false;
+
+    if (!hasToken) {
+      setCachedUser(null);
+      return rejectWithValue('No session');
+    }
+
     const cached = loadCachedUser();
     const now = Date.now();
 
@@ -81,6 +99,13 @@ export const fetchCurrentUser = createAsyncThunk(
         const data = await res.json();
         if (!res.ok || !data.success) {
           setCachedUser(null);
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('sabzi_user');
+            localStorage.removeItem('sabzi_token');
+            localStorage.removeItem('sabzi_refresh_token');
+            document.cookie = 'sabzi_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+            document.cookie = 'sabzi_refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+          }
           return rejectWithValue('Session expired or invalid');
         }
         const user = (data.data ?? data.user) as User;
@@ -163,14 +188,22 @@ const authSlice = createSlice({
       })
       .addCase(fetchCurrentUser.rejected, (state, action) => {
         state.isLoading = false;
-        const cached = loadCachedUser();
-        if (cached) {
-          state.user = cached;
-          state.isAuthenticated = true;
-        } else {
+        const payload = action.payload as string;
+        if (payload === 'No session' || payload?.includes('expired') || payload?.includes('invalid')) {
           state.isAuthenticated = false;
           state.user = null;
-          state.error = action.payload as string;
+          state.error = payload;
+          setCachedUser(null);
+        } else {
+          const cached = loadCachedUser();
+          if (cached) {
+            state.user = cached;
+            state.isAuthenticated = true;
+          } else {
+            state.isAuthenticated = false;
+            state.user = null;
+            state.error = payload;
+          }
         }
       });
   },

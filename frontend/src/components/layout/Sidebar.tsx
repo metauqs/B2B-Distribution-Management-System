@@ -17,7 +17,9 @@ import {
   BarChart3,
   SlidersHorizontal,
 } from 'lucide-react';
-import { useAppSelector } from '@/store';
+import { useAppDispatch, useAppSelector } from '@/store';
+import { logout } from '@/store/slices/authSlice';
+import { invalidateCache } from '@/utils/cacheStore';
 import { hasModuleAccess } from '@/utils/rbac';
 import { savePageState } from '@/utils/navigationStateStore';
 import { prefetchPageData } from '@/utils/dataPrefetch';
@@ -79,6 +81,7 @@ interface SidebarProps {
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname  = usePathname();
   const router    = useRouter();
+  const dispatch  = useAppDispatch();
   const [loading, setLoading] = useState(false);
   const user = useAppSelector(state => state.auth.user);
   const isLoadingUser = useAppSelector(state => state.auth.isLoading);
@@ -176,9 +179,20 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const handleLogout = async () => {
     setLoading(true);
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await dispatch(logout()).unwrap();
+    } catch (err) {
+      console.warn('Logout error:', err);
     } finally {
-      router.push('/login');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sabzi_user');
+        localStorage.removeItem('sabzi_token');
+        localStorage.removeItem('sabzi_refresh_token');
+        sessionStorage.clear();
+        document.cookie = 'sabzi_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+        document.cookie = 'sabzi_refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+      }
+      invalidateCache();
+      window.location.href = '/login';
     }
   };
 
