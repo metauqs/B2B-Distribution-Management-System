@@ -5,7 +5,7 @@ const router = Router();
 
 // ── In-Memory cache for bank accounts (30s TTL) ─────────────────────────────
 const BANK_ACCOUNT_CACHE = new Map<string, { ts: number; data: any }>();
-const BANK_ACCOUNT_CACHE_TTL = 30000;
+const BANK_ACCOUNT_CACHE_TTL = 300000;
 const BANK_ACCOUNT_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearBankAccountCache(): void {

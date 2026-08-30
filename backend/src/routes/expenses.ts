@@ -7,7 +7,7 @@ const router = Router();
 
 // ── In-Memory cache for expenses and summaries (20s TTL) ────────────────────
 const EXPENSE_CACHE = new Map<string, { ts: number; data: any }>();
-const EXPENSE_CACHE_TTL = 20000;
+const EXPENSE_CACHE_TTL = 120000;
 const EXPENSE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearExpenseCache(): void {
