@@ -151,7 +151,7 @@ router.get('/', async (req: Request, res: Response) => {
             "clientId",
             SUM(amount) as total_collected
           FROM collections
-          WHERE "deletedAt" IS NULL 
+          WHERE "deletedAt" IS NULL AND status != 'CANCELLED'
             AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
           GROUP BY "clientId"
         ) col ON col."clientId" = c.id
@@ -339,8 +339,12 @@ router.get('/:id', async (req: Request, res: Response) => {
             date: true,
             reference: true,
             notes: true,
+            status: true,
+            cancelledAt: true,
+            cancelReason: true,
             remainingBalance: true,
             receivedByUser: { select: { id: true, name: true, role: true } },
+            cancelledByUser: { select: { id: true, name: true, role: true } },
             allocations: {
               select: {
                 id: true,
@@ -381,15 +385,15 @@ router.get('/:id', async (req: Request, res: Response) => {
         return null;
       }
 
-      const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
-      const totalCollected = collections.reduce((sum, c) => sum + c.amount, 0);
+      const totalSales = sales.reduce((sum: number, s: any) => sum + s.total, 0);
+      const totalCollected = (collections as any[]).filter((c: any) => c.status !== 'CANCELLED').reduce((sum: number, c: any) => sum + c.amount, 0);
       const lastOrderDate = sales[0]?.date ?? null;
-      const outstandingInvoices = sales.filter(s => s.balance > 0 && s.status !== 'CANCELLED');
+      const outstandingInvoices = sales.filter((s: any) => s.balance > 0 && s.status !== 'CANCELLED');
 
       // Build ledger entries formatted for UI from DB customerLedger
-      const sortedDbLedger = ledger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const sortedDbLedger = (ledger as any[]).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-      const mappedLedger = sortedDbLedger.map(entry => ({
+      const mappedLedger = sortedDbLedger.map((entry: any) => ({
         id: entry.id,
         type: entry.type.toLowerCase(),
         date: entry.date.toISOString(),
@@ -797,7 +801,7 @@ router.get('/:id/delete-summary', async (req: Request, res: Response) => {
         _sum: { total: true }
       }),
       prisma.collection.aggregate({
-        where: { clientId: id, deletedAt: null },
+        where: { clientId: id, deletedAt: null, status: { not: 'CANCELLED' } },
         _count: { id: true },
         _sum: { amount: true }
       }),

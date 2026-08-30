@@ -3,7 +3,7 @@ import prisma from '../lib/prisma';
 import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBalance, deriveInvoiceStatus, reconcileClientBalancesAndAllocations, getAuthoritativeClientOutstanding } from '../lib/business';
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { getBusinessDateRange, getBusinessDateString, getCurrentBusinessDateRange, formatPKTDateTime, parseInputDateToUtc } from '../lib/businessDate';
-import { postCollectionLedger } from '../lib/financialLedgerService';
+import { postCollectionLedger, postCollectionCancellationLedger } from '../lib/financialLedgerService';
 
 const router = Router();
 
@@ -61,6 +61,10 @@ router.get('/daily-history', async (req: Request, res: Response) => {
           c."branchId",
           c."createdAt",
           c."deletedAt",
+          COALESCE(c.status::text, 'PAID') as status,
+          c."cancelledAt",
+          c."cancelledByUserId",
+          c."cancelReason",
           json_build_object(
             'id', cl.id,
             'name', cl.name,
@@ -74,6 +78,13 @@ router.get('/daily-history', async (req: Request, res: Response) => {
               'role', u.role
             )
           ELSE NULL END as "receivedByUser",
+          CASE WHEN cu.id IS NOT NULL THEN
+            json_build_object(
+              'id', cu.id,
+              'name', cu.name,
+              'role', cu.role
+            )
+          ELSE NULL END as "cancelledByUser",
           COALESCE(
             (
               SELECT json_agg(
@@ -111,6 +122,7 @@ router.get('/daily-history', async (req: Request, res: Response) => {
         FROM collections c
         LEFT JOIN clients cl ON cl.id = c."clientId"
         LEFT JOIN users u ON u.id = c."receivedByUserId"
+        LEFT JOIN users cu ON cu.id = c."cancelledByUserId"
         WHERE c."deletedAt" IS NULL 
           AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
           AND (${rawClientId} = '' OR c."clientId" = ${rawClientId})
@@ -131,25 +143,37 @@ router.get('/daily-history', async (req: Request, res: Response) => {
       let onlineAmount = 0;
       let chequeAmount = 0;
       let otherAmount = 0;
+      let cancelledCount = 0;
+      let cancelledAmount = 0;
 
       const byMethod: Record<string, number> = {};
       const byEmployee: Record<string, number> = {};
 
       const formattedTransactions = collections.map((col: any, index: number) => {
         const amt = col.amount || 0;
-        totalAmount += amt;
+        const isCancelled = col.status === 'CANCELLED';
+
+        if (!isCancelled) {
+          totalAmount += amt;
+
+          const mUpper = (col.method || 'CASH').toUpperCase();
+          byMethod[mUpper] = (byMethod[mUpper] || 0) + amt;
+
+          if (mUpper === 'CASH') cashAmount += amt;
+          else if (mUpper === 'BANK' || mUpper === 'BANK_TRANSFER') bankAmount += amt;
+          else if (mUpper === 'ONLINE') onlineAmount += amt;
+          else if (mUpper === 'CHEQUE') chequeAmount += amt;
+          else otherAmount += amt;
+
+          const empName = col.receivedByUser?.name || 'Not Recorded';
+          byEmployee[empName] = (byEmployee[empName] || 0) + amt;
+        } else {
+          cancelledCount++;
+          cancelledAmount += amt;
+        }
 
         const mUpper = (col.method || 'CASH').toUpperCase();
-        byMethod[mUpper] = (byMethod[mUpper] || 0) + amt;
-
-        if (mUpper === 'CASH') cashAmount += amt;
-        else if (mUpper === 'BANK' || mUpper === 'BANK_TRANSFER') bankAmount += amt;
-        else if (mUpper === 'ONLINE') onlineAmount += amt;
-        else if (mUpper === 'CHEQUE') chequeAmount += amt;
-        else otherAmount += amt;
-
         const empName = col.receivedByUser?.name || 'Not Recorded';
-        byEmployee[empName] = (byEmployee[empName] || 0) + amt;
 
         const invoiceNumbers = (col.allocations || [])
           .map((a: any) => a.sale?.invoiceNo)
@@ -172,6 +196,7 @@ router.get('/daily-history', async (req: Request, res: Response) => {
         return {
           seqNo: index + 1,
           id: col.id,
+          reference: col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`,
           referenceNo: col.reference || `PAY-${col.id.slice(-6).toUpperCase()}`,
           date: col.date,
           time: pktTime,
@@ -186,7 +211,10 @@ router.get('/daily-history', async (req: Request, res: Response) => {
           receivedByUserId: col.receivedByUserId || null,
           remainingBalance: remBal,
           notes: col.notes || null,
-          status: 'COMPLETED',
+          status: col.status || 'PAID',
+          cancelledAt: col.cancelledAt ? col.cancelledAt.toISOString() : null,
+          cancelledBy: col.cancelledByUser?.name || null,
+          cancelReason: col.cancelReason || null,
         };
       });
 
@@ -194,13 +222,15 @@ router.get('/daily-history', async (req: Request, res: Response) => {
         success: true,
         businessDate: range.businessDateStr,
         summary: {
-          totalTransactions: collections.length,
+          totalTransactions: collections.filter((c: any) => c.status !== 'CANCELLED').length,
           totalCollected: totalAmount,
           cashCollected: cashAmount,
           bankCollected: bankAmount,
           onlineCollected: onlineAmount,
           chequeCollected: chequeAmount,
           otherCollected: otherAmount,
+          cancelledTransactions: cancelledCount,
+          cancelledAmount: cancelledAmount,
           byMethod,
           byEmployee,
         },
@@ -279,6 +309,10 @@ router.get('/', async (req: Request, res: Response) => {
           c."branchId",
           c."createdAt",
           c."deletedAt",
+          COALESCE(c.status::text, 'PAID') as status,
+          c."cancelledAt",
+          c."cancelledByUserId",
+          c."cancelReason",
           json_build_object(
             'id', cl.id,
             'name', cl.name,
@@ -292,6 +326,13 @@ router.get('/', async (req: Request, res: Response) => {
               'role', u.role
             )
           ELSE NULL END as "receivedByUser",
+          CASE WHEN cu.id IS NOT NULL THEN
+            json_build_object(
+              'id', cu.id,
+              'name', cu.name,
+              'role', cu.role
+            )
+          ELSE NULL END as "cancelledByUser",
           COALESCE(
             (
               SELECT json_agg(
@@ -329,6 +370,7 @@ router.get('/', async (req: Request, res: Response) => {
         FROM collections c
         LEFT JOIN clients cl ON cl.id = c."clientId"
         LEFT JOIN users u ON u.id = c."receivedByUserId"
+        LEFT JOIN users cu ON cu.id = c."cancelledByUserId"
         WHERE c."deletedAt" IS NULL 
           AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
           AND (${rawClientId} = '' OR c."clientId" = ${rawClientId})
@@ -359,17 +401,19 @@ router.get('/', async (req: Request, res: Response) => {
         const remBal = (rawRemBal !== null && rawRemBal !== undefined && Math.abs(rawRemBal) < 1.0) ? 0 : rawRemBal;
         return {
           ...c,
+          status: c.status || 'PAID',
           remainingBalance: remBal,
           runningBalance: remBal
         };
       });
 
-      const totalAmount = collections.reduce((sum, c) => sum + (c.amount || 0), 0);
-      const count = collections.length;
+      const activeCollections = collections.filter(c => c.status !== 'CANCELLED');
+      const totalAmount = activeCollections.reduce((sum, c) => sum + (c.amount || 0), 0);
+      const count = activeCollections.length;
       const byMethod: { [key: string]: number } = {};
       const byEmployee: { [key: string]: number } = {};
 
-      collections.forEach(c => {
+      activeCollections.forEach(c => {
         const m = c.method || 'CASH';
         byMethod[m] = (byMethod[m] || 0) + (c.amount || 0);
         const empName = c.receivedByUser?.name || 'Unrecorded (Historical)';
@@ -753,62 +797,245 @@ router.post('/reconcile-all', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/collections/:id — Atomic Delete Collection & Reconcile Client Ledger
-router.delete('/:id', async (req: Request, res: Response) => {
+// POST /api/collections/:id/cancel — Production-Safe Payment Cancellation & Full Financial Reversal
+router.post('/:id/cancel', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const userId = (req.headers['x-user-id'] as string) || null;
+  const { reason } = req.body;
+  const userId = (req.headers['x-user-id'] as string) || (req.user as any)?.id || (req.user as any)?.sub || null;
+  const userRole = (req.headers['x-user-role'] as string) || (req.user as any)?.role;
   const branchId = (req.headers['x-branch-id'] as string) || undefined;
 
+  // 1. Authorization: Only administrative roles (ADMIN, MANAGER, SUPER_ADMIN) may cancel payments
+  if (userRole && !['ADMIN', 'MANAGER', 'SUPER_ADMIN'].includes(userRole.toUpperCase())) {
+    return res.status(403).json({
+      success: false,
+      error: 'Unauthorized: Only administrators and managers are authorized to cancel payments.'
+    });
+  }
+
   try {
-    const collection = await prisma.collection.findUnique({
-      where: { id },
-      include: { client: true }
+    const result = await prisma.$transaction(async tx => {
+      // 1. Lock/read payment
+      const collection = await tx.collection.findUnique({
+        where: { id, deletedAt: null },
+        include: {
+          client: true,
+          allocations: {
+            include: { sale: { select: { id: true, invoiceNo: true, total: true, paid: true, balance: true, status: true } } }
+          }
+        }
+      });
+
+      if (!collection) {
+        const err: any = new Error('Payment collection not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      // 2. Verify payment is still ACTIVE (Prevent duplicate/concurrent cancellation)
+      if (collection.status === 'CANCELLED') {
+        const err: any = new Error('This payment has already been cancelled.');
+        err.statusCode = 409;
+        throw err;
+      }
+
+      // 3. Mark payment as CANCELLED with audit metadata (NEVER delete)
+      const cancelledCollection = await tx.collection.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelledByUserId: userId,
+          cancelReason: reason || 'Payment Cancellation',
+        },
+        include: {
+          client: { select: { id: true, name: true, clientId: true, currentBalance: true } },
+          receivedByUser: { select: { id: true, name: true, role: true } },
+          cancelledByUser: { select: { id: true, name: true, role: true } },
+        }
+      });
+
+      // 4. Reverse Customer Ledger Effect: Create CANCELLATION debit entry (increases customer receivable / restored dues)
+      const refNo = collection.reference || `PAY-${collection.id.slice(-6).toUpperCase()}`;
+      await recordCustomerLedgerEntry(tx, {
+        clientId: collection.clientId,
+        branchId: collection.branchId,
+        type: 'CANCELLATION',
+        date: new Date(),
+        referenceId: collection.id,
+        referenceNo: refNo,
+        description: `Payment Cancelled (${collection.method}) — ${reason || 'Reversal'}`,
+        debit: collection.amount,
+        credit: 0,
+      });
+
+      // 5. Post Financial Ledger Reversal (Credit ASSET_CASH, Debit ASSET_RECEIVABLE)
+      await postCollectionCancellationLedger(tx, {
+        branchId: collection.branchId,
+        collectionId: collection.id,
+        clientId: collection.clientId,
+        date: new Date(),
+        amount: collection.amount,
+        method: collection.method,
+        reference: refNo,
+        reason: reason || 'Payment Cancellation',
+      });
+
+      // 6. Authoritative Allocation & Customer Ledger Re-reconciliation (Unrolls allocations, restores invoice balances & status, rebuilds client balance)
+      const outcome = await reconcileClientBalancesAndAllocations(collection.clientId, tx);
+      await updateClientCreditRating(collection.clientId, tx);
+
+      return {
+        collection: cancelledCollection,
+        restoredClientBalance: outcome.clientBalance,
+        reconciledAllocationsCount: outcome.reconciledAllocations,
+      };
+    }, { maxWait: 15000, timeout: 120000 });
+
+    // 7. Audit Log
+    await writeAuditLog({
+      userId: userId ?? undefined,
+      branchId: branchId || result.collection.branchId,
+      action: 'CANCEL',
+      entity: 'Collection',
+      entityId: id,
+      newData: {
+        amount: result.collection.amount,
+        reason: reason || 'Payment Cancellation',
+        restoredClientBalance: result.restoredClientBalance,
+        status: 'CANCELLED'
+      }
     });
 
-    if (!collection) {
-      return res.status(404).json({ success: false, error: 'Collection record not found' });
-    }
+    // 8. Invalidate Caches
+    clearCollectionsCache();
 
-    const clientId = collection.clientId;
-
-    await prisma.$transaction(async tx => {
-      // 1. Delete collection allocations
-      await tx.collectionAllocation.deleteMany({
-        where: { collectionId: id }
-      });
-
-      // 2. Delete CustomerLedger payment entry linked to this collection
-      await tx.customerLedger.deleteMany({
-        where: { referenceId: id }
-      });
-
-      // 3. Delete the Collection record itself
-      await tx.collection.delete({
-        where: { id }
-      });
-
-      // 4. Re-reconcile client balances, invoice statuses, and ledger
-      await reconcileClientBalancesAndAllocations(clientId, tx);
+    return res.json({
+      success: true,
+      message: `Payment of Rs ${result.collection.amount.toLocaleString()} cancelled successfully. Client outstanding restored.`,
+      data: result.collection,
+      restoredClientBalance: result.restoredClientBalance,
     });
+  } catch (err: any) {
+    console.error('[POST /api/collections/:id/cancel]', err);
+    const statusCode = err.statusCode || (err.message?.includes('already been cancelled') ? 409 : err.message?.includes('not found') ? 404 : 500);
+    return res.status(statusCode).json({
+      success: false,
+      error: err.message ?? 'Failed to cancel payment collection'
+    });
+  }
+});
+
+// DELETE /api/collections/:id — Safe Cancellation Route
+router.delete('/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const reason = (req.body?.reason as string) || 'Deleted via Collection Management';
+  const userId = (req.headers['x-user-id'] as string) || (req.user as any)?.id || (req.user as any)?.sub || null;
+  const userRole = (req.headers['x-user-role'] as string) || (req.user as any)?.role;
+  const branchId = (req.headers['x-branch-id'] as string) || undefined;
+
+  if (userRole && !['ADMIN', 'MANAGER', 'SUPER_ADMIN'].includes(userRole.toUpperCase())) {
+    return res.status(403).json({
+      success: false,
+      error: 'Unauthorized: Only administrators and managers are authorized to cancel payments.'
+    });
+  }
+
+  try {
+    const result = await prisma.$transaction(async tx => {
+      const collection = await tx.collection.findUnique({
+        where: { id, deletedAt: null },
+      });
+
+      if (!collection) {
+        const err: any = new Error('Payment collection not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      if (collection.status === 'CANCELLED') {
+        const err: any = new Error('This payment has already been cancelled.');
+        err.statusCode = 409;
+        throw err;
+      }
+
+      const cancelledCollection = await tx.collection.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelledByUserId: userId,
+          cancelReason: reason,
+        },
+        include: {
+          client: { select: { id: true, name: true, clientId: true, currentBalance: true } },
+          receivedByUser: { select: { id: true, name: true, role: true } },
+          cancelledByUser: { select: { id: true, name: true, role: true } },
+        }
+      });
+
+      const refNo = collection.reference || `PAY-${collection.id.slice(-6).toUpperCase()}`;
+      await recordCustomerLedgerEntry(tx, {
+        clientId: collection.clientId,
+        branchId: collection.branchId,
+        type: 'CANCELLATION',
+        date: new Date(),
+        referenceId: collection.id,
+        referenceNo: refNo,
+        description: `Payment Cancelled (${collection.method}) — ${reason}`,
+        debit: collection.amount,
+        credit: 0,
+      });
+
+      await postCollectionCancellationLedger(tx, {
+        branchId: collection.branchId,
+        collectionId: collection.id,
+        clientId: collection.clientId,
+        date: new Date(),
+        amount: collection.amount,
+        method: collection.method,
+        reference: refNo,
+        reason,
+      });
+
+      const outcome = await reconcileClientBalancesAndAllocations(collection.clientId, tx);
+      await updateClientCreditRating(collection.clientId, tx);
+
+      return {
+        collection: cancelledCollection,
+        restoredClientBalance: outcome.clientBalance,
+      };
+    }, { maxWait: 15000, timeout: 120000 });
 
     await writeAuditLog({
       userId: userId ?? undefined,
-      branchId,
-      action: 'DELETE',
+      branchId: branchId || result.collection.branchId,
+      action: 'CANCEL',
       entity: 'Collection',
       entityId: id,
-      oldData: { clientId, amount: collection.amount, reference: collection.reference }
+      newData: {
+        amount: result.collection.amount,
+        reason,
+        restoredClientBalance: result.restoredClientBalance,
+        status: 'CANCELLED'
+      }
     });
 
     clearCollectionsCache();
 
     return res.json({
       success: true,
-      message: 'Collection record deleted successfully and client ledger reconciled'
+      message: `Payment of Rs ${result.collection.amount.toLocaleString()} cancelled successfully. Client outstanding restored.`,
+      data: result.collection,
+      restoredClientBalance: result.restoredClientBalance,
     });
   } catch (err: any) {
     console.error('[DELETE /api/collections/:id]', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to delete collection' });
+    const statusCode = err.statusCode || (err.message?.includes('already been cancelled') ? 409 : err.message?.includes('not found') ? 404 : 500);
+    return res.status(statusCode).json({
+      success: false,
+      error: err.message ?? 'Failed to cancel payment'
+    });
   }
 });
 

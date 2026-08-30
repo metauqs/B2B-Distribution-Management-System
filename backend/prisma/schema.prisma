@@ -64,6 +64,7 @@ model User {
   expensesCreated   Expense[]        @relation("ExpenseCreator")
   stockMovements    StockMovement[]
   collectionsReceived Collection[]   @relation("CollectionReceivedBy")
+  collectionsCancelled Collection[]  @relation("CollectionCancelledBy")
   branch            Branch           @relation(fields: [branchId], references: [id])
 
   @@index([branchId])
@@ -327,12 +328,17 @@ model Collection {
   branchId         String
   createdAt        DateTime      @default(now()) @db.Timestamptz(3)
   deletedAt        DateTime?     @db.Timestamptz(3)
+  status           TransactionStatus @default(PAID)
+  cancelledAt      DateTime?     @db.Timestamptz(3)
+  cancelledByUserId String?
+  cancelReason     String?
   allocations      CollectionAllocation[]
   bankAccount      BankAccount?  @relation(fields: [bankAccountId], references: [id])
   branch           Branch        @relation(fields: [branchId], references: [id])
   cashAccount      CashAccount?  @relation(fields: [cashAccountId], references: [id])
   client           Client        @relation(fields: [clientId], references: [id])
   receivedByUser   User?         @relation("CollectionReceivedBy", fields: [receivedByUserId], references: [id])
+  cancelledByUser  User?         @relation("CollectionCancelledBy", fields: [cancelledByUserId], references: [id])
 
   @@index([clientId])
   @@index([branchId])
@@ -342,9 +348,13 @@ model Collection {
   @@index([branchId, deletedAt, date, createdAt])
   @@index([deletedAt, date])
   @@index([date])
+  @@index([status])
+  @@index([branchId, status, date])
+  @@index([clientId, status])
   @@index([cashAccountId])
   @@index([bankAccountId])
   @@index([receivedByUserId])
+  @@index([cancelledByUserId])
   @@index([clientId, deletedAt])
   @@index([clientId, deletedAt, date])
   @@index([clientId, date])

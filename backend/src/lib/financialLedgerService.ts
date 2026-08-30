@@ -299,6 +299,56 @@ export async function postCollectionLedger(
   });
 }
 
+export async function postCollectionCancellationLedger(
+  tx: any,
+  params: {
+    branchId: string;
+    collectionId: string;
+    clientId: string;
+    date: Date;
+    amount: number;
+    method: string;
+    reference?: string;
+    reason?: string;
+  }
+): Promise<void> {
+  const { branchId, collectionId, clientId, date, amount, method, reference, reason } = params;
+
+  // Credit Cash / Bank Account (Reversing the cash collection intake)
+  await createLedgerEntry(tx, {
+    branchId,
+    date,
+    transactionType: 'COLLECTION_CANCELLATION',
+    entryType: 'CREDIT',
+    accountCategory: 'ASSET_CASH',
+    accountName: `Collection Cancelled (${method})`,
+    credit: amount,
+    referenceType: 'collection',
+    referenceId: collectionId,
+    referenceNo: reference,
+    entityId: clientId,
+    entityType: 'client',
+    notes: reason || 'Collection payment cancelled',
+  });
+
+  // Debit Accounts Receivable (Reinstating the customer receivable balance)
+  await createLedgerEntry(tx, {
+    branchId,
+    date,
+    transactionType: 'COLLECTION_CANCELLATION',
+    entryType: 'DEBIT',
+    accountCategory: 'ASSET_RECEIVABLE',
+    accountName: 'Accounts Receivable',
+    debit: amount,
+    referenceType: 'collection',
+    referenceId: collectionId,
+    referenceNo: reference,
+    entityId: clientId,
+    entityType: 'client',
+    notes: reason || 'Collection payment cancelled',
+  });
+}
+
 export async function postExpenseLedger(
   tx: any,
   params: {

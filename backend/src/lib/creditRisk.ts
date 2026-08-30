@@ -71,7 +71,7 @@ export async function calculateClientCreditRisk(
 
   // Fetch non-deleted collections for this client
   const collections = await db.collection.findMany({
-    where: { clientId, deletedAt: null },
+    where: { clientId, deletedAt: null, status: { not: 'CANCELLED' } },
     select: {
       id: true,
       amount: true,

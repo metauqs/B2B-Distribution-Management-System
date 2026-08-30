@@ -45,7 +45,7 @@ export async function calculateCollectionBehaviour(
   });
 
   const collections = await db.collection.findMany({
-    where: { clientId, deletedAt: null },
+    where: { clientId, deletedAt: null, status: { not: 'CANCELLED' } },
     select: {
       id: true,
       amount: true,

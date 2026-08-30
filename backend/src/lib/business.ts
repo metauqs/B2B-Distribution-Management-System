@@ -350,7 +350,7 @@ export async function reconcileClientBalancesAndAllocations(clientId: string, tx
   });
 
   const collections = await db.collection.findMany({
-    where: { clientId, deletedAt: null },
+    where: { clientId, deletedAt: null, status: { not: 'CANCELLED' } },
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }]
   });
 
