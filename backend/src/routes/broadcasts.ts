@@ -5,7 +5,7 @@ const router = Router();
 
 // ── In-Memory cache for broadcasts (30s TTL) ────────────────────────────────
 const BROADCAST_CACHE = new Map<string, { ts: number; data: any }>();
-const BROADCAST_CACHE_TTL = 30000;
+const BROADCAST_CACHE_TTL = 300000;
 const BROADCAST_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearBroadcastCache(): void {

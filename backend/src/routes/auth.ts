@@ -22,10 +22,30 @@ const ME_CACHE_TTL = 300000;
 const AUTH_ME_IN_FLIGHT = new Map<string, Promise<any>>();
 const AUTH_REFRESH_IN_FLIGHT = new Map<string, Promise<any>>();
 
+// Short-lived employee lookup cache for login (60s TTL) — avoids sequential cold DB hits per login attempt
+// Security note: bcrypt.compare() is ALWAYS performed; only the DB lookup is cached.
+const EMPLOYEE_LOGIN_CACHE = new Map<string, { ts: number; data: any }>();
+const EMPLOYEE_LOGIN_CACHE_TTL = 60000;
+
+// 1-hour branch ID cache — branches never change during a session
+let BRANCH_ID_LOGIN_CACHE: { ts: number; id: string } | null = null;
+const BRANCH_ID_LOGIN_TTL = 3600000;
+
+async function getCachedLoginBranchId(): Promise<string> {
+  if (BRANCH_ID_LOGIN_CACHE && (Date.now() - BRANCH_ID_LOGIN_CACHE.ts) < BRANCH_ID_LOGIN_TTL) {
+    return BRANCH_ID_LOGIN_CACHE.id;
+  }
+  const branch = await prisma.branch.findFirst();
+  const id = branch?.id ?? '';
+  if (id) BRANCH_ID_LOGIN_CACHE = { ts: Date.now(), id };
+  return id;
+}
+
 export function invalidateMeCache(userId?: string) {
   if (userId) ME_CACHE.delete(userId);
   else ME_CACHE.clear();
 }
+
 
 // POST /api/auth/login
 router.post('/login', async (req: Request, res: Response) => {
@@ -38,22 +58,34 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const trimmedId = employeeId.trim();
 
-    // 1. Direct search by exact stored employeeId field
-    let matchedEmployee = await prisma.employee.findFirst({
-      where: { employeeId: trimmedId }
-    });
+    // Check login cache first (60s TTL — bcrypt.compare is always done even for cached entries)
+    let matchedEmployee: any = null;
+    const cachedEntry = EMPLOYEE_LOGIN_CACHE.get(trimmedId);
+    if (cachedEntry && (Date.now() - cachedEntry.ts) < EMPLOYEE_LOGIN_CACHE_TTL) {
+      matchedEmployee = cachedEntry.data;
+    } else {
+      // 1. Direct search by exact stored employeeId field + phone fallback in parallel
+      const [byId, byPhone] = await Promise.all([
+        prisma.employee.findFirst({ where: { employeeId: trimmedId } }),
+        trimmedId.length >= 4
+          ? prisma.employee.findFirst({
+              where: {
+                OR: [
+                  { phone: { endsWith: trimmedId } },
+                  { whatsapp: { endsWith: trimmedId } },
+                ],
+                isActive: true,
+              },
+            })
+          : Promise.resolve(null),
+      ]);
+      matchedEmployee = byId ?? byPhone ?? null;
 
-    // 2. Fallback to phone search if not found
-    if (!matchedEmployee && trimmedId.length >= 4) {
-      matchedEmployee = await prisma.employee.findFirst({
-        where: {
-          OR: [
-            { phone: { endsWith: trimmedId } },
-            { whatsapp: { endsWith: trimmedId } },
-          ],
-          isActive: true,
-        }
-      });
+      if (matchedEmployee) {
+        // Cache the found employee for 60s
+        if (EMPLOYEE_LOGIN_CACHE.size > 200) EMPLOYEE_LOGIN_CACHE.clear();
+        EMPLOYEE_LOGIN_CACHE.set(trimmedId, { ts: Date.now(), data: matchedEmployee });
+      }
     }
 
     // 3. Fail-safe admin check only if employee not found
@@ -115,28 +147,8 @@ router.post('/login', async (req: Request, res: Response) => {
     else if (matchedEmployee.role === 'PURCHASE_STAFF') userRole = 'ACCOUNTANT';
     else if (matchedEmployee.role === 'DELIVERY_STAFF') userRole = 'DELIVERY';
 
-    // Ensure valid branchId reference before User creation/update
-    let targetBranchId = matchedEmployee.branchId;
-    if (targetBranchId) {
-      const branchExists = await prisma.branch.findUnique({ where: { id: targetBranchId } });
-      if (!branchExists) {
-        const firstBranch = await prisma.branch.findFirst();
-        if (firstBranch) {
-          targetBranchId = firstBranch.id;
-        } else {
-          const newBranch = await prisma.branch.create({ data: { name: 'Main Branch' } });
-          targetBranchId = newBranch.id;
-        }
-      }
-    } else {
-      const firstBranch = await prisma.branch.findFirst();
-      if (firstBranch) {
-        targetBranchId = firstBranch.id;
-      } else {
-        const newBranch = await prisma.branch.create({ data: { name: 'Main Branch' } });
-        targetBranchId = newBranch.id;
-      }
-    }
+    // Ensure valid branchId reference before User creation/update (cached — branches never change)
+    let targetBranchId = matchedEmployee.branchId || await getCachedLoginBranchId();
 
     const userEmail = matchedEmployee.email?.trim() || `emp_${matchedEmployee.id}@sabziledger.com`;
 

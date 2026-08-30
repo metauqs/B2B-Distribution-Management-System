@@ -13,11 +13,12 @@ if (connectionString.includes('.neon.tech') && !connectionString.includes('-pool
 const pool = new Pool({
   connectionString,
   max: 10, // 10 pooled connections for optimal Neon Serverless throughput
-  idleTimeoutMillis: 10000, // Reap idle connections after 10s so Neon compute can auto-suspend
-  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000, // Keep connections alive 30s between requests (reduced cold-start frequency)
+  connectionTimeoutMillis: 15000,
   keepAlive: false, // Prevent TCP keepalives from keeping Neon compute awake 24/7
   ssl: connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
 });
+
 
 pool.on('error', (err: any) => {
   console.warn('PostgreSQL connection pool client error (auto-reconnecting):', err?.message || err);

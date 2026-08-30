@@ -5,7 +5,7 @@ const router = Router();
 
 // In-Memory cache for suppliers (60s TTL)
 const SUPPLIER_CACHE = new Map<string, { ts: number; data: any }>();
-const SUPPLIER_CACHE_TTL = 60000;
+const SUPPLIER_CACHE_TTL = 300000;
 const SUPPLIER_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearSupplierCache(): void {
