@@ -60,6 +60,35 @@ app.use(cors({
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
+// ── Activity-Aware Neon Connection Keep-Alive ────────────────────────────────
+// MUST be registered here — before routes — so it fires on every request.
+// Pings Neon every 20s during active usage, auto-stops after 30s idle so
+// Neon compute can suspend. This eliminates ~1000ms cold-connect latency.
+let _lastActivityTs = Date.now();
+let _keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+
+export function markDbActivity(): void {
+  _lastActivityTs = Date.now();
+  if (!_keepAliveTimer) {
+    _keepAliveTimer = setInterval(() => {
+      if (Date.now() - _lastActivityTs < 30000) {
+        prisma.$queryRaw`SELECT 1`.catch(() => {});
+      } else {
+        if (_keepAliveTimer) {
+          clearInterval(_keepAliveTimer);
+          _keepAliveTimer = null;
+        }
+      }
+    }, 20000);
+  }
+}
+
+// Tag every incoming request as activity (must be before all route handlers)
+app.use((_req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  markDbActivity();
+  next();
+});
+
 // Normalize accidental duplicate /api/api prefixes
 app.use((req, res, next) => {
   if (req.url.startsWith('/api/api/')) {
@@ -170,41 +199,10 @@ app.listen(Number(port), '0.0.0.0', () => {
   console.log(`🚀 Server running on http://127.0.0.1:${port}`);
 });
 
-
-// ── Activity-Aware Neon Connection Keep-Alive ────────────────────────────────
-// Fires a lightweight SELECT 1 every 20s ONLY while the app is receiving requests.
-// Stops automatically after 30s of inactivity so Neon compute can suspend to 0 CU.
-// This eliminates ~1000ms cold-connect latency during active user sessions.
-let _lastActivityTs = Date.now();
-let _keepAliveTimer: ReturnType<typeof setInterval> | null = null;
-
-export function markDbActivity(): void {
-  _lastActivityTs = Date.now();
-  if (!_keepAliveTimer) {
-    _keepAliveTimer = setInterval(() => {
-      if (Date.now() - _lastActivityTs < 30000) {
-        // Active session: ping to keep the connection pool warm
-        prisma.$queryRaw`SELECT 1`.catch(() => {});
-      } else {
-        // Idle for 30s: stop pinging, let Neon compute suspend
-        if (_keepAliveTimer) {
-          clearInterval(_keepAliveTimer);
-          _keepAliveTimer = null;
-        }
-      }
-    }, 20000);
-  }
-}
-
-// Tag every request as activity so the keep-alive knows the app is being used
-app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
-  markDbActivity();
-  next();
-});
-
-// Initial warm-up on process start
+// Initial warm-up on process start — pre-warms Neon connection before first user request
 setImmediate(() => {
   prisma.$queryRaw`SELECT 1`.catch((e: any) => console.warn('[WARMUP] Neon warm-up failed:', e?.message));
   markDbActivity();
 });
+
 
