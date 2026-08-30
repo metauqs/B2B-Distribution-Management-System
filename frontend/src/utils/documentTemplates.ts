@@ -964,6 +964,16 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
   `;
 
   // ── Financial Summary Box & Actions (Bottom 2-Column Section) ──
+  const currentBillRow = `
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
+      <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #1A1A1A;">Rs ${inv.total.toLocaleString()}</span>
+      <div style="text-align: right;">
+        <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #1A1A1A; line-height: 1.2;">موجودہ بل</div>
+        <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Current Bill</div>
+      </div>
+    </div>
+  `;
+
   const prevBalRow = `
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
       <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #B5533C;">Rs ${prevBal.toLocaleString()}</span>
@@ -987,15 +997,9 @@ export function generateInvoiceHTML(inv: InvoiceData, brand: BrandConfig, origin
 
   const summary = `
     <div style="border: 1px solid #E5E7EB; border-radius: 6px; overflow: hidden; background: #FFFFFF; width: 340px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      ${currentBillRow}
       ${prevBalRow}
       ${returnBreakdownRows}
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
-        <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #1A1A1A;">Rs ${inv.total.toLocaleString()}</span>
-        <div style="text-align: right;">
-          <div style="font-family: 'Jameel Khushkhat L','Noto Nastaliq Urdu',sans-serif; font-size: 16px; font-weight: 800; color: #1A1A1A; line-height: 1.2;">موجودہ بل</div>
-          <div style="font-size: 9.5px; color: #777777; font-weight: 600; font-family: 'Lora', Georgia, serif;">Current Bill</div>
-        </div>
-      </div>
       <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #E5E7EB; direction: ltr;">
         <span style="font-family: 'Lora', Georgia, serif; font-weight: 800; font-size: 15px; color: #0284C7;">Rs ${grandTotal.toLocaleString()}</span>
         <div style="text-align: right;">
@@ -1984,13 +1988,6 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
   const summary = `
     <div class="doc-summary-wrap" style="margin-top:20px;">
       <div class="doc-summary-box">
-        <div class="doc-summary-row prev">
-          <span class="label">
-            <span class="urdu-main" style="color:#991B1B;">سابقہ بقایا جات</span>
-            <span class="eng-sub">Previous Balance</span>
-          </span>
-          <span class="val">Rs ${fmtMoney(data.previousBalance)}</span>
-        </div>
         ${data.currentBillAmount && data.currentBillAmount > 0 ? `
           <div class="doc-summary-row">
             <span class="label">
@@ -2000,6 +1997,13 @@ export function generateCollectionSlipHTML(data: CollectionSlipData, brand: Bran
             <span class="val">Rs ${fmtMoney(data.currentBillAmount)}</span>
           </div>
         ` : ''}
+        <div class="doc-summary-row prev">
+          <span class="label">
+            <span class="urdu-main" style="color:#991B1B;">سابقہ بقایا جات</span>
+            <span class="eng-sub">Previous Balance</span>
+          </span>
+          <span class="val">Rs ${fmtMoney(data.previousBalance)}</span>
+        </div>
         <div class="doc-summary-row total-row">
           <span class="label">
             <span class="urdu-main" style="color:#0284C7;">کل قابل ادائیگی</span>

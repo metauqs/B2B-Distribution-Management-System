@@ -1822,11 +1822,11 @@ export default function SalesPage() {
                     <div className="va-panel-head"><h3>Billing Summary</h3></div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
-                        <span>Previous Dues {detailSale.previousBalance > 0 && detailSale.previousBalanceDate ? `(as of ${fmtDate(detailSale.previousBalanceDate)})` : ''}</span>
-                        <span className="mono">{fmtMoney(detailSale.previousBalance > 0 ? detailSale.previousBalance : 0)}</span>
+                        <span>Current Order</span><span className="mono">{fmtMoney(detailSale.total)}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
-                        <span>Current Order</span><span className="mono">{fmtMoney(detailSale.total)}</span>
+                        <span>Previous Dues {detailSale.previousBalance > 0 && detailSale.previousBalanceDate ? `(as of ${fmtDate(detailSale.previousBalanceDate)})` : ''}</span>
+                        <span className="mono">{fmtMoney(detailSale.previousBalance > 0 ? detailSale.previousBalance : 0)}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 15, paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
                         <span>Total Due</span><span className="mono">{fmtMoney((detailSale.previousBalance > 0 ? detailSale.previousBalance : 0) + detailSale.total)}</span>
