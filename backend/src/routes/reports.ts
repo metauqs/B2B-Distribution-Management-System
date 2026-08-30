@@ -66,57 +66,31 @@ async function getHistoricalReceivables(branchId?: string, targetEnd?: Date, isT
     };
   }
 
-  // Historical calculation as of targetEnd using grouped aggregation
-  const [clients, ledgerAggs] = await Promise.all([
-    prisma.client.findMany({
-      where: bWhere,
-      select: { id: true, openingBalance: true, createdAt: true },
-    }),
-    prisma.customerLedger.groupBy({
-      by: ['clientId'],
-      where: {
-        ...(branchId ? { branchId } : {}),
-        date: { lte: targetEnd },
-      },
-      _sum: {
-        debit: true,
-        credit: true,
-      },
-    }),
-  ]);
+  // Fast single-pass PostgreSQL CTE calculation as of targetEnd (0 egress overhead)
+  const rawBranchId = branchId || '';
+  const rows = await prisma.$queryRaw<Array<{ receivables: number; clientCount: number }>>`
+    SELECT 
+      COALESCE(SUM(GREATEST(0, (COALESCE(c."openingBalance", 0) + COALESCE(l.net, 0)))), 0)::float as receivables,
+      COUNT(CASE WHEN (COALESCE(c."openingBalance", 0) + COALESCE(l.net, 0)) > 0.01 THEN 1 END)::int as "clientCount"
+    FROM clients c
+    LEFT JOIN (
+      SELECT 
+        "clientId",
+        SUM(debit - credit) as net
+      FROM customer_ledger
+      WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
+        AND date <= ${targetEnd}
+      GROUP BY "clientId"
+    ) l ON l."clientId" = c.id
+    WHERE (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
+      AND c."deletedAt" IS NULL
+      AND c."createdAt" <= ${targetEnd}
+  `;
 
-  const ledgerMap = new Map<string, { debit: number; credit: number }>();
-  for (const row of ledgerAggs) {
-    ledgerMap.set(row.clientId, {
-      debit: row._sum.debit ?? 0,
-      credit: row._sum.credit ?? 0,
-    });
-  }
-
-  let totalReceivables = 0;
-  let clientsWithDuesCount = 0;
-
-  for (const client of clients) {
-    const sums = ledgerMap.get(client.id);
-    let clientBal = 0;
-    if (sums) {
-      const net = (sums.debit || 0) - (sums.credit || 0);
-      clientBal = Math.max(0, Math.round(((client.openingBalance || 0) + net) * 100) / 100);
-    } else {
-      if (targetEnd && client.createdAt <= targetEnd) {
-        clientBal = Math.max(0, client.openingBalance || 0);
-      }
-    }
-
-    if (clientBal > 0.01) {
-      totalReceivables += clientBal;
-      clientsWithDuesCount++;
-    }
-  }
-
+  const row = rows[0] || { receivables: 0, clientCount: 0 };
   return {
-    receivables: Math.round(totalReceivables * 100) / 100,
-    clientCount: clientsWithDuesCount,
+    receivables: Math.round((row.receivables || 0) * 100) / 100,
+    clientCount: Number(row.clientCount || 0),
   };
 }
 

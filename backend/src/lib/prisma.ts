@@ -5,15 +5,17 @@ import { Pool } from 'pg';
 let connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
 
-// Keep connectionString as-is to preserve Neon compatibility
+// Use Neon's connection pooler endpoint for runtime queries if hosted on Neon
+if (connectionString.includes('.neon.tech') && !connectionString.includes('-pooler.')) {
+  connectionString = connectionString.replace(/(\.c-[a-z0-9-]+\.)/, '-pooler$1');
+}
 
 const pool = new Pool({
   connectionString,
   max: 10, // 10 pooled connections for optimal Neon Serverless throughput
-  idleTimeoutMillis: 60000, // Keep warm sockets alive for 60s
+  idleTimeoutMillis: 10000, // Reap idle connections after 10s so Neon compute can auto-suspend
   connectionTimeoutMillis: 10000,
-  keepAlive: true,
-  keepAliveInitialDelayMillis: 10000,
+  keepAlive: false, // Prevent TCP keepalives from keeping Neon compute awake 24/7
   ssl: connectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
 });
 

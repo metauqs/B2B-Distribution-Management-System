@@ -140,89 +140,66 @@ router.get('/', async (req: Request, res: Response) => {
 
       const whereClause = Prisma.join(conditions, ' AND ');
 
-      const [sales, activeProducts] = await Promise.all([
-        prisma.$queryRaw<any[]>`
-          SELECT 
-            s.id,
-            s."invoiceNo",
-            s."clientId",
-            s.date,
-            s.subtotal::float as subtotal,
-            s.discount::float as discount,
-            s."deliveryCharge"::float as "deliveryCharge",
-            s."previousBalance"::float as "previousBalance",
-            s.total::float as total,
-            s.paid::float as paid,
-            s.balance::float as balance,
-            s.status,
-            s."paymentMode",
-            s."isLocked",
-            s."deliveryStatus",
-            s.notes,
-            s."createdAt",
-            CASE WHEN c.id IS NOT NULL THEN json_build_object(
-              'id', c.id,
-              'clientId', c."clientId",
-              'name', c.name,
-              'phone', c.phone,
-              'whatsapp', c.whatsapp,
-              'type', c.type
-            ) ELSE NULL END as client,
-            CASE WHEN e.id IS NOT NULL THEN json_build_object(
-              'id', e.id,
-              'name', e.name,
-              'role', e.role,
-              'phone', e.phone
-            ) ELSE NULL END as employee,
-            COALESCE(
-              (
-                SELECT json_agg(
-                  json_build_object(
-                    'id', si.id,
-                    'productId', si."productId",
-                    'itemName', si."itemName",
-                    'unit', si.unit,
-                    'qty', si.qty::float,
-                    'rate', si.rate::float,
-                    'amount', si.amount::float,
-                    'costPrice', si."costPrice"::float,
-                    'returnedQty', si."returnedQty"::float,
-                    'returnReason', si."returnReason"
-                  )
+      const sales = await prisma.$queryRaw<any[]>`
+        SELECT 
+          s.id,
+          s."invoiceNo",
+          s."clientId",
+          s.date,
+          s.subtotal::float as subtotal,
+          s.discount::float as discount,
+          s."deliveryCharge"::float as "deliveryCharge",
+          s."previousBalance"::float as "previousBalance",
+          s.total::float as total,
+          s.paid::float as paid,
+          s.balance::float as balance,
+          s.status,
+          s."paymentMode",
+          s."isLocked",
+          s."deliveryStatus",
+          s.notes,
+          s."createdAt",
+          CASE WHEN c.id IS NOT NULL THEN json_build_object(
+            'id', c.id,
+            'clientId', c."clientId",
+            'name', c.name,
+            'phone', c.phone,
+            'whatsapp', c.whatsapp,
+            'type', c.type
+          ) ELSE NULL END as client,
+          CASE WHEN e.id IS NOT NULL THEN json_build_object(
+            'id', e.id,
+            'name', e.name,
+            'role', e.role,
+            'phone', e.phone
+          ) ELSE NULL END as employee,
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id', si.id,
+                  'productId', si."productId",
+                  'itemName', si."itemName",
+                  'unit', si.unit,
+                  'qty', si.qty::float,
+                  'rate', si.rate::float,
+                  'amount', si.amount::float,
+                  'costPrice', si."costPrice"::float,
+                  'returnedQty', si."returnedQty"::float
                 )
-                FROM sale_items si
-                WHERE si."saleId" = s.id
-              ),
-              '[]'::json
-            ) as items
-          FROM sales s
-          LEFT JOIN clients c ON c.id = s."clientId"
-          LEFT JOIN employees e ON e.id = s."employeeId"
-          WHERE ${whereClause}
-          ORDER BY s.date DESC, s."createdAt" DESC
-          LIMIT ${limit}
-        `,
-        getCachedActiveProducts(),
-      ]);
-
-      const productMap = new Map<string, any>();
-      for (const p of activeProducts) {
-        productMap.set(p.id, {
-          id: p.id,
-          name: p.name,
-          urduName: p.urduName,
-          emoji: p.emoji,
-          imageUrl: p.imageUrl,
-        });
-      }
-
-      for (const sale of sales) {
-        if (Array.isArray(sale.items)) {
-          for (const item of sale.items) {
-            item.product = item.productId ? (productMap.get(item.productId) || null) : null;
-          }
-        }
-      }
+              )
+              FROM sale_items si
+              WHERE si."saleId" = s.id
+            ),
+            '[]'::json
+          ) as items
+        FROM sales s
+        LEFT JOIN clients c ON c.id = s."clientId"
+        LEFT JOIN employees e ON e.id = s."employeeId"
+        WHERE ${whereClause}
+        ORDER BY s.date DESC, s."createdAt" DESC
+        LIMIT ${limit}
+      `;
 
       return sales;
     })();

@@ -59,13 +59,13 @@ router.get('/', async (req: Request, res: Response) => {
         ];
       }
 
-      if (minimal === 'true') {
-        const rawBranchId = branchId || '';
-        const rawStatus = status ? String(status) : '';
-        const rawType = type ? String(type) : '';
-        const rawRating = rating ? String(rating) : '';
-        const rawSearch = search ? String(search).trim() : '';
+      const rawBranchId = branchId || '';
+      const rawStatus = status ? String(status) : '';
+      const rawType = type ? String(type) : '';
+      const rawRating = rating ? String(rating) : '';
+      const rawSearch = search ? String(search).trim() : '';
 
+      if (minimal === 'true') {
         return await prisma.$queryRaw`
           SELECT 
             c.id, 
@@ -97,38 +97,53 @@ router.get('/', async (req: Request, res: Response) => {
         `;
       }
 
-      const clients = await prisma.client.findMany({
-        where,
-        orderBy: { name: 'asc' },
-      });
-
-      if (clients.length === 0) {
-        return [];
-      }
-
       if (stats !== 'true') {
-        return clients.map(c => ({
-          ...c,
-          totalSales: 0,
-          salesCount: 0,
-          lastOrderDate: null,
-          totalCollected: 0,
-          averageOrderValue: 0,
-          calculatedCreditLimit: 50000,
-          effectiveCreditLimit: c.creditLimit && c.creditLimit > 0 ? c.creditLimit : 50000,
-        }));
+        return await prisma.client.findMany({
+          where,
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            clientId: true,
+            name: true,
+            ownerName: true,
+            phone: true,
+            whatsapp: true,
+            address: true,
+            deliveryLocation: true,
+            type: true,
+            rating: true,
+            status: true,
+            creditLimit: true,
+            paymentTerms: true,
+            openingBalance: true,
+            currentBalance: true,
+            branchId: true,
+            createdAt: true,
+            updatedAt: true,
+          }
+        });
       }
 
-      const rawBranchId = branchId || '';
-      const statsRows: Array<{
-        clientId: string;
-        totalSales: number;
-        salesCount: number;
-        lastOrderDate: Date | null;
-        totalCollected: number;
-      }> = await prisma.$queryRaw`
+      const rows: any[] = await prisma.$queryRaw`
         SELECT 
-          c.id as "clientId",
+          c.id, 
+          c."clientId", 
+          c.name, 
+          c."ownerName",
+          c.phone, 
+          c.whatsapp, 
+          c.address, 
+          c."deliveryLocation",
+          c.type, 
+          c.rating,
+          c.status,
+          c."creditLimit"::float as "creditLimit", 
+          c."paymentTerms", 
+          c."openingBalance"::float as "openingBalance",
+          c."currentBalance"::float as "currentBalance",
+          c."branchId",
+          c."createdAt",
+          c."updatedAt",
           COALESCE(s.total_sales, 0)::float as "totalSales",
           COALESCE(s.sales_count, 0)::int as "salesCount",
           s.last_order_date as "lastOrderDate",
@@ -155,19 +170,25 @@ router.get('/', async (req: Request, res: Response) => {
             AND (${rawBranchId} = '' OR "branchId" = ${rawBranchId})
           GROUP BY "clientId"
         ) col ON col."clientId" = c.id
-        WHERE c."deletedAt" IS NULL
+        WHERE (${isArchived} = true AND c."deletedAt" IS NOT NULL OR ${isArchived} = false AND c."deletedAt" IS NULL)
           AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
+          AND (${rawStatus} = '' OR c.status::text = ${rawStatus})
+          AND (${rawType} = '' OR c.type::text = ${rawType})
+          AND (${rawRating} = '' OR c.rating::text = ${rawRating})
+          AND (${rawSearch} = '' OR (
+            c.name ILIKE ${'%' + rawSearch + '%'} OR
+            c."ownerName" ILIKE ${'%' + rawSearch + '%'} OR
+            c.phone ILIKE ${'%' + rawSearch + '%'} OR
+            c.address ILIKE ${'%' + rawSearch + '%'}
+          ))
+        ORDER BY c.name ASC
       `;
 
-      const statsMap = Object.fromEntries(statsRows.map(x => [x.clientId, x]));
-
-      return clients.map(c => {
-        const s = statsMap[c.id];
-
-        const totalSales = s?.totalSales ?? 0;
-        const totalCollected = s?.totalCollected ?? 0;
-        const salesCount = s?.salesCount ?? 0;
-        const lastOrderDate = s?.lastOrderDate ?? null;
+      return rows.map(c => {
+        const totalSales = Number(c.totalSales || 0);
+        const totalCollected = Number(c.totalCollected || 0);
+        const salesCount = Number(c.salesCount || 0);
+        const lastOrderDate = c.lastOrderDate ? new Date(c.lastOrderDate).toISOString() : null;
         const averageOrderValue = salesCount > 0 ? Math.round(totalSales / salesCount) : 0;
         const calculatedLimit = Math.max(50000, Math.round(averageOrderValue * 3));
         const effectiveLimit = c.creditLimit && c.creditLimit > 0 ? c.creditLimit : calculatedLimit;
@@ -176,7 +197,7 @@ router.get('/', async (req: Request, res: Response) => {
           ...c,
           totalSales,
           salesCount,
-          lastOrderDate: lastOrderDate ? lastOrderDate.toISOString() : null,
+          lastOrderDate,
           totalCollected,
           averageOrderValue,
           calculatedCreditLimit: calculatedLimit,

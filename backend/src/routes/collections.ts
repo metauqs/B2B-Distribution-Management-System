@@ -90,17 +90,10 @@ router.get('/daily-history', async (req: Request, res: Response) => {
               SELECT json_agg(
                 json_build_object(
                   'id', ca.id,
-                  'collectionId', ca."collectionId",
                   'saleId', ca."saleId",
                   'allocatedAmount', ca."allocatedAmount"::float,
                   'sale', json_build_object(
-                    'id', s.id,
-                    'invoiceNo', s."invoiceNo",
-                    'date', s.date,
-                    'total', s.total::float,
-                    'paid', s.paid::float,
-                    'balance', s.balance::float,
-                    'status', s.status
+                    'invoiceNo', s."invoiceNo"
                   )
                 )
               )
@@ -110,15 +103,7 @@ router.get('/daily-history', async (req: Request, res: Response) => {
             ),
             '[]'::json
           ) as allocations,
-          COALESCE(
-            (
-              SELECT clg.balance::float
-              FROM customer_ledger clg
-              WHERE clg."referenceId" = c.id AND clg.type = 'PAYMENT'
-              LIMIT 1
-            ),
-            c."remainingBalance"::float
-          ) as "ledgerBalance"
+          c."remainingBalance"::float as "ledgerBalance"
         FROM collections c
         LEFT JOIN clients cl ON cl.id = c."clientId"
         LEFT JOIN users u ON u.id = c."receivedByUserId"
@@ -338,17 +323,10 @@ router.get('/', async (req: Request, res: Response) => {
               SELECT json_agg(
                 json_build_object(
                   'id', ca.id,
-                  'collectionId', ca."collectionId",
                   'saleId', ca."saleId",
                   'allocatedAmount', ca."allocatedAmount"::float,
                   'sale', json_build_object(
-                    'id', s.id,
-                    'invoiceNo', s."invoiceNo",
-                    'date', s.date,
-                    'total', s.total::float,
-                    'paid', s.paid::float,
-                    'balance', s.balance::float,
-                    'status', s.status
+                    'invoiceNo', s."invoiceNo"
                   )
                 )
               )
@@ -358,15 +336,7 @@ router.get('/', async (req: Request, res: Response) => {
             ),
             '[]'::json
           ) as allocations,
-          COALESCE(
-            (
-              SELECT clg.balance::float
-              FROM customer_ledger clg
-              WHERE clg."referenceId" = c.id AND clg.type = 'PAYMENT'
-              LIMIT 1
-            ),
-            c."remainingBalance"::float
-          ) as "ledgerBalance"
+          c."remainingBalance"::float as "ledgerBalance"
         FROM collections c
         LEFT JOIN clients cl ON cl.id = c."clientId"
         LEFT JOIN users u ON u.id = c."receivedByUserId"
