@@ -12,6 +12,7 @@ import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/com
 import Icon from '@mdi/react';
 import { mdiCashRegister, mdiPhone, mdiWhatsapp } from '@mdi/js';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
+import { useAppSelector } from '@/store';
 
 import { loadBrandConfigWithLogo, generateDailyPaymentHistoryHTML, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 
@@ -65,6 +66,7 @@ interface Client {
 const BLANK_FORM = { clientId: '', saleId: '', amount: 0, date: '', method: 'CASH', reference: '', notes: '' };
 
 export default function CollectionsPage() {
+  const currentUser = useAppSelector(state => state.auth.user);
   const [sales,       setSales]       = useState<Sale[]>(() => {
     return getCachedData<Sale[]>('/api/sales') || [];
   });
@@ -315,7 +317,11 @@ export default function CollectionsPage() {
     try {
       const res = await apiFetch(`/api/collections/${cancelModal.id}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': currentUser?.role || '',
+          'x-user-id': currentUser?.id || '',
+        },
         body: JSON.stringify({ reason: cancelReason || 'Payment entered in error' }),
       });
       const data = await res.json();

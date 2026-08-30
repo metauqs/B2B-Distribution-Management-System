@@ -775,8 +775,9 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
   const userRole = (req.headers['x-user-role'] as string) || (req.user as any)?.role;
   const branchId = (req.headers['x-branch-id'] as string) || undefined;
 
-  // 1. Authorization: Only administrative roles (ADMIN, MANAGER, SUPER_ADMIN) may cancel payments
-  if (userRole && !['ADMIN', 'MANAGER', 'SUPER_ADMIN'].includes(userRole.toUpperCase())) {
+  // 1. Authorization: Only administrative roles (ADMIN, OWNER, MANAGER, SUPER_ADMIN, SUPERVISOR) may cancel payments
+  const AUTHORIZED_ROLES = ['ADMIN', 'OWNER', 'MANAGER', 'SUPER_ADMIN', 'SUPERVISOR'];
+  if (userRole && !AUTHORIZED_ROLES.includes(userRole.toUpperCase())) {
     return res.status(403).json({
       success: false,
       error: 'Unauthorized: Only administrators and managers are authorized to cancel payments.'
@@ -904,7 +905,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
   const userRole = (req.headers['x-user-role'] as string) || (req.user as any)?.role;
   const branchId = (req.headers['x-branch-id'] as string) || undefined;
 
-  if (userRole && !['ADMIN', 'MANAGER', 'SUPER_ADMIN'].includes(userRole.toUpperCase())) {
+  const AUTHORIZED_ROLES = ['ADMIN', 'OWNER', 'MANAGER', 'SUPER_ADMIN', 'SUPERVISOR'];
+  if (userRole && !AUTHORIZED_ROLES.includes(userRole.toUpperCase())) {
     return res.status(403).json({
       success: false,
       error: 'Unauthorized: Only administrators and managers are authorized to cancel payments.'
