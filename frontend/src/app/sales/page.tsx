@@ -151,9 +151,10 @@ export default function SalesPage() {
   const [todayCollectionsAmt, setTodayCollectionsAmt] = useState(() => {
     const targetDate = filterDate || todayInputDate();
     const collKey = `/api/collections?from=${targetDate}&to=${targetDate}T23:59:59&limit=100`;
-    const cachedColls = getCachedData<any[]>(collKey);
-    if (cachedColls && Array.isArray(cachedColls)) {
-      return cachedColls.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+    const cachedColls = getCachedData<any>(collKey);
+    const collArr = Array.isArray(cachedColls) ? cachedColls : (cachedColls?.data || []);
+    if (collArr && Array.isArray(collArr)) {
+      return collArr.filter((c: any) => c.status !== 'CANCELLED').reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
     }
     return 0;
   });
@@ -312,9 +313,12 @@ export default function SalesPage() {
 
       if (salesData) setSales(salesData.data ?? (Array.isArray(salesData) ? salesData : []));
 
-      const rawColl = collData?.data ?? collData;
+      const rawColl = collData?.data ?? (Array.isArray(collData) ? collData : []);
       if (rawColl && Array.isArray(rawColl)) {
-        const totalColl = rawColl.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+        const activeColls = rawColl.filter((c: any) => c.status !== 'CANCELLED');
+        const totalColl = collData?.summary?.totalAmount !== undefined
+          ? collData.summary.totalAmount
+          : activeColls.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
         setTodayCollectionsAmt(totalColl);
       } else {
         setTodayCollectionsAmt(0);
