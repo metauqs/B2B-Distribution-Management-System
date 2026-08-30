@@ -162,7 +162,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           SELECT 
             (SELECT COALESCE(SUM(total), 0) FROM purchases WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL)::float as today_purchases,
             (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL)::float as today_expenses,
-            (SELECT COALESCE(SUM(amount), 0) FROM collections WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND "deletedAt" IS NULL)::float as today_collections,
+            (SELECT COALESCE(SUM(amount), 0) FROM collections WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd} AND status != 'CANCELLED' AND "deletedAt" IS NULL)::float as today_collections,
             (SELECT COALESCE(SUM(qty), 0) FROM wastages WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd})::float as today_wastage_qty,
             (SELECT COUNT(*) FROM wastages WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND date >= ${todayStart} AND date <= ${todayEnd})::int as today_wastage_count,
             (SELECT COALESCE(SUM("currentBalance"), 0) FROM clients WHERE (${rawBranchId} = '' OR "branchId" = ${rawBranchId}) AND "currentBalance" > 0 AND "deletedAt" IS NULL)::float as total_receivables,
@@ -304,8 +304,8 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       const todaySalesCount = todaySalesRecords.length;
       const recentSales = todaySalesRecords.slice(0, 5);
 
-      // Collections = standalone collection entries + checkout cash paid at invoice
-      const todayCollections = todaySalesPaid > dbCollectionsSum ? todaySalesPaid : dbCollectionsSum;
+      // Collections = active collection entries received today
+      const todayCollections = dbCollectionsSum;
 
       // ── Gross Profit: same formula as Reports module (financialEngine.ts) ─────────
       const netSales = Math.max(0, grossSales - todayDiscounts);
@@ -454,7 +454,7 @@ router.get('/pnl', async (req: Request, res: Response) => {
           _sum: { amount: true },
         }),
         prisma.collection.aggregate({
-          where: { ...bWhere, date: dateRange, deletedAt: null },
+          where: { ...bWhere, date: dateRange, status: { not: 'CANCELLED' }, deletedAt: null },
           _sum: { amount: true },
         }),
         prisma.wastage.aggregate({
@@ -590,7 +590,7 @@ router.get('/cashflow', async (req: Request, res: Response) => {
 
       const [collectionsAgg, salesCashAgg] = await Promise.all([
         prisma.collection.aggregate({
-          where: { ...bWhere, date: dateRange, deletedAt: null },
+          where: { ...bWhere, date: dateRange, status: { not: 'CANCELLED' }, deletedAt: null },
           _sum: { amount: true },
         }),
         prisma.sale.aggregate({
@@ -625,7 +625,7 @@ router.get('/cashflow', async (req: Request, res: Response) => {
 
       const [dailyCollections, dailyPurchases, dailyExpenses] = await Promise.all([
         prisma.collection.groupBy({
-          by: ['date'], where: { ...bWhere, date: dateRange, deletedAt: null },
+          by: ['date'], where: { ...bWhere, date: dateRange, status: { not: 'CANCELLED' }, deletedAt: null },
           _sum: { amount: true }, orderBy: { date: 'asc' },
         }),
         prisma.purchase.groupBy({

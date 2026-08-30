@@ -4,6 +4,7 @@ import { recordCustomerLedgerEntry, writeAuditLog, recalculateClientLedgerAndBal
 import { updateClientCreditRating } from '../lib/creditRisk';
 import { getBusinessDateRange, getBusinessDateString, getCurrentBusinessDateRange, formatPKTDateTime, parseInputDateToUtc } from '../lib/businessDate';
 import { postCollectionLedger, postCollectionCancellationLedger } from '../lib/financialLedgerService';
+import { clearReportCache } from './reports';
 
 const router = Router();
 
@@ -14,6 +15,7 @@ const COLLECTIONS_IN_FLIGHT = new Map<string, Promise<any>>();
 
 export function clearCollectionsCache(): void {
   COLLECTIONS_CACHE.clear();
+  clearReportCache();
 }
 
 // GET /api/collections/daily-history — Server-Side 5 AM Business Day Aggregation & Payment List
