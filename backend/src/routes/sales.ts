@@ -141,24 +141,71 @@ router.get('/', async (req: Request, res: Response) => {
       const whereClause = Prisma.join(conditions, ' AND ');
 
       const sales = await prisma.$queryRaw<any[]>`
+        WITH page_sales AS (
+          SELECT 
+            s.id,
+            s."invoiceNo",
+            s."clientId",
+            s."employeeId",
+            s.date,
+            s.subtotal::float as subtotal,
+            s.discount::float as discount,
+            s."deliveryCharge"::float as "deliveryCharge",
+            s."previousBalance"::float as "previousBalance",
+            s.total::float as total,
+            s.paid::float as paid,
+            s.balance::float as balance,
+            s.status,
+            s."paymentMode",
+            s."isLocked",
+            s."deliveryStatus",
+            s.notes,
+            s."createdAt"
+          FROM sales s
+          LEFT JOIN clients c ON c.id = s."clientId"
+          WHERE ${whereClause}
+          ORDER BY s.date DESC, s."createdAt" DESC
+          LIMIT ${limit}
+          OFFSET ${(Math.max(1, parseInt(String(page || '1'), 10)) - 1) * limit}
+        ),
+        item_aggs AS (
+          SELECT 
+            si."saleId",
+            json_agg(
+              json_build_object(
+                'id', si.id,
+                'productId', si."productId",
+                'itemName', si."itemName",
+                'unit', si.unit,
+                'qty', si.qty::float,
+                'rate', si.rate::float,
+                'amount', si.amount::float,
+                'costPrice', si."costPrice"::float,
+                'returnedQty', si."returnedQty"::float
+              )
+            ) as items
+          FROM sale_items si
+          WHERE si."saleId" IN (SELECT id FROM page_sales)
+          GROUP BY si."saleId"
+        )
         SELECT 
-          s.id,
-          s."invoiceNo",
-          s."clientId",
-          s.date,
-          s.subtotal::float as subtotal,
-          s.discount::float as discount,
-          s."deliveryCharge"::float as "deliveryCharge",
-          s."previousBalance"::float as "previousBalance",
-          s.total::float as total,
-          s.paid::float as paid,
-          s.balance::float as balance,
-          s.status,
-          s."paymentMode",
-          s."isLocked",
-          s."deliveryStatus",
-          s.notes,
-          s."createdAt",
+          ps.id,
+          ps."invoiceNo",
+          ps."clientId",
+          ps.date,
+          ps.subtotal,
+          ps.discount,
+          ps."deliveryCharge",
+          ps."previousBalance",
+          ps.total,
+          ps.paid,
+          ps.balance,
+          ps.status,
+          ps."paymentMode",
+          ps."isLocked",
+          ps."deliveryStatus",
+          ps.notes,
+          ps."createdAt",
           CASE WHEN c.id IS NOT NULL THEN json_build_object(
             'id', c.id,
             'clientId', c."clientId",
@@ -173,33 +220,12 @@ router.get('/', async (req: Request, res: Response) => {
             'role', e.role,
             'phone', e.phone
           ) ELSE NULL END as employee,
-          COALESCE(
-            (
-              SELECT json_agg(
-                json_build_object(
-                  'id', si.id,
-                  'productId', si."productId",
-                  'itemName', si."itemName",
-                  'unit', si.unit,
-                  'qty', si.qty::float,
-                  'rate', si.rate::float,
-                  'amount', si.amount::float,
-                  'costPrice', si."costPrice"::float,
-                  'returnedQty', si."returnedQty"::float
-                )
-              )
-              FROM sale_items si
-              WHERE si."saleId" = s.id
-            ),
-            '[]'::json
-          ) as items
-        FROM sales s
-        LEFT JOIN clients c ON c.id = s."clientId"
-        LEFT JOIN employees e ON e.id = s."employeeId"
-        WHERE ${whereClause}
-        ORDER BY s.date DESC, s."createdAt" DESC
-        LIMIT ${limit}
-        OFFSET ${(Math.max(1, parseInt(String(page || '1'), 10)) - 1) * limit}
+          COALESCE(ia.items, '[]'::json) as items
+        FROM page_sales ps
+        LEFT JOIN clients c ON c.id = ps."clientId"
+        LEFT JOIN employees e ON e.id = ps."employeeId"
+        LEFT JOIN item_aggs ia ON ia."saleId" = ps.id
+        ORDER BY ps.date DESC, ps."createdAt" DESC
       `;
 
       return sales;
