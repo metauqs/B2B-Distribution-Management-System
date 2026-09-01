@@ -226,17 +226,35 @@ function sendSvg(res: any, svg: string) {
   res.end(svg);
 }
 
-// In-Memory cache for product image DB lookups (10-minute TTL) — prevents repeated DB hits per image request
+// In-Memory cache for product image DB lookups (1-hour TTL) — prevents repeated DB hits per image request
 const IMAGE_LOOKUP_CACHE = new Map<string, { ts: number; data: any }>();
-const IMAGE_LOOKUP_CACHE_TTL = 600000;
+const IMAGE_LOOKUP_CACHE_TTL = 3600000;
+const IMAGE_IN_FLIGHT = new Map<string, Promise<any>>();
 
 async function getCachedProductForImage(key: string, fetcher: () => Promise<any>): Promise<any> {
   const cached = IMAGE_LOOKUP_CACHE.get(key);
   if (cached && (Date.now() - cached.ts) < IMAGE_LOOKUP_CACHE_TTL) return cached.data;
-  const data = await fetcher();
-  if (IMAGE_LOOKUP_CACHE.size > 200) IMAGE_LOOKUP_CACHE.clear();
-  IMAGE_LOOKUP_CACHE.set(key, { ts: Date.now(), data });
-  return data;
+
+  if (IMAGE_IN_FLIGHT.has(key)) {
+    return IMAGE_IN_FLIGHT.get(key);
+  }
+
+  const promise = (async () => {
+    try {
+      const data = await fetcher();
+      if (IMAGE_LOOKUP_CACHE.size > 500) {
+        const oldest = IMAGE_LOOKUP_CACHE.keys().next().value;
+        if (oldest) IMAGE_LOOKUP_CACHE.delete(oldest);
+      }
+      IMAGE_LOOKUP_CACHE.set(key, { ts: Date.now(), data });
+      return data;
+    } finally {
+      IMAGE_IN_FLIGHT.delete(key);
+    }
+  })();
+
+  IMAGE_IN_FLIGHT.set(key, promise);
+  return promise;
 }
 
 export async function serveProductImageOrFallback(filenameOrId: string, res: Response, isId = false, req?: Request) {
@@ -253,12 +271,69 @@ export async function serveProductImageOrFallback(filenameOrId: string, res: Res
   const queryEmoji = typeof req?.query?.emoji === 'string' ? req.query.emoji : null;
   const queryName = typeof req?.query?.name === 'string' ? req.query.name : null;
 
-  // Look up product in DB to find its name/emoji
+  // If query name or emoji is provided, serve immediate static/SVG without DB hit!
+  if (queryEmoji || queryName) {
+    const pName = (queryName || '').toLowerCase().trim();
+    if (pName) {
+      const staticImageNames: Record<string, string> = {
+        'lady finger': 'ladyfinger.avif',
+        'ladyfinger': 'ladyfinger.avif',
+        'bhindi': 'ladyfinger.avif',
+        'okra': 'ladyfinger.avif',
+        'guava': 'guava.avif',
+        'amrood': 'guava.avif',
+        'papaya': 'papaya.avif',
+        'papeeta': 'papaya.avif',
+        'papiya': 'papaya.avif',
+        'pomegranate': 'pomegranate.avif',
+        'anar': 'pomegranate.avif',
+        'turnip': 'turnip.avif',
+        'shalgam': 'turnip.avif',
+        'shuljam': 'turnip.avif',
+        'radish': 'radish.avif',
+        'mooli': 'radish.avif',
+        'beetroot': 'beetroot.avif',
+        'chukandar': 'beetroot.avif',
+        'plum': 'plum.avif',
+        'alobukhara': 'plum.avif',
+        'alubukhara': 'plum.avif',
+      };
+
+      for (const [key, imgFile] of Object.entries(staticImageNames)) {
+        if (pName.includes(key)) {
+          const staticPath = findImageFile(imgFile);
+          if (staticPath && fs.existsSync(staticPath)) {
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            return res.sendFile(staticPath);
+          }
+        }
+      }
+    }
+
+    const finalEmoji = queryEmoji || getProductFallbackEmoji(pName || safeFilename);
+    return sendSvg(res, generateProductSvgFallback(finalEmoji));
+  }
+
+  // Extract ID if formatted as prod_<id>_<timestamp> or raw ID
+  let extractedId: string | null = null;
+  if (!isId) {
+    const prodIdMatch = safeFilename.match(/^prod_([a-zA-Z0-9]+)/) || safeFilename.match(/^([a-zA-Z0-9]{20,30})/);
+    if (prodIdMatch && prodIdMatch[1]) {
+      extractedId = prodIdMatch[1];
+    }
+  }
+
+  // Look up product in DB (Primary key lookup is ~1ms vs full table scan)
   try {
     let product: any = null;
     if (isId) {
       product = await getCachedProductForImage(`id:${filenameOrId}`, () =>
         prisma.product.findUnique({ where: { id: filenameOrId }, select: { name: true, emoji: true, imageUrl: true } })
+      );
+    } else if (extractedId) {
+      product = await getCachedProductForImage(`id:${extractedId}`, () =>
+        prisma.product.findUnique({ where: { id: extractedId! }, select: { name: true, emoji: true, imageUrl: true } })
       );
     } else {
       product = await getCachedProductForImage(`fn:${safeFilename}`, () =>

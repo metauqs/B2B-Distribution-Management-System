@@ -100,10 +100,14 @@ export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'laz
   // 1. Highest Priority: Uploaded Image from Product Master (imageUrl)
   if (imageUrl && imageUrl.trim() && !masterImgError) {
     const rawUrl = imageUrl.trim();
-    // Normalize URL to ensure it routes through API proxy if needed
-    const finalUrl = rawUrl.startsWith('/uploads/products/')
+    let finalUrl = rawUrl.startsWith('/uploads/products/')
       ? `/api/products/image/${rawUrl.replace('/uploads/products/', '')}`
       : rawUrl;
+
+    if (finalUrl.startsWith('/api/products/image/')) {
+      const sep = finalUrl.includes('?') ? '&' : '?';
+      finalUrl = `${finalUrl}${sep}name=${encodeURIComponent(name || '')}${emoji ? `&emoji=${encodeURIComponent(emoji)}` : ''}`;
+    }
 
     return (
       <img
