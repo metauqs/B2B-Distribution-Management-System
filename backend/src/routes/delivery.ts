@@ -129,22 +129,53 @@ router.get('/', async (req: Request, res: Response) => {
       const rawEmployeeId = targetEmployeeId || '';
 
       const deliveries = await prisma.$queryRaw<any[]>`
+        WITH page_deliveries AS (
+          SELECT 
+            d.id,
+            d."saleId",
+            d."clientId",
+            d.status,
+            d.zone,
+            d."scheduledTime",
+            d."employeeId",
+            d."vehicleId",
+            d."driverId",
+            d.notes,
+            d."failureReason",
+            d.date,
+            d."branchId",
+            d."createdAt",
+            d."updatedAt"
+          FROM deliveries d
+          WHERE (${rawBranchId} = '' OR d."branchId" = ${rawBranchId})
+            AND (${rawStatus} = '' OR d.status::text = ${rawStatus})
+            AND (${rawEmployeeId} = '' OR d."employeeId" = ${rawEmployeeId})
+            ${dayStart && dayEnd ? Prisma.sql`AND d.date >= ${dayStart} AND d.date <= ${dayEnd}` : Prisma.empty}
+          ORDER BY d.date ASC, d."createdAt" ASC
+          LIMIT 200
+        ),
+        delivery_sale_items AS (
+          SELECT 
+            si."saleId",
+            json_agg(
+              json_build_object(
+                'id', si.id,
+                'productId', si."productId",
+                'itemName', si."itemName",
+                'qty', si.qty::float,
+                'unit', si.unit,
+                'rate', si.rate::float,
+                'amount', si.amount::float,
+                'returnedQty', si."returnedQty"::float,
+                'returnReason', si."returnReason"
+              )
+            ) as items
+          FROM sale_items si
+          WHERE si."saleId" IN (SELECT "saleId" FROM page_deliveries WHERE "saleId" IS NOT NULL)
+          GROUP BY si."saleId"
+        )
         SELECT 
-          d.id,
-          d."saleId",
-          d."clientId",
-          d.status,
-          d.zone,
-          d."scheduledTime",
-          d."employeeId",
-          d."vehicleId",
-          d."driverId",
-          d.notes,
-          d."failureReason",
-          d.date,
-          d."branchId",
-          d."createdAt",
-          d."updatedAt",
+          pd.*,
           CASE WHEN s.id IS NOT NULL THEN json_build_object(
             'id', s.id,
             'invoiceNo', s."invoiceNo",
@@ -159,26 +190,7 @@ router.get('/', async (req: Request, res: Response) => {
             'failureReason', s."failureReason",
             'deliveryDate', s."deliveryDate",
             'deliveryTime', s."deliveryTime",
-            'items', COALESCE(
-              (
-                SELECT json_agg(
-                  json_build_object(
-                    'id', si.id,
-                    'productId', si."productId",
-                    'itemName', si."itemName",
-                    'qty', si.qty::float,
-                    'unit', si.unit,
-                    'rate', si.rate::float,
-                    'amount', si.amount::float,
-                    'returnedQty', si."returnedQty"::float,
-                    'returnReason', si."returnReason"
-                  )
-                )
-                FROM sale_items si
-                WHERE si."saleId" = s.id
-              ),
-              '[]'::json
-            )
+            'items', COALESCE(dsi.items, '[]'::json)
           ) ELSE NULL END as sale,
           CASE WHEN cl.id IS NOT NULL THEN json_build_object(
             'id', cl.id,
@@ -203,18 +215,14 @@ router.get('/', async (req: Request, res: Response) => {
             'phone', emp.phone,
             'whatsapp', emp.whatsapp
           ) ELSE NULL END as employee
-        FROM deliveries d
-        LEFT JOIN sales s ON s.id = d."saleId"
-        LEFT JOIN clients cl ON cl.id = d."clientId"
-        LEFT JOIN vehicles v ON v.id = d."vehicleId"
-        LEFT JOIN drivers dr ON dr.id = d."driverId"
-        LEFT JOIN employees emp ON emp.id = d."employeeId"
-        WHERE (${rawBranchId} = '' OR d."branchId" = ${rawBranchId})
-          AND (${rawStatus} = '' OR d.status::text = ${rawStatus})
-          AND (${rawEmployeeId} = '' OR d."employeeId" = ${rawEmployeeId})
-          ${dayStart && dayEnd ? Prisma.sql`AND d.date >= ${dayStart} AND d.date <= ${dayEnd}` : Prisma.empty}
-        ORDER BY d.date ASC, d."createdAt" ASC
-        LIMIT 200
+        FROM page_deliveries pd
+        LEFT JOIN sales s ON s.id = pd."saleId"
+        LEFT JOIN clients cl ON cl.id = pd."clientId"
+        LEFT JOIN vehicles v ON v.id = pd."vehicleId"
+        LEFT JOIN drivers dr ON dr.id = pd."driverId"
+        LEFT JOIN employees emp ON emp.id = pd."employeeId"
+        LEFT JOIN delivery_sale_items dsi ON dsi."saleId" = pd."saleId"
+        ORDER BY pd.date ASC, pd."createdAt" ASC
       `;
 
       return deliveries;

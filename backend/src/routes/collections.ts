@@ -48,25 +48,61 @@ router.get('/daily-history', async (req: Request, res: Response) => {
       const rawSearch = search ? String(search).trim() : '';
 
       const collections: any[] = await prisma.$queryRaw`
+        WITH page_collections AS (
+          SELECT 
+            c.id,
+            c."clientId",
+            c.amount::float as amount,
+            c.method,
+            c."cashAccountId",
+            c."bankAccountId",
+            c."receivedByUserId",
+            c."remainingBalance"::float as "remainingBalance",
+            c.date,
+            c.reference,
+            c.notes,
+            c."branchId",
+            c."createdAt",
+            c."deletedAt",
+            COALESCE(c.status::text, 'PAID') as status,
+            c."cancelledAt",
+            c."cancelledByUserId",
+            c."cancelReason"
+          FROM collections c
+          LEFT JOIN clients cl ON cl.id = c."clientId"
+          WHERE c."deletedAt" IS NULL 
+            AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
+            AND (${rawClientId} = '' OR c."clientId" = ${rawClientId})
+            AND (${rawEmployeeId} = '' OR c."receivedByUserId" = ${rawEmployeeId})
+            AND (${rawMethod} = '' OR c.method::text = ${rawMethod})
+            AND c.date >= ${range.start} AND c.date <= ${range.end}
+            AND (${rawSearch} = '' OR (
+              c.reference ILIKE ${'%' + rawSearch + '%'} OR 
+              c.notes ILIKE ${'%' + rawSearch + '%'} OR 
+              cl.name ILIKE ${'%' + rawSearch + '%'}
+            ))
+          ORDER BY c.date ASC, c."createdAt" ASC
+        ),
+        alloc_aggs AS (
+          SELECT 
+            ca."collectionId",
+            json_agg(
+              json_build_object(
+                'id', ca.id,
+                'saleId', ca."saleId",
+                'allocatedAmount', ca."allocatedAmount"::float,
+                'sale', json_build_object(
+                  'invoiceNo', s."invoiceNo"
+                )
+              )
+            ) as allocations
+          FROM collection_allocations ca
+          LEFT JOIN sales s ON s.id = ca."saleId"
+          WHERE ca."collectionId" IN (SELECT id FROM page_collections)
+          GROUP BY ca."collectionId"
+        )
         SELECT 
-          c.id,
-          c."clientId",
-          c.amount::float as amount,
-          c.method,
-          c."cashAccountId",
-          c."bankAccountId",
-          c."receivedByUserId",
-          c."remainingBalance"::float as "remainingBalance",
-          c.date,
-          c.reference,
-          c.notes,
-          c."branchId",
-          c."createdAt",
-          c."deletedAt",
-          COALESCE(c.status::text, 'PAID') as status,
-          c."cancelledAt",
-          c."cancelledByUserId",
-          c."cancelReason",
+          pc.*,
           json_build_object(
             'id', cl.id,
             'name', cl.name,
@@ -87,41 +123,14 @@ router.get('/daily-history', async (req: Request, res: Response) => {
               'role', cu.role
             )
           ELSE NULL END as "cancelledByUser",
-          COALESCE(
-            (
-              SELECT json_agg(
-                json_build_object(
-                  'id', ca.id,
-                  'saleId', ca."saleId",
-                  'allocatedAmount', ca."allocatedAmount"::float,
-                  'sale', json_build_object(
-                    'invoiceNo', s."invoiceNo"
-                  )
-                )
-              )
-              FROM collection_allocations ca
-              LEFT JOIN sales s ON s.id = ca."saleId"
-              WHERE ca."collectionId" = c.id
-            ),
-            '[]'::json
-          ) as allocations,
-          c."remainingBalance"::float as "ledgerBalance"
-        FROM collections c
-        LEFT JOIN clients cl ON cl.id = c."clientId"
-        LEFT JOIN users u ON u.id = c."receivedByUserId"
-        LEFT JOIN users cu ON cu.id = c."cancelledByUserId"
-        WHERE c."deletedAt" IS NULL 
-          AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
-          AND (${rawClientId} = '' OR c."clientId" = ${rawClientId})
-          AND (${rawEmployeeId} = '' OR c."receivedByUserId" = ${rawEmployeeId})
-          AND (${rawMethod} = '' OR c.method::text = ${rawMethod})
-          AND c.date >= ${range.start} AND c.date <= ${range.end}
-          AND (${rawSearch} = '' OR (
-            c.reference ILIKE ${'%' + rawSearch + '%'} OR 
-            c.notes ILIKE ${'%' + rawSearch + '%'} OR 
-            cl.name ILIKE ${'%' + rawSearch + '%'}
-          ))
-        ORDER BY c.date ASC, c."createdAt" ASC
+          COALESCE(aa.allocations, '[]'::json) as allocations,
+          pc."remainingBalance" as "ledgerBalance"
+        FROM page_collections pc
+        LEFT JOIN clients cl ON cl.id = pc."clientId"
+        LEFT JOIN users u ON u.id = pc."receivedByUserId"
+        LEFT JOIN users cu ON cu.id = pc."cancelledByUserId"
+        LEFT JOIN alloc_aggs aa ON aa."collectionId" = pc.id
+        ORDER BY pc.date ASC, pc."createdAt" ASC
       `;
 
       let totalAmount = 0;
@@ -281,25 +290,63 @@ router.get('/', async (req: Request, res: Response) => {
       const rawSearch = search ? String(search).trim() : '';
 
       const collections: any[] = await prisma.$queryRaw`
+        WITH page_collections AS (
+          SELECT 
+            c.id,
+            c."clientId",
+            c.amount::float as amount,
+            c.method,
+            c."cashAccountId",
+            c."bankAccountId",
+            c."receivedByUserId",
+            c."remainingBalance"::float as "remainingBalance",
+            c.date,
+            c.reference,
+            c.notes,
+            c."branchId",
+            c."createdAt",
+            c."deletedAt",
+            COALESCE(c.status::text, 'PAID') as status,
+            c."cancelledAt",
+            c."cancelledByUserId",
+            c."cancelReason"
+          FROM collections c
+          LEFT JOIN clients cl ON cl.id = c."clientId"
+          WHERE c."deletedAt" IS NULL 
+            AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
+            AND (${rawClientId} = '' OR c."clientId" = ${rawClientId})
+            AND (${rawEmployeeId} = '' OR c."receivedByUserId" = ${rawEmployeeId})
+            AND (${rawMethod} = '' OR c.method::text = ${rawMethod})
+            AND (${dateFrom}::timestamptz IS NULL OR c.date >= ${dateFrom}::timestamptz)
+            AND (${dateTo}::timestamptz IS NULL OR c.date <= ${dateTo}::timestamptz)
+            AND (${rawSearch} = '' OR (
+              c.reference ILIKE ${'%' + rawSearch + '%'} OR 
+              c.notes ILIKE ${'%' + rawSearch + '%'} OR 
+              cl.name ILIKE ${'%' + rawSearch + '%'}
+            ))
+          ORDER BY c.date DESC, c."createdAt" DESC
+          LIMIT ${limit}
+        ),
+        alloc_aggs AS (
+          SELECT 
+            ca."collectionId",
+            json_agg(
+              json_build_object(
+                'id', ca.id,
+                'saleId', ca."saleId",
+                'allocatedAmount', ca."allocatedAmount"::float,
+                'sale', json_build_object(
+                  'invoiceNo', s."invoiceNo"
+                )
+              )
+            ) as allocations
+          FROM collection_allocations ca
+          LEFT JOIN sales s ON s.id = ca."saleId"
+          WHERE ca."collectionId" IN (SELECT id FROM page_collections)
+          GROUP BY ca."collectionId"
+        )
         SELECT 
-          c.id,
-          c."clientId",
-          c.amount::float as amount,
-          c.method,
-          c."cashAccountId",
-          c."bankAccountId",
-          c."receivedByUserId",
-          c."remainingBalance"::float as "remainingBalance",
-          c.date,
-          c.reference,
-          c.notes,
-          c."branchId",
-          c."createdAt",
-          c."deletedAt",
-          COALESCE(c.status::text, 'PAID') as status,
-          c."cancelledAt",
-          c."cancelledByUserId",
-          c."cancelReason",
+          pc.*,
           json_build_object(
             'id', cl.id,
             'name', cl.name,
@@ -320,43 +367,14 @@ router.get('/', async (req: Request, res: Response) => {
               'role', cu.role
             )
           ELSE NULL END as "cancelledByUser",
-          COALESCE(
-            (
-              SELECT json_agg(
-                json_build_object(
-                  'id', ca.id,
-                  'saleId', ca."saleId",
-                  'allocatedAmount', ca."allocatedAmount"::float,
-                  'sale', json_build_object(
-                    'invoiceNo', s."invoiceNo"
-                  )
-                )
-              )
-              FROM collection_allocations ca
-              LEFT JOIN sales s ON s.id = ca."saleId"
-              WHERE ca."collectionId" = c.id
-            ),
-            '[]'::json
-          ) as allocations,
-          c."remainingBalance"::float as "ledgerBalance"
-        FROM collections c
-        LEFT JOIN clients cl ON cl.id = c."clientId"
-        LEFT JOIN users u ON u.id = c."receivedByUserId"
-        LEFT JOIN users cu ON cu.id = c."cancelledByUserId"
-        WHERE c."deletedAt" IS NULL 
-          AND (${rawBranchId} = '' OR c."branchId" = ${rawBranchId})
-          AND (${rawClientId} = '' OR c."clientId" = ${rawClientId})
-          AND (${rawEmployeeId} = '' OR c."receivedByUserId" = ${rawEmployeeId})
-          AND (${rawMethod} = '' OR c.method::text = ${rawMethod})
-          AND (${dateFrom}::timestamptz IS NULL OR c.date >= ${dateFrom}::timestamptz)
-          AND (${dateTo}::timestamptz IS NULL OR c.date <= ${dateTo}::timestamptz)
-          AND (${rawSearch} = '' OR (
-            c.reference ILIKE ${'%' + rawSearch + '%'} OR 
-            c.notes ILIKE ${'%' + rawSearch + '%'} OR 
-            cl.name ILIKE ${'%' + rawSearch + '%'}
-          ))
-        ORDER BY c.date DESC, c."createdAt" DESC
-        LIMIT ${limit}
+          COALESCE(aa.allocations, '[]'::json) as allocations,
+          pc."remainingBalance" as "ledgerBalance"
+        FROM page_collections pc
+        LEFT JOIN clients cl ON cl.id = pc."clientId"
+        LEFT JOIN users u ON u.id = pc."receivedByUserId"
+        LEFT JOIN users cu ON cu.id = pc."cancelledByUserId"
+        LEFT JOIN alloc_aggs aa ON aa."collectionId" = pc.id
+        ORDER BY pc.date DESC, pc."createdAt" DESC
       `;
 
       if (collections.length === 0) {
