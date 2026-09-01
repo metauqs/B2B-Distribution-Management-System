@@ -6,19 +6,23 @@ async function performSingleFlightTokenRefresh(): Promise<string | null> {
   activeRefreshPromise = (async () => {
     try {
       const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('sabzi_refresh_token') : null;
-      if (!refreshToken) return null;
 
       const refreshRes = await fetch('/api/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
+        body: JSON.stringify({ refreshToken: refreshToken || undefined }),
+        credentials: 'include',
       });
 
       const refreshData = await refreshRes.json();
       if (refreshRes.ok && refreshData.success && refreshData.accessToken) {
-        localStorage.setItem('sabzi_token', refreshData.accessToken);
-        if (refreshData.refreshToken) {
-          localStorage.setItem('sabzi_refresh_token', refreshData.refreshToken);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('sabzi_token', refreshData.accessToken);
+          document.cookie = `sabzi_token=${refreshData.accessToken}; path=/; max-age=604800; SameSite=Lax`;
+          if (refreshData.refreshToken) {
+            localStorage.setItem('sabzi_refresh_token', refreshData.refreshToken);
+            document.cookie = `sabzi_refresh_token=${refreshData.refreshToken}; path=/; max-age=2592000; SameSite=Lax`;
+          }
         }
         return refreshData.accessToken as string;
       }
@@ -79,6 +83,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   const requestInit: RequestInit = {
     ...init,
     headers,
+    credentials: init?.credentials || 'include',
     signal: init?.signal || controller.signal,
   };
 
@@ -93,7 +98,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
         if (newAccessToken) {
           // Retry original failed request with new access token
           headers.set('Authorization', `Bearer ${newAccessToken}`);
-          response = await fetch(input, { ...requestInit, headers });
+          response = await fetch(input, { ...requestInit, headers, credentials: 'include' });
         }
       }
 

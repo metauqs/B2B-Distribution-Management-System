@@ -38,6 +38,18 @@ export const login = createAsyncThunk<User, LoginCredentials>(
       });
       const data = await res.json();
       if (!res.ok || !data.success) return rejectWithValue(data.error ?? 'Login failed');
+
+      if (typeof window !== 'undefined') {
+        if (data.accessToken) {
+          localStorage.setItem('sabzi_token', data.accessToken);
+          document.cookie = `sabzi_token=${data.accessToken}; path=/; max-age=604800; SameSite=Lax`;
+        }
+        if (data.refreshToken) {
+          localStorage.setItem('sabzi_refresh_token', data.refreshToken);
+          document.cookie = `sabzi_refresh_token=${data.refreshToken}; path=/; max-age=2592000; SameSite=Lax`;
+        }
+      }
+
       const user = (data.data?.user ?? data.user) as User;
       setCachedUser(user);
       return user;

@@ -11,8 +11,9 @@ const JWT_SECRET = config.jwt.secret;
 
 // Helper to sign access and refresh tokens
 function signAuthTokens(payload: { sub: string; email: string; role: string; branchId: string; employeeId?: string }) {
-  const accessToken = jwt.sign({ ...payload, type: 'access' }, JWT_SECRET, { expiresIn: '30m' });
-  const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, JWT_SECRET, { expiresIn: '7d' });
+  const expiry = config.jwt.expiresIn || '7d';
+  const accessToken = jwt.sign({ ...payload, type: 'access' }, JWT_SECRET, { expiresIn: expiry as any });
+  const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, JWT_SECRET, { expiresIn: '30d' });
   return { accessToken, refreshToken };
 }
 
@@ -226,7 +227,7 @@ router.post('/login', async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 30 * 60 * 1000,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
 
@@ -234,7 +235,7 @@ router.post('/login', async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
       path: '/',
     });
 
@@ -339,7 +340,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 30 * 60 * 1000,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
         path: '/',
       });
 
@@ -347,7 +348,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
+        maxAge: 30 * 24 * 60 * 60 * 1000,
         path: '/',
       });
 
