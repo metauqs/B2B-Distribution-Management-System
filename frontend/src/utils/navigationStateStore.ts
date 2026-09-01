@@ -27,17 +27,46 @@ if (typeof window !== 'undefined') {
   }
 }
 
-function persistToStorage() {
+let persistTimer: any = null;
+
+export function persistToStorage(immediate = false) {
   if (typeof window === 'undefined') return;
-  try {
-    const obj: Record<string, any> = {};
-    pageStateMap.forEach((v, k) => {
-      obj[k] = v;
-    });
-    sessionStorage.setItem('sabzi_page_states', JSON.stringify(obj));
-  } catch (e) {
-    // Ignore storage quota limits
+
+  const doPersist = () => {
+    try {
+      const obj: Record<string, any> = {};
+      pageStateMap.forEach((v, k) => {
+        obj[k] = v;
+      });
+      sessionStorage.setItem('sabzi_page_states', JSON.stringify(obj));
+    } catch {
+      // Ignore storage quota limits
+    }
+  };
+
+  if (immediate) {
+    if (persistTimer) clearTimeout(persistTimer);
+    doPersist();
+    return;
   }
+
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(doPersist);
+    } else {
+      doPersist();
+    }
+  }, 2000);
+}
+
+// Flush immediately before page unloads or visibility changes to hidden
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => persistToStorage(true), { passive: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') persistToStorage(true);
+  }, { passive: true });
 }
 
 /**
@@ -51,7 +80,7 @@ export function savePageState(pageKey: string, state: Record<string, any>, scrol
     scrollPosition: currentScroll,
     updatedAt: Date.now(),
   });
-  persistToStorage();
+  persistToStorage(false);
 }
 
 /**

@@ -5,6 +5,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { fmtMoney, fmtDate, todayInputDate, dateOffset } from '@/utils/formatters';
 import { fetchWithCache, getCachedData, TTL_SHORT, TTL_MEDIUM } from '@/utils/cacheStore';
 import { usePreservedState } from '@/hooks/usePreservedState';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/components/ui/MobileCard';
 import { ProductVisual } from '@/components/ui/ProductVisual';
 import Icon from '@mdi/react';
@@ -74,6 +75,7 @@ interface ExecutiveData {
 }
 
 export default function ReportsPage() {
+  const isMobile = useIsMobile();
   const [rState, setRState] = usePreservedState('reports', {
     mainTab: 'Executive Dashboard' as MainCategory,
     salesTab: 'Invoice Profitability' as SalesSubTab,
@@ -514,94 +516,96 @@ export default function ReportsPage() {
                     )}
                   </div>
 
-                  {/* Desktop Table View */}
-                  <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                    <table className="va-table">
-                      <thead>
-                        <tr>
-                          <th>Invoice #</th>
-                          <th>Date</th>
-                          <th>Customer</th>
-                          <th>Gross Sales</th>
-                          <th>Discount</th>
-                          <th>Net Sales</th>
-                          <th>COGS</th>
-                          <th>Gross Profit</th>
-                          <th>Margin %</th>
-                          <th>Delivery Charge</th>
-                          <th>Contribution Profit</th>
-                          <th>Inspect</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(invoiceReport?.rows || []).map((row: any) => (
-                          <tr key={row.id}>
-                            <td className="mono" style={{ fontWeight: 700 }}>{row.invoiceNo}</td>
-                            <td>{fmtDate(row.date)}</td>
-                            <td><strong>{row.clientName}</strong></td>
-                            <td className="mono">{fmtMoney(row.grossSales)}</td>
-                            <td className="mono" style={{ color: '#991B1B' }}>{row.discount > 0 ? `-${fmtMoney(row.discount)}` : '—'}</td>
-                            <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(row.netSales)}</td>
-                            <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(row.cogs)}</td>
-                            <td className="mono" style={{ color: row.grossProfit >= 0 ? '#166534' : '#DC2626', fontWeight: 700 }}>
-                              {fmtMoney(row.grossProfit)}
-                            </td>
-                            <td>
-                              <span style={{ padding: '2px 8px', borderRadius: 12, background: row.grossMarginPct >= 15 ? '#DCFCE7' : '#FEE2E2', color: row.grossMarginPct >= 15 ? '#166534' : '#991B1B', fontWeight: 800, fontSize: 12 }}>
-                                {row.grossMarginPct}%
-                              </span>
-                            </td>
-                            <td className="mono">{row.deliveryCharge > 0 ? fmtMoney(row.deliveryCharge) : '—'}</td>
-                            <td className="mono" style={{ fontWeight: 700, color: row.contributionProfit >= 0 ? '#0369A1' : '#991B1B' }}>
-                              {fmtMoney(row.contributionProfit)}
-                            </td>
-                            <td>
-                              <button className="va-btn small outline" onClick={() => setSelectedInvoiceModal(row)} style={{ padding: '4px 8px', fontSize: 12 }}>
-                                View Items
-                              </button>
-                            </td>
+                  {!isMobile ? (
+                    /* Desktop Table View */
+                    <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                      <table className="va-table">
+                        <thead>
+                          <tr>
+                            <th>Invoice #</th>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Gross Sales</th>
+                            <th>Discount</th>
+                            <th>Net Sales</th>
+                            <th>COGS</th>
+                            <th>Gross Profit</th>
+                            <th>Margin %</th>
+                            <th>Delivery Charge</th>
+                            <th>Contribution Profit</th>
+                            <th>Inspect</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Mobile Cards View */}
-                  <div className="show-mobile-block">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {(invoiceReport?.rows || []).map((row: any) => (
-                        <MobileCard
-                          key={row.id}
-                          title={
-                            <div>
-                              <strong style={{ fontSize: 14, color: '#1E293B' }}>Invoice #{row.invoiceNo}</strong>
-                              <div style={{ fontSize: 12, color: '#64748B', fontWeight: 500 }}>{row.clientName}</div>
-                            </div>
-                          }
-                          headerBadge={
-                            <MobileCardBadge variant={row.grossMarginPct >= 15 ? 'green' : 'red'}>
-                              {row.grossMarginPct}% Margin
-                            </MobileCardBadge>
-                          }
-                        >
-                          <MobileCardRow label="Date" value={fmtDate(row.date)} />
-                          <MobileCardRow label="Gross Sales" value={fmtMoney(row.grossSales)} isMono />
-                          {row.discount > 0 && <MobileCardRow label="Discount" value={`-${fmtMoney(row.discount)}`} valueColor="#991B1B" isMono />}
-                          <MobileCardRow label="Net Sales" value={fmtMoney(row.netSales)} isMono style={{ fontWeight: 700 }} />
-                          <MobileCardRow label="COGS" value={fmtMoney(row.cogs)} valueColor="#991B1B" isMono />
-                          <MobileCardRow label="Gross Profit" value={fmtMoney(row.grossProfit)} valueColor={row.grossProfit >= 0 ? '#166534' : '#DC2626'} isMono style={{ fontWeight: 800 }} />
-                          {row.deliveryCharge > 0 && <MobileCardRow label="Delivery Charge" value={fmtMoney(row.deliveryCharge)} isMono />}
-                          <MobileCardRow label="Contribution Profit" value={fmtMoney(row.contributionProfit)} valueColor={row.contributionProfit >= 0 ? '#0369A1' : '#991B1B'} isMono style={{ fontWeight: 700 }} />
-
-                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #F1F5F9' }}>
-                            <button className="va-btn small outline" onClick={() => setSelectedInvoiceModal(row)} style={{ width: '100%', justifyContent: 'center', fontWeight: 700 }}>
-                              🔍 View Items Profitability
-                            </button>
-                          </div>
-                        </MobileCard>
-                      ))}
+                        </thead>
+                        <tbody>
+                          {(invoiceReport?.rows || []).map((row: any) => (
+                            <tr key={row.id}>
+                              <td className="mono" style={{ fontWeight: 700 }}>{row.invoiceNo}</td>
+                              <td>{fmtDate(row.date)}</td>
+                              <td><strong>{row.clientName}</strong></td>
+                              <td className="mono">{fmtMoney(row.grossSales)}</td>
+                              <td className="mono" style={{ color: '#991B1B' }}>{row.discount > 0 ? `-${fmtMoney(row.discount)}` : '—'}</td>
+                              <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(row.netSales)}</td>
+                              <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(row.cogs)}</td>
+                              <td className="mono" style={{ color: row.grossProfit >= 0 ? '#166534' : '#DC2626', fontWeight: 700 }}>
+                                {fmtMoney(row.grossProfit)}
+                              </td>
+                              <td>
+                                <span style={{ padding: '2px 8px', borderRadius: 12, background: row.grossMarginPct >= 15 ? '#DCFCE7' : '#FEE2E2', color: row.grossMarginPct >= 15 ? '#166534' : '#991B1B', fontWeight: 800, fontSize: 12 }}>
+                                  {row.grossMarginPct}%
+                                </span>
+                              </td>
+                              <td className="mono">{row.deliveryCharge > 0 ? fmtMoney(row.deliveryCharge) : '—'}</td>
+                              <td className="mono" style={{ fontWeight: 700, color: row.contributionProfit >= 0 ? '#0369A1' : '#991B1B' }}>
+                                {fmtMoney(row.contributionProfit)}
+                              </td>
+                              <td>
+                                <button className="va-btn small outline" onClick={() => setSelectedInvoiceModal(row)} style={{ padding: '4px 8px', fontSize: 12 }}>
+                                  View Items
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  </div>
+                  ) : (
+                    /* Mobile Cards View */
+                    <div className="show-mobile-block">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {(invoiceReport?.rows || []).map((row: any) => (
+                          <MobileCard
+                            key={row.id}
+                            title={
+                              <div>
+                                <strong style={{ fontSize: 14, color: '#1E293B' }}>Invoice #{row.invoiceNo}</strong>
+                                <div style={{ fontSize: 12, color: '#64748B', fontWeight: 500 }}>{row.clientName}</div>
+                              </div>
+                            }
+                            headerBadge={
+                              <MobileCardBadge variant={row.grossMarginPct >= 15 ? 'green' : 'red'}>
+                                {row.grossMarginPct}% Margin
+                              </MobileCardBadge>
+                            }
+                          >
+                            <MobileCardRow label="Date" value={fmtDate(row.date)} />
+                            <MobileCardRow label="Gross Sales" value={fmtMoney(row.grossSales)} isMono />
+                            {row.discount > 0 && <MobileCardRow label="Discount" value={`-${fmtMoney(row.discount)}`} valueColor="#991B1B" isMono />}
+                            <MobileCardRow label="Net Sales" value={fmtMoney(row.netSales)} isMono style={{ fontWeight: 700 }} />
+                            <MobileCardRow label="COGS" value={fmtMoney(row.cogs)} valueColor="#991B1B" isMono />
+                            <MobileCardRow label="Gross Profit" value={fmtMoney(row.grossProfit)} valueColor={row.grossProfit >= 0 ? '#166534' : '#DC2626'} isMono style={{ fontWeight: 800 }} />
+                            {row.deliveryCharge > 0 && <MobileCardRow label="Delivery Charge" value={fmtMoney(row.deliveryCharge)} isMono />}
+                            <MobileCardRow label="Contribution Profit" value={fmtMoney(row.contributionProfit)} valueColor={row.contributionProfit >= 0 ? '#0369A1' : '#991B1B'} isMono style={{ fontWeight: 700 }} />
+
+                            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #F1F5F9' }}>
+                              <button className="va-btn small outline" onClick={() => setSelectedInvoiceModal(row)} style={{ width: '100%', justifyContent: 'center', fontWeight: 700 }}>
+                                🔍 View Items Profitability
+                              </button>
+                            </div>
+                          </MobileCard>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -610,71 +614,73 @@ export default function ReportsPage() {
                 <div className="va-panel">
                   <div className="va-panel-head"><h3>Customer Economics &amp; Profitability</h3></div>
                   
-                  {/* Desktop Table View */}
-                  <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                    <table className="va-table">
-                      <thead>
-                        <tr>
-                          <th>Customer Name</th>
-                          <th>Type</th>
-                          <th>Invoices</th>
-                          <th>Gross Sales</th>
-                          <th>Discounts</th>
-                          <th>Net Sales</th>
-                          <th>COGS</th>
-                          <th>Gross Profit</th>
-                          <th>Margin %</th>
-                          <th>Current Dues</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {customerReport.map(c => (
-                          <tr key={c.clientId}>
-                            <td><strong>{c.clientName}</strong> ({c.clientCode})</td>
-                            <td><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 6px', background: '#F1F5F9', borderRadius: 4 }}>{c.type}</span></td>
-                            <td className="mono">{c.invoiceCount}</td>
-                            <td className="mono">{fmtMoney(c.grossSales)}</td>
-                            <td className="mono" style={{ color: '#991B1B' }}>{c.discounts > 0 ? `-${fmtMoney(c.discounts)}` : '—'}</td>
-                            <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(c.netSales)}</td>
-                            <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(c.cogs)}</td>
-                            <td className="mono" style={{ color: c.grossProfit >= 0 ? '#166534' : '#DC2626', fontWeight: 700 }}>{fmtMoney(c.grossProfit)}</td>
-                            <td style={{ fontWeight: 800 }}>{c.grossMarginPct}%</td>
-                            <td className="mono" style={{ color: c.currentBalance > 0 ? '#B45309' : '#166534', fontWeight: 700 }}>{fmtMoney(c.currentBalance)}</td>
+                  {!isMobile ? (
+                    /* Desktop Table View */
+                    <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                      <table className="va-table">
+                        <thead>
+                          <tr>
+                            <th>Customer Name</th>
+                            <th>Type</th>
+                            <th>Invoices</th>
+                            <th>Gross Sales</th>
+                            <th>Discounts</th>
+                            <th>Net Sales</th>
+                            <th>COGS</th>
+                            <th>Gross Profit</th>
+                            <th>Margin %</th>
+                            <th>Current Dues</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Mobile Cards View */}
-                  <div className="show-mobile-block">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {customerReport.map(c => (
-                        <MobileCard
-                          key={c.clientId}
-                          title={
-                            <div>
-                              <strong style={{ fontSize: 14, color: '#1E293B' }}>{c.clientName}</strong>
-                              <div style={{ fontSize: 11, color: '#64748B' }}>Code: {c.clientCode} · {c.type}</div>
-                            </div>
-                          }
-                          headerBadge={
-                            <MobileCardBadge variant={c.grossMarginPct >= 15 ? 'green' : 'red'}>
-                              {c.grossMarginPct}% Margin
-                            </MobileCardBadge>
-                          }
-                        >
-                          <MobileCardRow label="Invoices Count" value={`${c.invoiceCount} Invoices`} isMono />
-                          <MobileCardRow label="Gross Sales" value={fmtMoney(c.grossSales)} isMono />
-                          {c.discounts > 0 && <MobileCardRow label="Discounts" value={`-${fmtMoney(c.discounts)}`} valueColor="#991B1B" isMono />}
-                          <MobileCardRow label="Net Sales" value={fmtMoney(c.netSales)} isMono style={{ fontWeight: 700 }} />
-                          <MobileCardRow label="COGS" value={fmtMoney(c.cogs)} valueColor="#991B1B" isMono />
-                          <MobileCardRow label="Gross Profit" value={fmtMoney(c.grossProfit)} valueColor={c.grossProfit >= 0 ? '#166534' : '#DC2626'} isMono style={{ fontWeight: 800 }} />
-                          <MobileCardRow label="Current Dues" value={fmtMoney(c.currentBalance)} valueColor={c.currentBalance > 0 ? '#B45309' : '#166534'} isMono style={{ fontWeight: 700 }} />
-                        </MobileCard>
-                      ))}
+                        </thead>
+                        <tbody>
+                          {customerReport.map(c => (
+                            <tr key={c.clientId}>
+                              <td><strong>{c.clientName}</strong> ({c.clientCode})</td>
+                              <td><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 6px', background: '#F1F5F9', borderRadius: 4 }}>{c.type}</span></td>
+                              <td className="mono">{c.invoiceCount}</td>
+                              <td className="mono">{fmtMoney(c.grossSales)}</td>
+                              <td className="mono" style={{ color: '#991B1B' }}>{c.discounts > 0 ? `-${fmtMoney(c.discounts)}` : '—'}</td>
+                              <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(c.netSales)}</td>
+                              <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(c.cogs)}</td>
+                              <td className="mono" style={{ color: c.grossProfit >= 0 ? '#166534' : '#DC2626', fontWeight: 700 }}>{fmtMoney(c.grossProfit)}</td>
+                              <td style={{ fontWeight: 800 }}>{c.grossMarginPct}%</td>
+                              <td className="mono" style={{ color: c.currentBalance > 0 ? '#B45309' : '#166534', fontWeight: 700 }}>{fmtMoney(c.currentBalance)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  </div>
+                  ) : (
+                    /* Mobile Cards View */
+                    <div className="show-mobile-block">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {customerReport.map(c => (
+                          <MobileCard
+                            key={c.clientId}
+                            title={
+                              <div>
+                                <strong style={{ fontSize: 14, color: '#1E293B' }}>{c.clientName}</strong>
+                                <div style={{ fontSize: 11, color: '#64748B' }}>Code: {c.clientCode} · {c.type}</div>
+                              </div>
+                            }
+                            headerBadge={
+                              <MobileCardBadge variant={c.grossMarginPct >= 15 ? 'green' : 'red'}>
+                                {c.grossMarginPct}% Margin
+                              </MobileCardBadge>
+                            }
+                          >
+                            <MobileCardRow label="Invoices Count" value={`${c.invoiceCount} Invoices`} isMono />
+                            <MobileCardRow label="Gross Sales" value={fmtMoney(c.grossSales)} isMono />
+                            {c.discounts > 0 && <MobileCardRow label="Discounts" value={`-${fmtMoney(c.discounts)}`} valueColor="#991B1B" isMono />}
+                            <MobileCardRow label="Net Sales" value={fmtMoney(c.netSales)} isMono style={{ fontWeight: 700 }} />
+                            <MobileCardRow label="COGS" value={fmtMoney(c.cogs)} valueColor="#991B1B" isMono />
+                            <MobileCardRow label="Gross Profit" value={fmtMoney(c.grossProfit)} valueColor={c.grossProfit >= 0 ? '#166534' : '#DC2626'} isMono style={{ fontWeight: 800 }} />
+                            <MobileCardRow label="Current Dues" value={fmtMoney(c.currentBalance)} valueColor={c.currentBalance > 0 ? '#B45309' : '#166534'} isMono style={{ fontWeight: 700 }} />
+                          </MobileCard>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -683,68 +689,70 @@ export default function ReportsPage() {
                 <div className="va-panel">
                   <div className="va-panel-head"><h3>Product Line Profitability &amp; Cost Analysis</h3></div>
                   
-                  {/* Desktop Table View */}
-                  <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                    <table className="va-table">
-                      <thead>
-                        <tr>
-                          <th>Product Name</th>
-                          <th>Category</th>
-                          <th>Qty Sold</th>
-                          <th>Avg Sell Rate</th>
-                          <th>Avg Cost Rate</th>
-                          <th>Gross Revenue</th>
-                          <th>Total COGS</th>
-                          <th>Gross Profit</th>
-                          <th>Margin %</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {productReport.map(p => (
-                          <tr key={p.productId}>
-                            <td><strong>{p.name}</strong></td>
-                            <td><span style={{ fontSize: 11, fontWeight: 700, background: '#F8FAFC', padding: '2px 6px', borderRadius: 4 }}>{p.category}</span></td>
-                            <td className="mono">{p.totalQty} {p.unit}</td>
-                            <td className="mono">Rs {p.avgSellRate}</td>
-                            <td className="mono" style={{ color: '#991B1B' }}>Rs {p.avgUnitCost}</td>
-                            <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(p.grossRevenue)}</td>
-                            <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(p.totalCogs)}</td>
-                            <td className="mono" style={{ color: p.grossProfit >= 0 ? '#166534' : '#DC2626', fontWeight: 700 }}>{fmtMoney(p.grossProfit)}</td>
-                            <td style={{ fontWeight: 800 }}>{p.marginPct}%</td>
+                  {!isMobile ? (
+                    /* Desktop Table View */
+                    <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                      <table className="va-table">
+                        <thead>
+                          <tr>
+                            <th>Product Name</th>
+                            <th>Category</th>
+                            <th>Qty Sold</th>
+                            <th>Avg Sell Rate</th>
+                            <th>Avg Cost Rate</th>
+                            <th>Gross Revenue</th>
+                            <th>Total COGS</th>
+                            <th>Gross Profit</th>
+                            <th>Margin %</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Mobile Cards View */}
-                  <div className="show-mobile-block">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {productReport.map(p => (
-                        <MobileCard
-                          key={p.productId}
-                          title={
-                            <div>
-                              <strong style={{ fontSize: 14, color: '#1E293B' }}>{p.name}</strong>
-                              <div style={{ fontSize: 11, color: '#64748B' }}>Category: {p.category}</div>
-                            </div>
-                          }
-                          headerBadge={
-                            <MobileCardBadge variant={p.marginPct >= 15 ? 'green' : 'yellow'}>
-                              {p.marginPct}% Margin
-                            </MobileCardBadge>
-                          }
-                        >
-                          <MobileCardRow label="Qty Sold" value={`${p.totalQty} ${p.unit}`} isMono />
-                          <MobileCardRow label="Avg Sell Rate" value={`Rs ${p.avgSellRate}`} isMono />
-                          <MobileCardRow label="Avg Unit Cost" value={`Rs ${p.avgUnitCost}`} valueColor="#991B1B" isMono />
-                          <MobileCardRow label="Gross Revenue" value={fmtMoney(p.grossRevenue)} isMono style={{ fontWeight: 700 }} />
-                          <MobileCardRow label="Total COGS" value={fmtMoney(p.totalCogs)} valueColor="#991B1B" isMono />
-                          <MobileCardRow label="Gross Profit" value={fmtMoney(p.grossProfit)} valueColor={p.grossProfit >= 0 ? '#166534' : '#DC2626'} isMono style={{ fontWeight: 800 }} />
-                        </MobileCard>
-                      ))}
+                        </thead>
+                        <tbody>
+                          {productReport.map(p => (
+                            <tr key={p.productId}>
+                              <td><strong>{p.name}</strong></td>
+                              <td><span style={{ fontSize: 11, fontWeight: 700, background: '#F8FAFC', padding: '2px 6px', borderRadius: 4 }}>{p.category}</span></td>
+                              <td className="mono">{p.totalQty} {p.unit}</td>
+                              <td className="mono">Rs {p.avgSellRate}</td>
+                              <td className="mono" style={{ color: '#991B1B' }}>Rs {p.avgUnitCost}</td>
+                              <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(p.grossRevenue)}</td>
+                              <td className="mono" style={{ color: '#991B1B' }}>{fmtMoney(p.totalCogs)}</td>
+                              <td className="mono" style={{ color: p.grossProfit >= 0 ? '#166534' : '#DC2626', fontWeight: 700 }}>{fmtMoney(p.grossProfit)}</td>
+                              <td style={{ fontWeight: 800 }}>{p.marginPct}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  </div>
+                  ) : (
+                    /* Mobile Cards View */
+                    <div className="show-mobile-block">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {productReport.map(p => (
+                          <MobileCard
+                            key={p.productId}
+                            title={
+                              <div>
+                                <strong style={{ fontSize: 14, color: '#1E293B' }}>{p.name}</strong>
+                                <div style={{ fontSize: 11, color: '#64748B' }}>Category: {p.category}</div>
+                              </div>
+                            }
+                            headerBadge={
+                              <MobileCardBadge variant={p.marginPct >= 15 ? 'green' : 'yellow'}>
+                                {p.marginPct}% Margin
+                              </MobileCardBadge>
+                            }
+                          >
+                            <MobileCardRow label="Qty Sold" value={`${p.totalQty} ${p.unit}`} isMono />
+                            <MobileCardRow label="Avg Sell Rate" value={`Rs ${p.avgSellRate}`} isMono />
+                            <MobileCardRow label="Avg Unit Cost" value={`Rs ${p.avgUnitCost}`} valueColor="#991B1B" isMono />
+                            <MobileCardRow label="Gross Revenue" value={fmtMoney(p.grossRevenue)} isMono style={{ fontWeight: 700 }} />
+                            <MobileCardRow label="Total COGS" value={fmtMoney(p.totalCogs)} valueColor="#991B1B" isMono />
+                            <MobileCardRow label="Gross Profit" value={fmtMoney(p.grossProfit)} valueColor={p.grossProfit >= 0 ? '#166534' : '#DC2626'} isMono style={{ fontWeight: 800 }} />
+                          </MobileCard>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -756,61 +764,63 @@ export default function ReportsPage() {
             <div className="va-panel">
               <div className="va-panel-head"><h3>Mandi Purchase Cost &amp; Rate History Log</h3></div>
               
-              {/* Desktop Table View */}
-              <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                <table className="va-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Product</th>
-                      <th>Category</th>
-                      <th>Supplier / Source</th>
-                      <th>Buy Rate (Rs/Unit)</th>
-                      <th>Purchase Qty</th>
-                      <th>Total Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {costAnalysis.map(h => (
-                      <tr key={h.id}>
-                        <td>{fmtDate(h.date)}</td>
-                        <td><strong>{h.productName}</strong></td>
-                        <td>{h.category}</td>
-                        <td>{h.supplierName}</td>
-                        <td className="mono" style={{ fontWeight: 700, color: '#0369A1' }}>Rs {h.buyPrice}</td>
-                        <td className="mono">{h.qty}</td>
-                        <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(h.totalSpent)}</td>
+              {!isMobile ? (
+                /* Desktop Table View */
+                <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                  <table className="va-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Supplier / Source</th>
+                        <th>Buy Rate (Rs/Unit)</th>
+                        <th>Purchase Qty</th>
+                        <th>Total Value</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile Cards View */}
-              <div className="show-mobile-block">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {costAnalysis.map(h => (
-                    <MobileCard
-                      key={h.id}
-                      title={
-                        <div>
-                          <strong style={{ fontSize: 14, color: '#1E293B' }}>{h.productName}</strong>
-                          <div style={{ fontSize: 11, color: '#64748B' }}>{fmtDate(h.date)} · {h.supplierName}</div>
-                        </div>
-                      }
-                      headerBadge={
-                        <MobileCardBadge variant="blue">
-                          Rs {h.buyPrice} / unit
-                        </MobileCardBadge>
-                      }
-                    >
-                      <MobileCardRow label="Category" value={h.category} />
-                      <MobileCardRow label="Purchase Qty" value={`${h.qty}`} isMono />
-                      <MobileCardRow label="Total Spent" value={fmtMoney(h.totalSpent)} isMono style={{ fontWeight: 800 }} />
-                    </MobileCard>
-                  ))}
+                    </thead>
+                    <tbody>
+                      {costAnalysis.map(h => (
+                        <tr key={h.id}>
+                          <td>{fmtDate(h.date)}</td>
+                          <td><strong>{h.productName}</strong></td>
+                          <td>{h.category}</td>
+                          <td>{h.supplierName}</td>
+                          <td className="mono" style={{ fontWeight: 700, color: '#0369A1' }}>Rs {h.buyPrice}</td>
+                          <td className="mono">{h.qty}</td>
+                          <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(h.totalSpent)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
+              ) : (
+                /* Mobile Cards View */
+                <div className="show-mobile-block">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {costAnalysis.map(h => (
+                      <MobileCard
+                        key={h.id}
+                        title={
+                          <div>
+                            <strong style={{ fontSize: 14, color: '#1E293B' }}>{h.productName}</strong>
+                            <div style={{ fontSize: 11, color: '#64748B' }}>{fmtDate(h.date)} · {h.supplierName}</div>
+                          </div>
+                        }
+                        headerBadge={
+                          <MobileCardBadge variant="blue">
+                            Rs {h.buyPrice} / unit
+                          </MobileCardBadge>
+                        }
+                      >
+                        <MobileCardRow label="Category" value={h.category} />
+                        <MobileCardRow label="Purchase Qty" value={`${h.qty}`} isMono />
+                        <MobileCardRow label="Total Spent" value={fmtMoney(h.totalSpent)} isMono style={{ fontWeight: 800 }} />
+                      </MobileCard>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -826,62 +836,64 @@ export default function ReportsPage() {
                 )}
               </div>
 
-              {/* Desktop Table View */}
-              <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                <table className="va-table">
-                  <thead>
-                    <tr>
-                      <th>Product Name</th>
-                      <th>Category</th>
-                      <th>Current Stock</th>
-                      <th>Average Cost</th>
-                      <th>Latest Buy Rate</th>
-                      <th>Avg Cost Valuation</th>
-                      <th>Latest Buy Valuation</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(valuationReport?.rows || []).map((item: any) => (
-                      <tr key={item.id}>
-                        <td><strong>{item.productName}</strong></td>
-                        <td>{item.category}</td>
-                        <td className="mono" style={{ fontWeight: 700 }}>{item.qty} {item.unit}</td>
-                        <td className="mono">Rs {item.avgCost.toFixed(2)}</td>
-                        <td className="mono">Rs {item.currentBuyPrice.toFixed(2)}</td>
-                        <td className="mono" style={{ fontWeight: 700, color: '#16A34A' }}>{fmtMoney(item.avgCostValuation)}</td>
-                        <td className="mono" style={{ fontWeight: 700, color: '#0369A1' }}>{fmtMoney(item.latestBuyValuation)}</td>
+              {!isMobile ? (
+                /* Desktop Table View */
+                <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                  <table className="va-table">
+                    <thead>
+                      <tr>
+                        <th>Product Name</th>
+                        <th>Category</th>
+                        <th>Current Stock</th>
+                        <th>Average Cost</th>
+                        <th>Latest Buy Rate</th>
+                        <th>Avg Cost Valuation</th>
+                        <th>Latest Buy Valuation</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile Cards View */}
-              <div className="show-mobile-block">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {(valuationReport?.rows || []).map((item: any) => (
-                    <MobileCard
-                      key={item.id}
-                      title={
-                        <div>
-                          <strong style={{ fontSize: 14, color: '#1E293B' }}>{item.productName}</strong>
-                          <div style={{ fontSize: 11, color: '#64748B' }}>Category: {item.category}</div>
-                        </div>
-                      }
-                      headerBadge={
-                        <MobileCardBadge variant="green">
-                          Stock: {item.qty} {item.unit}
-                        </MobileCardBadge>
-                      }
-                    >
-                      <MobileCardRow label="Average Cost" value={`Rs ${item.avgCost.toFixed(2)}`} isMono />
-                      <MobileCardRow label="Latest Buy Rate" value={`Rs ${item.currentBuyPrice.toFixed(2)}`} isMono />
-                      <MobileCardRow label="Avg Cost Valuation" value={fmtMoney(item.avgCostValuation)} valueColor="#16A34A" isMono style={{ fontWeight: 800 }} />
-                      <MobileCardRow label="Latest Buy Valuation" value={fmtMoney(item.latestBuyValuation)} valueColor="#0369A1" isMono style={{ fontWeight: 700 }} />
-                    </MobileCard>
-                  ))}
+                    </thead>
+                    <tbody>
+                      {(valuationReport?.rows || []).map((item: any) => (
+                        <tr key={item.id}>
+                          <td><strong>{item.productName}</strong></td>
+                          <td>{item.category}</td>
+                          <td className="mono" style={{ fontWeight: 700 }}>{item.qty} {item.unit}</td>
+                          <td className="mono">Rs {item.avgCost.toFixed(2)}</td>
+                          <td className="mono">Rs {item.currentBuyPrice.toFixed(2)}</td>
+                          <td className="mono" style={{ fontWeight: 700, color: '#16A34A' }}>{fmtMoney(item.avgCostValuation)}</td>
+                          <td className="mono" style={{ fontWeight: 700, color: '#0369A1' }}>{fmtMoney(item.latestBuyValuation)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
+              ) : (
+                /* Mobile Cards View */
+                <div className="show-mobile-block">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {(valuationReport?.rows || []).map((item: any) => (
+                      <MobileCard
+                        key={item.id}
+                        title={
+                          <div>
+                            <strong style={{ fontSize: 14, color: '#1E293B' }}>{item.productName}</strong>
+                            <div style={{ fontSize: 11, color: '#64748B' }}>Category: {item.category}</div>
+                          </div>
+                        }
+                        headerBadge={
+                          <MobileCardBadge variant="green">
+                            Stock: {item.qty} {item.unit}
+                          </MobileCardBadge>
+                        }
+                      >
+                        <MobileCardRow label="Average Cost" value={`Rs ${item.avgCost.toFixed(2)}`} isMono />
+                        <MobileCardRow label="Latest Buy Rate" value={`Rs ${item.currentBuyPrice.toFixed(2)}`} isMono />
+                        <MobileCardRow label="Avg Cost Valuation" value={fmtMoney(item.avgCostValuation)} valueColor="#16A34A" isMono style={{ fontWeight: 800 }} />
+                        <MobileCardRow label="Latest Buy Valuation" value={fmtMoney(item.latestBuyValuation)} valueColor="#0369A1" isMono style={{ fontWeight: 700 }} />
+                      </MobileCard>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

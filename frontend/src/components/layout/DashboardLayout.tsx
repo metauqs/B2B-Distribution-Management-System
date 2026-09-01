@@ -33,10 +33,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     });
   }, [dispatch, router]);
 
-  // Periodic background heartbeat & tab focus revalidation
+  // Periodic background heartbeat & tab focus revalidation (throttled to 60s)
   useEffect(() => {
     let lastChecked = 0;
-    const CHECK_THROTTLE_MS = 15000;
+    const CHECK_THROTTLE_MS = 60000;
 
     const handleResume = async () => {
       const now = Date.now();

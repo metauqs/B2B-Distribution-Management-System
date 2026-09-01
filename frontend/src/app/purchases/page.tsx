@@ -11,6 +11,7 @@ import { loadBrandConfig, loadBrandConfigWithLogo, generatePurchaseHTML, openPri
 import { MobileCard, MobileCardRow, MobileCardBox } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface PurchaseItem { id?: string; itemName: string; qty: number | string; unit: string; rate: number | string; amount: number; productId?: string; }
 interface Purchase {
@@ -37,6 +38,7 @@ function Badge({ status, small, isMandi }: { status: string; small?: boolean; is
 }
 
 export default function PurchasesPage() {
+  const isMobile = useIsMobile();
   const [pState, setPState] = usePreservedState('purchases', {
     view: 'list' as 'list' | 'create',
     formOpen: false,
@@ -1024,96 +1026,98 @@ export default function PurchasesPage() {
           <div className="va-empty"><div className="big">No purchases found</div></div>
         ) : (
           <>
-            {/* Desktop Table View */}
-            <div className="hide-mobile">
-              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table className="va-table" style={{ minWidth: 700 }}>
-                <thead>
-                  <tr>
-                    <th>Source/Supplier</th>
-                    <th>Date</th>
-                    <th>Items</th>
-                    <th className="mono" style={{ textAlign: 'right' }}>Subtotal</th>
-                    <th className="mono" style={{ textAlign: 'right' }}>Transport</th>
-                    <th className="mono" style={{ textAlign: 'right' }}>Total</th>
-                    <th className="mono" style={{ textAlign: 'right' }}>Paid</th>
-                    <th className="mono" style={{ textAlign: 'right' }}>Balance</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPurchases.map(p => (
-                    <tr key={p.id}>
-                      <td style={{ fontWeight: 600 }}>{p.supplier?.name}</td>
-                      <td style={{ color: 'var(--muted)' }}>{fmtDate(p.date)}</td>
-                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>{p.items?.map(i => `${i.itemName} ${i.qty}${i.unit}`).join(', ')}</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(p.subtotal)}</td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{p.transportCost > 0 ? fmtMoney(p.transportCost) : '—'}</td>
-                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(p.total)}</td>
-                      <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{fmtMoney(p.paid)}</td>
-                      <td className="mono" style={{ textAlign: 'right', color: p.balance > 0 ? 'var(--clay)' : undefined }}>{fmtMoney(p.balance)}</td>
-                      <td><Badge status={p.status} isMandi={p.supplier?.name === 'Mandi'} /></td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="va-btn secondary small" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => handleEditClick(p)}>Edit</button>
-                          <button className="va-btn secondary small" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => handlePrintClick(p)}>Print</button>
-                        </div>
-                      </td>
+            {!isMobile ? (
+              /* Desktop Table View */
+              <div className="hide-mobile">
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <table className="va-table" style={{ minWidth: 700 }}>
+                  <thead>
+                    <tr>
+                      <th>Source/Supplier</th>
+                      <th>Date</th>
+                      <th>Items</th>
+                      <th className="mono" style={{ textAlign: 'right' }}>Subtotal</th>
+                      <th className="mono" style={{ textAlign: 'right' }}>Transport</th>
+                      <th className="mono" style={{ textAlign: 'right' }}>Total</th>
+                      <th className="mono" style={{ textAlign: 'right' }}>Paid</th>
+                      <th className="mono" style={{ textAlign: 'right' }}>Balance</th>
+                      <th>Status</th>
+                      <th>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={3} style={{ fontWeight: 700 }}>Totals</td>
-                    <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.subtotal, 0))}</td>
-                    <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.transportCost, 0))}</td>
-                    <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--forest)' }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.total, 0))}</td>
-                    <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)', fontWeight: 700 }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.paid, 0))}</td>
-                    <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)', fontWeight: 700 }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.balance, 0))}</td>
-                    <td colSpan={2}></td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredPurchases.map(p => (
+                      <tr key={p.id}>
+                        <td style={{ fontWeight: 600 }}>{p.supplier?.name}</td>
+                        <td style={{ color: 'var(--muted)' }}>{fmtDate(p.date)}</td>
+                        <td style={{ color: 'var(--muted)', fontSize: 12 }}>{p.items?.map(i => `${i.itemName} ${i.qty}${i.unit}`).join(', ')}</td>
+                        <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(p.subtotal)}</td>
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{p.transportCost > 0 ? fmtMoney(p.transportCost) : '—'}</td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(p.total)}</td>
+                        <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{fmtMoney(p.paid)}</td>
+                        <td className="mono" style={{ textAlign: 'right', color: p.balance > 0 ? 'var(--clay)' : undefined }}>{fmtMoney(p.balance)}</td>
+                        <td><Badge status={p.status} isMandi={p.supplier?.name === 'Mandi'} /></td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="va-btn secondary small" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => handleEditClick(p)}>Edit</button>
+                            <button className="va-btn secondary small" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => handlePrintClick(p)}>Print</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3} style={{ fontWeight: 700 }}>Totals</td>
+                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.subtotal, 0))}</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.transportCost, 0))}</td>
+                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--forest)' }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.total, 0))}</td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)', fontWeight: 700 }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.paid, 0))}</td>
+                      <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)', fontWeight: 700 }}>{fmtMoney(filteredPurchases.reduce((s, p) => s + p.balance, 0))}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* Mobile Card List View */
+              <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%' }}>
+                {filteredPurchases.map(p => (
+                  <MobileCard
+                    key={p.id}
+                    title={p.supplier?.name ?? 'Supplier'}
+                    headerBadge={fmtDate(p.date)}
+                    footer={
+                      <div style={{ display: 'flex', gap: 8, width: '100%', flexWrap: 'wrap' }}>
+                        <button className="va-btn secondary small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => handleEditClick(p)}>✏️ Edit</button>
+                        <button className="va-btn small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => handlePrintClick(p)}>🖨️ Print</button>
+                      </div>
+                    }
+                  >
+                    <MobileCardRow label="Total Amount" value={fmtMoney(p.total)} isMono />
+                    {p.transportCost > 0 && (
+                      <MobileCardRow label="Transport Cost" value={fmtMoney(p.transportCost)} isMono />
+                    )}
+                    <MobileCardRow label="Balance Due" value={fmtMoney(p.balance)} valueColor={p.balance > 0 ? '#991B1B' : '#166534'} isMono />
+                    <MobileCardRow label="Status">
+                      <Badge status={p.status} small isMandi={p.supplier?.name === 'Mandi'} />
+                    </MobileCardRow>
 
-            {/* Mobile Card List View */}
-            <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
-              {filteredPurchases.map(p => (
-                <MobileCard
-                  key={p.id}
-                  title={p.supplier?.name ?? 'Supplier'}
-                  headerBadge={fmtDate(p.date)}
-                  footer={
-                    <div style={{ display: 'flex', gap: 8, width: '100%', flexWrap: 'wrap' }}>
-                      <button className="va-btn secondary small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => handleEditClick(p)}>✏️ Edit</button>
-                      <button className="va-btn small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => handlePrintClick(p)}>🖨️ Print</button>
-                    </div>
-                  }
-                >
-                  <MobileCardRow label="Total Amount" value={fmtMoney(p.total)} isMono />
-                  {p.transportCost > 0 && (
-                    <MobileCardRow label="Transport Cost" value={fmtMoney(p.transportCost)} isMono />
-                  )}
-                  <MobileCardRow label="Balance Due" value={fmtMoney(p.balance)} valueColor={p.balance > 0 ? '#991B1B' : '#166534'} isMono />
-                  <MobileCardRow label="Status">
-                    <Badge status={p.status} small isMandi={p.supplier?.name === 'Mandi'} />
-                  </MobileCardRow>
-
-                  {p.items && p.items.length > 0 && (
-                    <MobileCardBox title={`Purchase Items (${p.items.length})`}>
-                      {p.items.map(item => (
-                        <div key={item.id || item.itemName} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#15803D', fontWeight: 600, margin: '3px 0' }}>
-                          <span>• {item.itemName}</span>
-                          <span style={{ color: '#166534', fontWeight: 700 }}>{item.qty} {item.unit} @ Rs {item.rate}</span>
-                        </div>
-                      ))}
-                    </MobileCardBox>
-                  )}
-                </MobileCard>
-              ))}
-            </div>
+                    {p.items && p.items.length > 0 && (
+                      <MobileCardBox title={`Purchase Items (${p.items.length})`}>
+                        {p.items.map(item => (
+                          <div key={item.id || item.itemName} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#15803D', fontWeight: 600, margin: '3px 0' }}>
+                            <span>• {item.itemName}</span>
+                            <span style={{ color: '#166534', fontWeight: 700 }}>{item.qty} {item.unit} @ Rs {item.rate}</span>
+                          </div>
+                        ))}
+                      </MobileCardBox>
+                    )}
+                  </MobileCard>
+                ))}
+              </div>
+            )}
 
             <div style={{
               marginTop: '10px',

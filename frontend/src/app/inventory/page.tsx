@@ -10,6 +10,7 @@ import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/Mobi
 import { useAppSelector } from '@/store';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import Icon from '@mdi/react';
 import { mdiArchive, mdiHistory, mdiTune, mdiDeleteOutline, mdiTagOutline } from '@mdi/js';
 
@@ -138,6 +139,7 @@ function fmtQty(qty: number, unit = 'KG') {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
+  const isMobile = useIsMobile();
   const user = useAppSelector((state: any) => state.auth.user);
   const isAdmin = user?.role === 'OWNER' || user?.role === 'MANAGER';
 
@@ -854,119 +856,120 @@ export default function InventoryPage() {
               </div>
             ) : (
               <>
-                {/* Desktop View Table */}
-                <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table className="va-table" style={{ minWidth: 850 }}>
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Product Name</th>
-                        <th>Urdu Name</th>
-                        <th>Unit</th>
-                        <th style={{ textAlign: 'right' }}>Total Stock</th>
-                        <th style={{ textAlign: 'right', color: 'var(--primary)' }}>Available Qty</th>
-                        <th style={{ textAlign: 'right', color: 'var(--forest)', fontWeight: 700 }}>Average Buy Cost</th>
-                        <th style={{ textAlign: 'right' }}>Latest Purchase Price</th>
-                        <th style={{ textAlign: 'right', fontWeight: 700 }}>Inventory Value</th>
-                        <th style={{ textAlign: 'center' }}>Status</th>
-                        <th style={{ textAlign: 'center' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((i, idx) => {
-                        const sc = i.stockStatus === 'OUT_OF_STOCK'
-                          ? { bg: '#FFF5F5', badge: 'var(--danger)', label: 'Out of Stock' }
-                          : i.stockStatus === 'LOW'
-                          ? { bg: '#FFFBF0', badge: '#B87333', label: 'Low Stock' }
-                          : { bg: undefined, badge: 'var(--ok)', label: 'Available' };
+                {!isMobile ? (
+                  /* Desktop View Table */
+                  <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <table className="va-table" style={{ minWidth: 850 }}>
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Product Name</th>
+                          <th>Urdu Name</th>
+                          <th>Unit</th>
+                          <th style={{ textAlign: 'right' }}>Total Stock</th>
+                          <th style={{ textAlign: 'right', color: 'var(--primary)' }}>Available Qty</th>
+                          <th style={{ textAlign: 'right', color: 'var(--forest)', fontWeight: 700 }}>Average Buy Cost</th>
+                          <th style={{ textAlign: 'right' }}>Latest Purchase Price</th>
+                          <th style={{ textAlign: 'right', fontWeight: 700 }}>Inventory Value</th>
+                          <th style={{ textAlign: 'center' }}>Status</th>
+                          <th style={{ textAlign: 'center' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map((i, idx) => {
+                          const sc = i.stockStatus === 'OUT_OF_STOCK'
+                            ? { bg: '#FFF5F5', badge: 'var(--danger)', label: 'Out of Stock' }
+                            : i.stockStatus === 'LOW'
+                            ? { bg: '#FFFBF0', badge: '#B87333', label: 'Low Stock' }
+                            : { bg: undefined, badge: 'var(--ok)', label: 'Available' };
 
-                        const latestRate = i.currentBuyPrice > 0 ? i.currentBuyPrice : (i.latestPurchasePrice ?? i.avgCost);
-                        const avgCostVal = i.avgCost > 0 ? i.avgCost : latestRate;
-                        const priceDiff = latestRate - (i.previousBuyPrice > 0 ? i.previousBuyPrice : avgCostVal);
+                          const latestRate = i.currentBuyPrice > 0 ? i.currentBuyPrice : (i.latestPurchasePrice ?? i.avgCost);
+                          const avgCostVal = i.avgCost > 0 ? i.avgCost : latestRate;
+                          const priceDiff = latestRate - (i.previousBuyPrice > 0 ? i.previousBuyPrice : avgCostVal);
 
-                        return (
-                          <tr key={i.id} style={{ background: sc.bg }}>
-                            <td className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>{idx + 1}</td>
-                            <td style={{ fontWeight: 700 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <ProductVisual
-                                  name={i.product?.name ?? ''}
-                                  emoji={(i.product as any)?.emoji}
-                                  imageUrl={(i.product as any)?.imageUrl}
-                                  size={24}
-                                />
-                                <div>
-                                  <div>{i.product?.name}</div>
-                                  {i.lastPurchaseDate && (
-                                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
-                                      Last buy: {new Date(i.lastPurchaseDate).toLocaleDateString('en-GB')} ({i.lastPurchaseQty ?? 0} {i.product?.defaultUnit})
-                                    </div>
+                          return (
+                            <tr key={i.id} style={{ background: sc.bg }}>
+                              <td className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>{idx + 1}</td>
+                              <td style={{ fontWeight: 700 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <ProductVisual
+                                    name={i.product?.name ?? ''}
+                                    emoji={(i.product as any)?.emoji}
+                                    imageUrl={(i.product as any)?.imageUrl}
+                                    size={24}
+                                  />
+                                  <div>
+                                    <div>{i.product?.name}</div>
+                                    {i.lastPurchaseDate && (
+                                      <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
+                                        Last buy: {new Date(i.lastPurchaseDate).toLocaleDateString('en-GB')} ({i.lastPurchaseQty ?? 0} {i.product?.defaultUnit})
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td style={{ fontSize: 14, color: 'var(--muted)', fontFamily: 'serif' }}>{i.product?.urduName ?? '—'}</td>
+                              <td style={{ color: 'var(--muted)', fontSize: 12 }}>{i.product?.defaultUnit ?? 'KG'}</td>
+                              <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: i.qty <= 0 ? 'var(--danger)' : undefined }}>
+                                {i.qty.toFixed(2)}
+                              </td>
+                              <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--primary)' }}>
+                                {i.availableQty.toFixed(2)}
+                              </td>
+                              <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
+                                Rs {avgCostVal.toFixed(2)}
+                              </td>
+                              <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                                {latestRate > 0 ? `Rs ${latestRate.toFixed(2)}` : '—'}
+                                {i.previousBuyPrice > 0 && priceDiff !== 0 && (
+                                  <span style={{ fontSize: 10, marginLeft: 4, color: priceDiff > 0 ? 'var(--danger)' : 'var(--ok)' }}>
+                                    ({priceDiff > 0 ? `+${priceDiff.toFixed(1)}` : priceDiff.toFixed(1)})
+                                  </span>
+                                )}
+                              </td>
+                              <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--forest)' }}>{fmtMoney(i.totalValue)}</td>
+                              <td style={{ textAlign: 'center' }}>
+                                <span style={{
+                                  display: 'inline-block', fontSize: 11, fontWeight: 700,
+                                  padding: '3px 9px', borderRadius: 10,
+                                  background: sc.badge + '22', color: sc.badge,
+                                  border: `1px solid ${sc.badge}44`,
+                                }}>{sc.label}</span>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <div style={{ display: 'inline-flex', gap: 4 }}>
+                                  <button className="va-btn secondary small" onClick={() => openAdjustForProduct(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700 }}>
+                                    ⚙ Adjust
+                                  </button>
+                                  {isAdmin && (
+                                    <button className="va-btn secondary small" onClick={() => openPriceAdjustModal(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700, color: 'var(--forest)' }} title="Adjust Buy Price">
+                                      🏷️ Rate
+                                    </button>
                                   )}
                                 </div>
-                              </div>
-                            </td>
-                            <td style={{ fontSize: 14, color: 'var(--muted)', fontFamily: 'serif' }}>{i.product?.urduName ?? '—'}</td>
-                            <td style={{ color: 'var(--muted)', fontSize: 12 }}>{i.product?.defaultUnit ?? 'KG'}</td>
-                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: i.qty <= 0 ? 'var(--danger)' : undefined }}>
-                              {i.qty.toFixed(2)}
-                            </td>
-                            <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--primary)' }}>
-                              {i.availableQty.toFixed(2)}
-                            </td>
-                            <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--forest)' }}>
-                              Rs {avgCostVal.toFixed(2)}
-                            </td>
-                            <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
-                              {latestRate > 0 ? `Rs ${latestRate.toFixed(2)}` : '—'}
-                              {i.previousBuyPrice > 0 && priceDiff !== 0 && (
-                                <span style={{ fontSize: 10, marginLeft: 4, color: priceDiff > 0 ? 'var(--danger)' : 'var(--ok)' }}>
-                                  ({priceDiff > 0 ? `+${priceDiff.toFixed(1)}` : priceDiff.toFixed(1)})
-                                </span>
-                              )}
-                            </td>
-                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--forest)' }}>{fmtMoney(i.totalValue)}</td>
-                            <td style={{ textAlign: 'center' }}>
-                              <span style={{
-                                display: 'inline-block', fontSize: 11, fontWeight: 700,
-                                padding: '3px 9px', borderRadius: 10,
-                                background: sc.badge + '22', color: sc.badge,
-                                border: `1px solid ${sc.badge}44`,
-                              }}>{sc.label}</span>
-                            </td>
-                            <td style={{ textAlign: 'center' }}>
-                              <div style={{ display: 'inline-flex', gap: 4 }}>
-                                <button className="va-btn secondary small" onClick={() => openAdjustForProduct(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700 }}>
-                                  ⚙ Adjust
-                                </button>
-                                {isAdmin && (
-                                  <button className="va-btn secondary small" onClick={() => openPriceAdjustModal(i)} style={{ fontSize: 11, padding: '3px 8px', fontWeight: 700, color: 'var(--forest)' }} title="Adjust Buy Price">
-                                    🏷️ Rate
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr style={{ background: '#1F3D2B', color: '#fff', fontWeight: 700 }}>
-                        <td colSpan={5} style={{ color: '#fff', fontWeight: 700 }}>Total Inventory Value ({filtered.length} products)</td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#90CAF9', fontWeight: 800 }}>
-                          {filtered.reduce((s, i) => s + i.availableQty, 0).toFixed(1)}
-                        </td>
-                        <td colSpan={2}></td>
-                        <td className="mono" style={{ textAlign: 'right', color: '#6FD89A', fontWeight: 800, fontSize: 15 }}>
-                          {fmtMoney(filtered.reduce((s, i) => s + i.totalValue, 0))}
-                        </td>
-                        <td colSpan={2}></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-
-                {/* Mobile View Cards */}
-                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%', marginTop: '14px' }}>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ background: '#1F3D2B', color: '#fff', fontWeight: 700 }}>
+                          <td colSpan={5} style={{ color: '#fff', fontWeight: 700 }}>Total Inventory Value ({filtered.length} products)</td>
+                          <td className="mono" style={{ textAlign: 'right', color: '#90CAF9', fontWeight: 800 }}>
+                            {filtered.reduce((s, i) => s + i.availableQty, 0).toFixed(1)}
+                          </td>
+                          <td colSpan={2}></td>
+                          <td className="mono" style={{ textAlign: 'right', color: '#6FD89A', fontWeight: 800, fontSize: 15 }}>
+                            {fmtMoney(filtered.reduce((s, i) => s + i.totalValue, 0))}
+                          </td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  /* Mobile View Cards */
+                  <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', marginTop: '14px' }}>
                   {filtered.map(i => {
                     const sc = i.stockStatus === 'OUT_OF_STOCK'
                       ? { badge: 'red' as const, label: 'Out of Stock' }
@@ -1012,7 +1015,8 @@ export default function InventoryPage() {
                     );
                   })}
                 </div>
-              </>
+              )}
+            </>
             )}
           </div>
         </>
@@ -1659,81 +1663,82 @@ export default function InventoryPage() {
               </div>
             ) : (
               <>
-                {/* ── Desktop Movements Table ── */}
-                <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table className="va-table" style={{ minWidth: 800 }}>
-                    <thead>
-                      <tr>
-                        <th>Date &amp; Time</th>
-                        <th>Product</th>
-                        <th style={{ textAlign: 'center' }}>Type</th>
-                        <th style={{ textAlign: 'right' }}>Prev Stock</th>
-                        <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Stock In</th>
-                        <th style={{ textAlign: 'right', color: 'var(--danger)' }}>Stock Out</th>
-                        <th style={{ textAlign: 'right' }}>New Stock</th>
-                        <th>User</th>
-                        <th>Note</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {movements.map(m => (
-                        <tr key={m.id}>
-                          <td style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDateTime(m.date)}</td>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <ProductVisual
-                                name={m.productName}
-                                emoji={m.emoji}
-                                imageUrl={m.imageUrl}
-                                size={22}
-                              />
-                              <div>
-                                <div style={{ fontWeight: 600 }}>{m.productName}</div>
-                                {m.productUrdu && <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'serif' }}>{m.productUrdu}</div>}
-                              </div>
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', fontSize: 11, fontWeight: 700,
-                              padding: '3px 8px', borderRadius: 8,
-                              background: (typeColors[m.type] ?? '#555') + '22',
-                              color: typeColors[m.type] ?? '#555',
-                              border: `1px solid ${(typeColors[m.type] ?? '#555')}44`,
-                              whiteSpace: 'nowrap',
-                            }}>{typeLabels[m.type] ?? m.type}</span>
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
-                            {m.previousStock?.toFixed(2) ?? '—'}
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>
-                            {m.stockIn > 0 ? `+${m.stockIn.toFixed(2)} ${m.unit}` : '—'}
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
-                            {m.stockOut > 0 ? `-${m.stockOut.toFixed(2)} ${m.unit}` : '—'}
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 800 }}>
-                            {m.newStock?.toFixed(2) ?? '—'}
-                          </td>
-                          <td style={{ fontSize: 12, color: 'var(--muted)' }}>
-                            {m.userName ?? 'System'}
-                          </td>
-                          <td style={{ fontSize: 12, color: 'var(--muted)', maxWidth: 260 }}>
-                            <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                              {m.note || '—'}
-                            </span>
-                          </td>
+                {!isMobile ? (
+                  /* ── Desktop Movements Table ── */
+                  <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <table className="va-table" style={{ minWidth: 800 }}>
+                      <thead>
+                        <tr>
+                          <th>Date &amp; Time</th>
+                          <th>Product</th>
+                          <th style={{ textAlign: 'center' }}>Type</th>
+                          <th style={{ textAlign: 'right' }}>Prev Stock</th>
+                          <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Stock In</th>
+                          <th style={{ textAlign: 'right', color: 'var(--danger)' }}>Stock Out</th>
+                          <th style={{ textAlign: 'right' }}>New Stock</th>
+                          <th>User</th>
+                          <th>Note</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div style={{ padding: '10px 16px', color: 'var(--muted)', fontSize: 12 }}>
-                    Showing {movements.length} movements
+                      </thead>
+                      <tbody>
+                        {movements.map(m => (
+                          <tr key={m.id}>
+                            <td style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDateTime(m.date)}</td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <ProductVisual
+                                  name={m.productName}
+                                  emoji={m.emoji}
+                                  imageUrl={m.imageUrl}
+                                  size={22}
+                                />
+                                <div>
+                                  <div style={{ fontWeight: 600 }}>{m.productName}</div>
+                                  {m.productUrdu && <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'serif' }}>{m.productUrdu}</div>}
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{
+                                display: 'inline-block', fontSize: 11, fontWeight: 700,
+                                padding: '3px 8px', borderRadius: 8,
+                                background: (typeColors[m.type] ?? '#555') + '22',
+                                color: typeColors[m.type] ?? '#555',
+                                border: `1px solid ${(typeColors[m.type] ?? '#555')}44`,
+                                whiteSpace: 'nowrap',
+                              }}>{typeLabels[m.type] ?? m.type}</span>
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                              {m.previousStock?.toFixed(2) ?? '—'}
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>
+                              {m.stockIn > 0 ? `+${m.stockIn.toFixed(2)} ${m.unit}` : '—'}
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
+                              {m.stockOut > 0 ? `-${m.stockOut.toFixed(2)} ${m.unit}` : '—'}
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 800 }}>
+                              {m.newStock?.toFixed(2) ?? '—'}
+                            </td>
+                            <td style={{ fontSize: 12, color: 'var(--muted)' }}>
+                              {m.userName ?? 'System'}
+                            </td>
+                            <td style={{ fontSize: 12, color: 'var(--muted)', maxWidth: 260 }}>
+                              <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {m.note || '—'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div style={{ padding: '10px 16px', color: 'var(--muted)', fontSize: 12 }}>
+                      Showing {movements.length} movements
+                    </div>
                   </div>
-                </div>
-
-                {/* ── Mobile Movements Cards (Dedicated Mobile UI) ── */}
-                <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
+                ) : (
+                  /* ── Mobile Movements Cards (Dedicated Mobile UI) ── */
+                  <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
                   {movements.map(m => {
                     const isPositive = m.stockIn > 0;
                     const isNegative = m.stockOut > 0;
@@ -1814,7 +1819,8 @@ export default function InventoryPage() {
                     );
                   })}
                 </div>
-              </>
+              )}
+            </>
             )}
           </div>
         </>

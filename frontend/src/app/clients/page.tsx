@@ -11,6 +11,7 @@ import dynamic from 'next/dynamic';
 import { MobileCard, MobileCardRow, MobileCardBadge } from '@/components/ui/MobileCard';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import Icon from '@mdi/react';
 import {
   mdiAccountMultiple,
@@ -224,6 +225,7 @@ export default function ClientsPage() {
     setStatementMode('share');
   };
 
+  const isMobile = useIsMobile();
   const [pState, setPState] = usePreservedState('clients', {
     view: 'list' as 'list' | 'profile' | 'add' | 'edit',
     search: '',
@@ -614,111 +616,112 @@ export default function ClientsPage() {
               </div>
             ) : (
               <>
-                {/* Desktop Table View */}
-                <div className="hide-mobile">
-                  <table className="va-table">
-                    <thead>
-                      <tr>
-                        <th>Client</th>
-                        <th>Contact</th>
-                        <th>Type</th>
-                        <th>Rating</th>
-                        <th style={{ textAlign: 'right' }}>Credit Limit</th>
-                        <th style={{ textAlign: 'right' }}>Balance Due</th>
-                        <th style={{ textAlign: 'right' }}>Total Sales</th>
-                        <th>Last Order</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {clients.map(c => (
-                        <tr key={c.id} style={{ background: c.rating === 'RED' ? '#FFF5F5' : c.rating === 'YELLOW' ? '#FFFBF0' : undefined }}>
-                          <td>
-                            <div style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <Icon path={mdiCircle} size={0.55} color={RATING_COLOR[c.rating]} />
-                              <span>{c.name}</span>
-                              <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', background: '#e9ecef', padding: '1px 5px', borderRadius: 4, marginLeft: 6 }}>
-                                {c.clientId || 'WH-0000'}
-                              </span>
-                            </div>
-                            {c.ownerName && <div style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 16 }}>{c.ownerName}</div>}
-                            {c.status === 'INACTIVE' && <span className="va-badge due" style={{ fontSize: 10, marginLeft: 16 }}>Inactive</span>}
-                            {c.status === 'BLOCKED'  && <span className="va-badge" style={{ fontSize: 10, background: '#A83E3E', color: '#fff', marginLeft: 16 }}>Blocked</span>}
-                          </td>
-                          <td style={{ fontSize: 12 }}>
-                            {c.phone && <div>{c.phone}</div>}
-                            {c.whatsapp && c.whatsapp !== c.phone && <div style={{ color: 'var(--ok)' }}>WA: {c.whatsapp}</div>}
-                            {c.address && <div style={{ color: 'var(--muted)' }}>{c.address}</div>}
-                          </td>
-                          <td style={{ fontSize: 12 }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              <Icon path={TYPE_ICON[c.type] || mdiPackageVariant} size={0.65} color="var(--muted)" />
-                              <span>{c.type}</span>
-                            </div>
-                          </td>
-                          <td>
-                            <select value={c.rating} onChange={e => updateRating(c.id, e.target.value)}
-                              style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--paper)', color: RATING_COLOR[c.rating], fontWeight: 700, cursor: 'pointer' }}>
-                              {['GREEN','YELLOW','ORANGE','RED','NEW'].map(r => <option key={r} value={r}>{RATING_EMOJI[r]} {r}</option>)}
-                            </select>
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right' }}>{c.creditLimit > 0 ? fmtMoney(c.creditLimit) : '—'}</td>
-                          <td className="mono" style={{ textAlign: 'right', color: c.currentBalance >= 0.99 ? 'var(--clay)' : c.currentBalance <= -0.99 ? 'var(--ok)' : undefined, fontWeight: 700 }}>
-                            {fmtMoney(Math.abs(c.currentBalance))}
-                            {c.currentBalance <= -0.99 && <span style={{ fontSize: 10 }}> CR</span>}
-                            {c.openingBalance > 0 && (
-                              <div style={{ fontSize: 10, fontWeight: 600, marginTop: 2 }}>
-                                {c.openingBalanceRemaining && c.openingBalanceRemaining >= 0.99 ? (
-                                  <span style={{ color: '#B45309' }}>Opening: {fmtMoney(c.openingBalanceRemaining)} (UNPAID)</span>
+                {!isMobile ? (
+                  /* Desktop Table View */
+                  <div className="hide-mobile">
+                    <table className="va-table">
+                      <thead>
+                        <tr>
+                          <th>Client</th>
+                          <th>Contact</th>
+                          <th>Type</th>
+                          <th>Rating</th>
+                          <th style={{ textAlign: 'right' }}>Credit Limit</th>
+                          <th style={{ textAlign: 'right' }}>Balance Due</th>
+                          <th style={{ textAlign: 'right' }}>Total Sales</th>
+                          <th>Last Order</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clients.map(c => (
+                          <tr key={c.id} style={{ background: c.rating === 'RED' ? '#FFF5F5' : c.rating === 'YELLOW' ? '#FFFBF0' : undefined }}>
+                            <td>
+                              <div style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <Icon path={mdiCircle} size={0.55} color={RATING_COLOR[c.rating]} />
+                                <span>{c.name}</span>
+                                <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', background: '#e9ecef', padding: '1px 5px', borderRadius: 4, marginLeft: 6 }}>
+                                  {c.clientId || 'WH-0000'}
+                                </span>
+                              </div>
+                              {c.ownerName && <div style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 16 }}>{c.ownerName}</div>}
+                              {c.status === 'INACTIVE' && <span className="va-badge due" style={{ fontSize: 10, marginLeft: 16 }}>Inactive</span>}
+                              {c.status === 'BLOCKED'  && <span className="va-badge" style={{ fontSize: 10, background: '#A83E3E', color: '#fff', marginLeft: 16 }}>Blocked</span>}
+                            </td>
+                            <td style={{ fontSize: 12 }}>
+                              {c.phone && <div>{c.phone}</div>}
+                              {c.whatsapp && c.whatsapp !== c.phone && <div style={{ color: 'var(--ok)' }}>WA: {c.whatsapp}</div>}
+                              {c.address && <div style={{ color: 'var(--muted)' }}>{c.address}</div>}
+                            </td>
+                            <td style={{ fontSize: 12 }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <Icon path={TYPE_ICON[c.type] || mdiPackageVariant} size={0.65} color="var(--muted)" />
+                                <span>{c.type}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <select value={c.rating} onChange={e => updateRating(c.id, e.target.value)}
+                                style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--paper)', color: RATING_COLOR[c.rating], fontWeight: 700, cursor: 'pointer' }}>
+                                {['GREEN','YELLOW','ORANGE','RED','NEW'].map(r => <option key={r} value={r}>{RATING_EMOJI[r]} {r}</option>)}
+                              </select>
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right' }}>{c.creditLimit > 0 ? fmtMoney(c.creditLimit) : '—'}</td>
+                            <td className="mono" style={{ textAlign: 'right', color: c.currentBalance >= 0.99 ? 'var(--clay)' : c.currentBalance <= -0.99 ? 'var(--ok)' : undefined, fontWeight: 700 }}>
+                              {fmtMoney(Math.abs(c.currentBalance))}
+                              {c.currentBalance <= -0.99 && <span style={{ fontSize: 10 }}> CR</span>}
+                              {c.openingBalance > 0 && (
+                                <div style={{ fontSize: 10, fontWeight: 600, marginTop: 2 }}>
+                                  {c.openingBalanceRemaining && c.openingBalanceRemaining >= 0.99 ? (
+                                    <span style={{ color: '#B45309' }}>Opening: {fmtMoney(c.openingBalanceRemaining)} (UNPAID)</span>
+                                  ) : (
+                                    <span style={{ color: '#16A34A' }}>Opening: CLEARED</span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', fontSize: 12, color: 'var(--muted)' }}>
+                              {c.salesCount > 0 ? fmtMoney(c.totalSales) : '—'}
+                              {c.salesCount > 0 && <div style={{ fontSize: 10 }}>{c.salesCount} invoices</div>}
+                            </td>
+                            <td style={{ fontSize: 12, color: 'var(--muted)' }}>
+                              {c.lastOrderDate ? fmtDate(c.lastOrderDate) : '—'}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button className="va-btn secondary small" onClick={() => openProfile(c)}>Profile</button>
+                                {showArchived ? (
+                                  <>
+                                    <button
+                                      className="va-btn small"
+                                      disabled={restoringId === c.id}
+                                      onClick={() => handleRestore(c.id)}
+                                      style={{ background: '#166534', color: '#fff', border: 'none' }}
+                                      title="Restore client to active accounts"
+                                    >
+                                      {restoringId === c.id ? 'Restoring...' : '🔄 Restore'}
+                                    </button>
+                                    <button
+                                      className="va-btn secondary small"
+                                      onClick={() => setDeleteTarget({ id: c.id, name: c.name, clientId: c.clientId, isPermanent: true })}
+                                      style={{ color: '#DC2626', borderColor: '#FECACA' }}
+                                      title="Permanently purge client and records from database"
+                                    >
+                                      🗑 Purge
+                                    </button>
+                                  </>
                                 ) : (
-                                  <span style={{ color: '#16A34A' }}>Opening: CLEARED</span>
+                                  <button className="va-btn secondary small" onClick={() => openEdit(c)} title="Edit client details">✏️</button>
                                 )}
                               </div>
-                            )}
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', fontSize: 12, color: 'var(--muted)' }}>
-                            {c.salesCount > 0 ? fmtMoney(c.totalSales) : '—'}
-                            {c.salesCount > 0 && <div style={{ fontSize: 10 }}>{c.salesCount} invoices</div>}
-                          </td>
-                          <td style={{ fontSize: 12, color: 'var(--muted)' }}>
-                            {c.lastOrderDate ? fmtDate(c.lastOrderDate) : '—'}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 4 }}>
-                              <button className="va-btn secondary small" onClick={() => openProfile(c)}>Profile</button>
-                              {showArchived ? (
-                                <>
-                                  <button
-                                    className="va-btn small"
-                                    disabled={restoringId === c.id}
-                                    onClick={() => handleRestore(c.id)}
-                                    style={{ background: '#166534', color: '#fff', border: 'none' }}
-                                    title="Restore client to active accounts"
-                                  >
-                                    {restoringId === c.id ? 'Restoring...' : '🔄 Restore'}
-                                  </button>
-                                  <button
-                                    className="va-btn secondary small"
-                                    onClick={() => setDeleteTarget({ id: c.id, name: c.name, clientId: c.clientId, isPermanent: true })}
-                                    style={{ color: '#DC2626', borderColor: '#FECACA' }}
-                                    title="Permanently purge client and records from database"
-                                  >
-                                    🗑 Purge
-                                  </button>
-                                </>
-                              ) : (
-                                <button className="va-btn secondary small" onClick={() => openEdit(c)} title="Edit client details">✏️</button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Mobile Card List View */}
-                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  /* Mobile Card List View */
+                  <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%' }}>
                   {clients.map(c => {
                     return (
                       <MobileCard
@@ -814,6 +817,7 @@ export default function ClientsPage() {
                     );
                   })}
                 </div>
+              )}
 
                 <div style={{
                   marginTop: '16px',
@@ -1307,48 +1311,50 @@ export default function ClientsPage() {
                     <div className="va-empty"><div className="big">All Clear ✅</div><div>No outstanding invoices</div></div>
                   ) : (
                     <>
-                      {/* Desktop Table View */}
-                      <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                        <table className="va-table">
-                          <thead><tr><th>Invoice</th><th>Date</th><th style={{ textAlign: 'right' }}>Amount</th><th style={{ textAlign: 'right' }}>Paid</th><th style={{ textAlign: 'right' }}>Due</th><th>Status</th></tr></thead>
-                          <tbody>
-                            {profile.outstandingInvoices.map(s => (
-                              <tr key={s.id} style={{ background: '#FFF5F5' }}>
-                                <td className="mono" style={{ fontWeight: 700, color: 'var(--forest)' }}>{s.invoiceNo}</td>
-                                <td>{fmtDate(s.date)}</td>
-                                <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(s.total)}</td>
-                                <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{fmtMoney(s.paid)}</td>
-                                <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)', fontWeight: 700 }}>{fmtMoney(s.balance)}</td>
-                                <td><StatusBadge status={s.status} /></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Mobile Card View */}
-                      <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
-                        {profile.outstandingInvoices.map(s => {
-                          const isPaid = s.balance <= 0;
-                          const isPartial = s.paid > 0 && s.balance > 0;
-                          return (
-                            <MobileCard
-                              key={s.id}
-                              title={s.invoiceNo}
-                              headerBadge={fmtDate(s.date)}
-                            >
-                              <MobileCardRow label="Total Amount" value={fmtMoney(s.total)} isMono />
-                              <MobileCardRow label="Paid Amount" value={fmtMoney(s.paid)} valueColor="#166534" isMono />
-                              <MobileCardRow label="Balance Due" value={fmtMoney(s.balance)} valueColor="#991B1B" isMono />
-                              <MobileCardRow label="Payment Status">
-                                <MobileCardBadge variant={isPaid ? 'green' : isPartial ? 'yellow' : 'red'}>
-                                  {s.status}
-                                </MobileCardBadge>
-                              </MobileCardRow>
-                            </MobileCard>
-                          );
-                        })}
-                      </div>
+                      {!isMobile ? (
+                        /* Desktop Table View */
+                        <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                          <table className="va-table">
+                            <thead><tr><th>Invoice</th><th>Date</th><th style={{ textAlign: 'right' }}>Amount</th><th style={{ textAlign: 'right' }}>Paid</th><th style={{ textAlign: 'right' }}>Due</th><th>Status</th></tr></thead>
+                            <tbody>
+                              {profile.outstandingInvoices.map(s => (
+                                <tr key={s.id} style={{ background: '#FFF5F5' }}>
+                                  <td className="mono" style={{ fontWeight: 700, color: 'var(--forest)' }}>{s.invoiceNo}</td>
+                                  <td>{fmtDate(s.date)}</td>
+                                  <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(s.total)}</td>
+                                  <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{fmtMoney(s.paid)}</td>
+                                  <td className="mono" style={{ textAlign: 'right', color: 'var(--clay)', fontWeight: 700 }}>{fmtMoney(s.balance)}</td>
+                                  <td><StatusBadge status={s.status} /></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        /* Mobile Card View */
+                        <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+                          {profile.outstandingInvoices.map(s => {
+                            const isPaid = s.balance <= 0;
+                            const isPartial = s.paid > 0 && s.balance > 0;
+                            return (
+                              <MobileCard
+                                key={s.id}
+                                title={s.invoiceNo}
+                                headerBadge={fmtDate(s.date)}
+                              >
+                                <MobileCardRow label="Total Amount" value={fmtMoney(s.total)} isMono />
+                                <MobileCardRow label="Paid Amount" value={fmtMoney(s.paid)} valueColor="#166534" isMono />
+                                <MobileCardRow label="Balance Due" value={fmtMoney(s.balance)} valueColor="#991B1B" isMono />
+                                <MobileCardRow label="Payment Status">
+                                  <MobileCardBadge variant={isPaid ? 'green' : isPartial ? 'yellow' : 'red'}>
+                                    {s.status}
+                                  </MobileCardBadge>
+                                </MobileCardRow>
+                              </MobileCard>
+                            );
+                          })}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -1357,8 +1363,9 @@ export default function ClientsPage() {
               {/* Ledger Tab */}
               {profTab === 'ledger' && (
                 <div>
-                  {/* Desktop Table View */}
-                  <div className="hide-mobile" style={{ background: '#ffffff', borderRadius: 12, padding: '24px 20px 16px 20px', color: 'var(--ink)', border: '1px solid var(--line)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', overflowX: 'auto' }}>
+                  {!isMobile ? (
+                    /* Desktop Table View */
+                    <div className="hide-mobile" style={{ background: '#ffffff', borderRadius: 12, padding: '24px 20px 16px 20px', color: 'var(--ink)', border: '1px solid var(--line)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead style={{ borderBottom: '1px solid var(--line)' }}>
                         <tr>
@@ -1471,9 +1478,9 @@ export default function ClientsPage() {
                       </tbody>
                     </table>
                   </div>
-
-                  {/* Mobile Card List View */}
-                  <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+                ) : (
+                  /* Mobile Card List View */
+                  <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
                     {profile.ledger.map((entry, i) => {
                       const formatLedgerDate = (dateStr: string | Date, type: string) => {
                         if (type === 'opening' || !dateStr) return '—';
@@ -1507,6 +1514,7 @@ export default function ClientsPage() {
                       );
                     })}
                   </div>
+                )}
                   
                   {/* Current Balance Footer Block */}
                   <div style={{ 
@@ -1536,105 +1544,107 @@ export default function ClientsPage() {
                     <div className="va-empty"><div className="big">No invoices yet</div></div>
                   ) : (
                     <>
-                      {/* Desktop View Table */}
-                      <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                        <table className="va-table" style={{ width: '100%' }}>
-                          <thead>
-                            <tr>
-                              <th>Invoice ID</th>
-                              <th>Client ID</th>
-                              <th>Client Name</th>
-                              <th>Invoice Date &amp; Time</th>
-                              <th style={{ textAlign: 'right' }}>Previous Dues</th>
-                              <th style={{ textAlign: 'right' }}>Current Order Amount</th>
-                              <th style={{ textAlign: 'right' }}>Total Payable Amount</th>
-                              <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Pay Now</th>
-                              <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Collected Amount</th>
-                              <th style={{ textAlign: 'right', color: 'var(--clay)' }}>Due Balance</th>
-                              <th>Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(() => {
-                              const sortedSales = [...profile.sales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-                              const ledgers = profile.ledger || [];
+                      {!isMobile ? (
+                        /* Desktop View Table */
+                        <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                          <table className="va-table" style={{ width: '100%' }}>
+                            <thead>
+                              <tr>
+                                <th>Invoice ID</th>
+                                <th>Client ID</th>
+                                <th>Client Name</th>
+                                <th>Invoice Date &amp; Time</th>
+                                <th style={{ textAlign: 'right' }}>Previous Dues</th>
+                                <th style={{ textAlign: 'right' }}>Current Order Amount</th>
+                                <th style={{ textAlign: 'right' }}>Total Payable Amount</th>
+                                <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Pay Now</th>
+                                <th style={{ textAlign: 'right', color: 'var(--ok)' }}>Collected Amount</th>
+                                <th style={{ textAlign: 'right', color: 'var(--clay)' }}>Due Balance</th>
+                                <th>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(() => {
+                                const sortedSales = [...profile.sales].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                                const ledgers = profile.ledger || [];
 
-                              return sortedSales.map(sale => {
-                                const saleTime = new Date(sale.date).getTime();
+                                return sortedSales.map(sale => {
+                                  const saleTime = new Date(sale.date).getTime();
 
-                                // Find the customer ledger entry immediately preceding this invoice
-                                const priorLedgerEntries = ledgers.filter((l: any) => {
-                                  const lTime = new Date(l.date).getTime();
-                                  return lTime <= saleTime && l.referenceId !== sale.id;
+                                  // Find the customer ledger entry immediately preceding this invoice
+                                  const priorLedgerEntries = ledgers.filter((l: any) => {
+                                    const lTime = new Date(l.date).getTime();
+                                    return lTime <= saleTime && l.referenceId !== sale.id;
+                                  });
+
+                                  const priorLedger = priorLedgerEntries.length > 0 ? priorLedgerEntries[priorLedgerEntries.length - 1] : null;
+                                  const prevOutstanding = priorLedger
+                                    ? Math.max(0, Math.round((priorLedger as any).runningBalance ?? (priorLedger as any).balance ?? 0))
+                                    : Math.max(0, Math.round(profile.client.openingBalance ?? 0));
+
+                                  const currentOrder = Math.round(sale.total);
+                                  const totalPayable = prevOutstanding + currentOrder;
+                                  const payNow = Math.round(sale.paid);
+                                  const collectedAmount = Math.round(sale.paid);
+                                  const isPaid = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.99);
+                                  const isPartial = !isPaid && (sale.status === 'PARTIAL' || sale.paid > 0);
+                                  const dueBalance = isPaid ? 0 : Math.max(0, Math.round(sale.balance ?? (totalPayable - collectedAmount)));
+
+                                  const statusBadge = isPaid ? (
+                                    <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Paid</span>
+                                  ) : isPartial ? (
+                                    <span className="va-badge" style={{ background: '#FFF3E0', color: '#E65100', border: '1px solid #FFE0B2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Partial</span>
+                                  ) : (
+                                    <span className="va-badge" style={{ background: '#FFEBEE', color: '#C62828', border: '1px solid #FFCDD2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Unpaid</span>
+                                  );
+
+                                  return (
+                                    <tr key={sale.id}>
+                                      <td style={{ fontWeight: 600, color: 'var(--ink)' }}>{sale.invoiceNo}</td>
+                                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>{profile.client.clientId || 'WH-0000'}</td>
+                                      <td style={{ fontWeight: 600 }}>{profile.client.name}</td>
+                                      <td style={{ color: 'var(--muted)' }}>{fmtDateTime(sale.date)}</td>
+                                      <td className="mono" style={{ textAlign: 'right', color: prevOutstanding > 0.99 ? 'var(--clay)' : 'var(--muted)' }}>{prevOutstanding > 0.99 ? fmtMoney(prevOutstanding) : 'Rs 0'}</td>
+                                      <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{fmtMoney(currentOrder)}</td>
+                                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(totalPayable)}</td>
+                                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: payNow > 0 ? 'var(--ok)' : 'var(--muted)' }}>
+                                        {payNow > 0 ? fmtMoney(payNow) : '—'}
+                                      </td>
+                                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: collectedAmount > 0 ? 'var(--ok)' : 'var(--muted)' }}>{fmtMoney(collectedAmount)}</td>
+                                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: dueBalance > 0.99 ? 'var(--clay)' : 'var(--ok)' }}>{dueBalance > 0.99 ? fmtMoney(dueBalance) : '✓ 0'}</td>
+                                      <td>{statusBadge}</td>
+                                    </tr>
+                                  );
                                 });
-
-                                const priorLedger = priorLedgerEntries.length > 0 ? priorLedgerEntries[priorLedgerEntries.length - 1] : null;
-                                const prevOutstanding = priorLedger
-                                  ? Math.max(0, Math.round((priorLedger as any).runningBalance ?? (priorLedger as any).balance ?? 0))
-                                  : Math.max(0, Math.round(profile.client.openingBalance ?? 0));
-
-                                const currentOrder = Math.round(sale.total);
-                                const totalPayable = prevOutstanding + currentOrder;
-                                const payNow = Math.round(sale.paid);
-                                const collectedAmount = Math.round(sale.paid);
-                                const isPaid = sale.status === 'PAID' || (sale.balance !== undefined && sale.balance <= 0.99);
-                                const isPartial = !isPaid && (sale.status === 'PARTIAL' || sale.paid > 0);
-                                const dueBalance = isPaid ? 0 : Math.max(0, Math.round(sale.balance ?? (totalPayable - collectedAmount)));
-
-                                const statusBadge = isPaid ? (
-                                  <span className="va-badge" style={{ background: '#E3F9E9', color: '#1B5E20', border: '1px solid #C8E6C9', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Paid</span>
-                                ) : isPartial ? (
-                                  <span className="va-badge" style={{ background: '#FFF3E0', color: '#E65100', border: '1px solid #FFE0B2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Partial</span>
-                                ) : (
-                                  <span className="va-badge" style={{ background: '#FFEBEE', color: '#C62828', border: '1px solid #FFCDD2', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>Unpaid</span>
-                                );
-
-                                return (
-                                  <tr key={sale.id}>
-                                    <td style={{ fontWeight: 600, color: 'var(--ink)' }}>{sale.invoiceNo}</td>
-                                    <td style={{ color: 'var(--muted)', fontSize: 12 }}>{profile.client.clientId || 'WH-0000'}</td>
-                                    <td style={{ fontWeight: 600 }}>{profile.client.name}</td>
-                                    <td style={{ color: 'var(--muted)' }}>{fmtDateTime(sale.date)}</td>
-                                    <td className="mono" style={{ textAlign: 'right', color: prevOutstanding > 0.99 ? 'var(--clay)' : 'var(--muted)' }}>{prevOutstanding > 0.99 ? fmtMoney(prevOutstanding) : 'Rs 0'}</td>
-                                    <td className="mono" style={{ textAlign: 'right', color: 'var(--muted)' }}>{fmtMoney(currentOrder)}</td>
-                                    <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(totalPayable)}</td>
-                                    <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: payNow > 0 ? 'var(--ok)' : 'var(--muted)' }}>
-                                      {payNow > 0 ? fmtMoney(payNow) : '—'}
-                                    </td>
-                                    <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: collectedAmount > 0 ? 'var(--ok)' : 'var(--muted)' }}>{fmtMoney(collectedAmount)}</td>
-                                    <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: dueBalance > 0.99 ? 'var(--clay)' : 'var(--ok)' }}>{dueBalance > 0.99 ? fmtMoney(dueBalance) : '✓ 0'}</td>
-                                    <td>{statusBadge}</td>
-                                  </tr>
-                                );
-                              });
-                            })()}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Mobile Card List View */}
-                      <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
-                        {[...profile.sales].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(sale => {
-                          const isPaid = sale.status === 'PAID' || sale.balance <= 0;
-                          const isPartial = sale.status === 'PARTIAL' || (sale.paid > 0 && sale.balance > 0);
-                          return (
-                            <MobileCard
-                              key={sale.id}
-                              title={sale.invoiceNo}
-                              headerBadge={fmtDateTime(sale.date)}
-                            >
-                              <MobileCardRow label="Order Amount" value={fmtMoney(sale.total)} isMono />
-                              <MobileCardRow label="Amount Paid" value={fmtMoney(sale.paid)} valueColor="#166534" isMono />
-                              <MobileCardRow label="Balance Due" value={fmtMoney(sale.balance)} valueColor={sale.balance > 0 ? '#991B1B' : '#166534'} isMono />
-                              <MobileCardRow label="Status">
-                                <MobileCardBadge variant={isPaid ? 'green' : isPartial ? 'yellow' : 'red'}>
-                                  {isPaid ? 'PAID' : isPartial ? 'PARTIAL' : 'UNPAID'}
-                                </MobileCardBadge>
-                              </MobileCardRow>
-                            </MobileCard>
-                          );
-                        })}
-                      </div>
+                              })()}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        /* Mobile Card List View */
+                        <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+                          {[...profile.sales].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(sale => {
+                            const isPaid = sale.status === 'PAID' || sale.balance <= 0;
+                            const isPartial = sale.status === 'PARTIAL' || (sale.paid > 0 && sale.balance > 0);
+                            return (
+                              <MobileCard
+                                key={sale.id}
+                                title={sale.invoiceNo}
+                                headerBadge={fmtDateTime(sale.date)}
+                              >
+                                <MobileCardRow label="Order Amount" value={fmtMoney(sale.total)} isMono />
+                                <MobileCardRow label="Amount Paid" value={fmtMoney(sale.paid)} valueColor="#166534" isMono />
+                                <MobileCardRow label="Balance Due" value={fmtMoney(sale.balance)} valueColor={sale.balance > 0 ? '#991B1B' : '#166534'} isMono />
+                                <MobileCardRow label="Status">
+                                  <MobileCardBadge variant={isPaid ? 'green' : isPartial ? 'yellow' : 'red'}>
+                                    {isPaid ? 'PAID' : isPartial ? 'PARTIAL' : 'UNPAID'}
+                                  </MobileCardBadge>
+                                </MobileCardRow>
+                              </MobileCard>
+                            );
+                          })}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -1648,73 +1658,75 @@ export default function ClientsPage() {
                     <div className="va-empty"><div className="big">No payments received</div></div>
                   ) : (
                     <>
-                      {/* Desktop Table View */}
-                      <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                        <table className="va-table">
-                          <thead>
-                            <tr>
-                              <th>Receipt / Payment ID</th>
-                              <th>Date &amp; Time</th>
-                              <th>Invoice / Ref</th>
-                              <th>Method</th>
-                              <th>Received By</th>
-                              <th style={{ textAlign: 'right' }}>Amount Collected</th>
-                              <th style={{ textAlign: 'right' }}>Remaining Balance</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {profile.collections.map(c => {
-                              const empName = (c as any).receivedByUser?.name || 'Unrecorded';
-                              const invNo = (c as any).allocations?.[0]?.sale?.invoiceNo || c.reference || '—';
-                              const refNo = c.reference || `PAY-${c.id.slice(-6).toUpperCase()}`;
-                              const remBal = c.remainingBalance ?? 0;
+                      {!isMobile ? (
+                        /* Desktop Table View */
+                        <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                          <table className="va-table">
+                            <thead>
+                              <tr>
+                                <th>Receipt / Payment ID</th>
+                                <th>Date &amp; Time</th>
+                                <th>Invoice / Ref</th>
+                                <th>Method</th>
+                                <th>Received By</th>
+                                <th style={{ textAlign: 'right' }}>Amount Collected</th>
+                                <th style={{ textAlign: 'right' }}>Remaining Balance</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {profile.collections.map(c => {
+                                const empName = (c as any).receivedByUser?.name || 'Unrecorded';
+                                const invNo = (c as any).allocations?.[0]?.sale?.invoiceNo || c.reference || '—';
+                                const refNo = c.reference || `PAY-${c.id.slice(-6).toUpperCase()}`;
+                                const remBal = c.remainingBalance ?? 0;
 
-                              return (
-                                <tr key={c.id}>
-                                  <td className="mono" style={{ fontWeight: 700, color: 'var(--ink)' }}>{refNo}</td>
-                                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{fmtDateTime(c.date)}</td>
-                                  <td style={{ fontWeight: 600 }}>{invNo}</td>
-                                  <td><span className="va-badge paid">{c.method}</span></td>
-                                  <td style={{ fontWeight: 600 }}>👤 {empName}</td>
-                                  <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--ok)' }}>{fmtMoney(c.amount)}</td>
-                                  <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: remBal > 0 ? 'var(--clay)' : 'var(--ok)' }}>{fmtMoney(remBal)}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                          <tfoot>
-                            <tr>
-                              <td colSpan={5} style={{ fontWeight: 700 }}>Total Collected</td>
-                              <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--ok)' }}>{fmtMoney(profile.totalCollected)}</td>
-                              <td></td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
+                                return (
+                                  <tr key={c.id}>
+                                    <td className="mono" style={{ fontWeight: 700, color: 'var(--ink)' }}>{refNo}</td>
+                                    <td style={{ color: 'var(--muted)', fontSize: 12 }}>{fmtDateTime(c.date)}</td>
+                                    <td style={{ fontWeight: 600 }}>{invNo}</td>
+                                    <td><span className="va-badge paid">{c.method}</span></td>
+                                    <td style={{ fontWeight: 600 }}>👤 {empName}</td>
+                                    <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--ok)' }}>{fmtMoney(c.amount)}</td>
+                                    <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: remBal > 0 ? 'var(--clay)' : 'var(--ok)' }}>{fmtMoney(remBal)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr>
+                                <td colSpan={5} style={{ fontWeight: 700 }}>Total Collected</td>
+                                <td className="mono" style={{ textAlign: 'right', fontWeight: 800, color: 'var(--ok)' }}>{fmtMoney(profile.totalCollected)}</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      ) : (
+                        /* Mobile Card List View */
+                        <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+                          {profile.collections.map(c => {
+                            const empName = (c as any).receivedByUser?.name || 'Unrecorded';
+                            const invNo = (c as any).allocations?.[0]?.sale?.invoiceNo || c.reference || '—';
+                            const refNo = c.reference || `PAY-${c.id.slice(-6).toUpperCase()}`;
+                            const remBal = c.remainingBalance ?? 0;
 
-                      {/* Mobile Card List View */}
-                      <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
-                        {profile.collections.map(c => {
-                          const empName = (c as any).receivedByUser?.name || 'Unrecorded';
-                          const invNo = (c as any).allocations?.[0]?.sale?.invoiceNo || c.reference || '—';
-                          const refNo = c.reference || `PAY-${c.id.slice(-6).toUpperCase()}`;
-                          const remBal = c.remainingBalance ?? 0;
-
-                          return (
-                            <MobileCard
-                              key={c.id}
-                              title={refNo}
-                              headerBadge={fmtDate(c.date)}
-                            >
-                              <MobileCardRow label="Invoice / Ref" value={invNo} />
-                              <MobileCardRow label="Amount Collected" value={fmtMoney(c.amount)} valueColor="#166534" isMono />
-                              <MobileCardRow label="Payment Method" value={c.method} />
-                              <MobileCardRow label="Received By" value={`👤 ${empName}`} />
-                              <MobileCardRow label="Remaining Balance" value={fmtMoney(remBal)} valueColor={remBal > 0 ? '#991B1B' : '#166534'} isMono />
-                            </MobileCard>
-                          );
-                        })}
-                      </div>
+                            return (
+                              <MobileCard
+                                key={c.id}
+                                title={refNo}
+                                headerBadge={fmtDate(c.date)}
+                              >
+                                <MobileCardRow label="Invoice / Ref" value={invNo} />
+                                <MobileCardRow label="Amount Collected" value={fmtMoney(c.amount)} valueColor="#166534" isMono />
+                                <MobileCardRow label="Payment Method" value={c.method} />
+                                <MobileCardRow label="Received By" value={`👤 ${empName}`} />
+                                <MobileCardRow label="Remaining Balance" value={fmtMoney(remBal)} valueColor={remBal > 0 ? '#991B1B' : '#166534'} isMono />
+                              </MobileCard>
+                            );
+                          })}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -1728,43 +1740,45 @@ export default function ClientsPage() {
                     <div className="va-empty"><div className="big">No deliveries yet</div></div>
                   ) : (
                     <>
-                      {/* Desktop Table View */}
-                      <div className="hide-mobile" style={{ overflowX: 'auto' }}>
-                        <table className="va-table">
-                          <thead><tr><th>Date</th><th>Status</th><th>Notes</th></tr></thead>
-                          <tbody>
-                            {profile.deliveries.map(d => (
-                              <tr key={d.id}>
-                                <td>{fmtDate(d.createdAt)}</td>
-                                <td><span className={`va-badge ${d.status === 'DELIVERED' ? 'paid' : d.status === 'OUT_FOR_DELIVERY' ? 'partial' : 'pending'}`}>{d.status.replace(/_/g,' ')}</span></td>
-                                <td style={{ color: 'var(--muted)', fontSize: 12 }}>{d.notes ?? '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Mobile Card List View */}
-                      <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
-                        {profile.deliveries.map(d => {
-                          const isDelivered = d.status === 'DELIVERED';
-                          const isOut = d.status === 'OUT' || d.status === 'OUT_FOR_DELIVERY';
-                          return (
-                            <MobileCard
-                              key={d.id}
-                              title="Delivery Order"
-                              headerBadge={fmtDate(d.createdAt)}
-                            >
-                              <MobileCardRow label="Status">
-                                <MobileCardBadge variant={isDelivered ? 'green' : isOut ? 'blue' : 'yellow'}>
-                                  {d.status.replace(/_/g, ' ')}
-                                </MobileCardBadge>
-                              </MobileCardRow>
-                              <MobileCardRow label="Notes" value={d.notes ?? '—'} />
-                            </MobileCard>
-                          );
-                        })}
-                      </div>
+                      {!isMobile ? (
+                        /* Desktop Table View */
+                        <div className="hide-mobile" style={{ overflowX: 'auto' }}>
+                          <table className="va-table">
+                            <thead><tr><th>Date</th><th>Status</th><th>Notes</th></tr></thead>
+                            <tbody>
+                              {profile.deliveries.map(d => (
+                                <tr key={d.id}>
+                                  <td>{fmtDate(d.createdAt)}</td>
+                                  <td><span className={`va-badge ${d.status === 'DELIVERED' ? 'paid' : d.status === 'OUT_FOR_DELIVERY' ? 'partial' : 'pending'}`}>{d.status.replace(/_/g,' ')}</span></td>
+                                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{d.notes ?? '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        /* Mobile Card List View */
+                        <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+                          {profile.deliveries.map(d => {
+                            const isDelivered = d.status === 'DELIVERED';
+                            const isOut = d.status === 'OUT' || d.status === 'OUT_FOR_DELIVERY';
+                            return (
+                              <MobileCard
+                                key={d.id}
+                                title="Delivery Order"
+                                headerBadge={fmtDate(d.createdAt)}
+                              >
+                                <MobileCardRow label="Status">
+                                  <MobileCardBadge variant={isDelivered ? 'green' : isOut ? 'blue' : 'yellow'}>
+                                    {d.status.replace(/_/g, ' ')}
+                                  </MobileCardBadge>
+                                </MobileCardRow>
+                                <MobileCardRow label="Notes" value={d.notes ?? '—'} />
+                              </MobileCard>
+                            );
+                          })}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

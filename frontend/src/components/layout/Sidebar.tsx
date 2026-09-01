@@ -198,18 +198,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   // Close popups on click outside
   useEffect(() => {
+    if (activePopupIdx === null) return;
     const handleDocumentClick = () => {
       setActivePopupIdx(null);
     };
     if (typeof window !== 'undefined') {
-      window.addEventListener('click', handleDocumentClick);
+      window.addEventListener('click', handleDocumentClick, { passive: true });
     }
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('click', handleDocumentClick);
       }
     };
-  }, []);
+  }, [activePopupIdx]);
 
   // Shared button styles to ensure identical category sizes
   const categoryButtonStyle = (active: boolean) => ({

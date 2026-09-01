@@ -1278,18 +1278,23 @@ button.va-icon:hover { color: var(--danger); }
 /* Modal and dialog smooth entry */
 .va-modal-box,
 [role="dialog"] > div {
-  animation: va-modal-flow 0.22s var(--ease-smooth) forwards;
-  will-change: transform, opacity;
+  animation: va-modal-flow 0.2s var(--ease-smooth) forwards;
 }
 
 /* Component Level Fluid Transitions (CSS-only, Zero JS Memory) */
 .va-card {
-  transition: transform 0.18s var(--ease-smooth), box-shadow 0.18s var(--ease-smooth), border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.va-card:hover {
-  transform: translate3d(0, -1.5px, 0);
-  box-shadow: 0 4px 12px rgba(31, 61, 43, 0.05);
+/* Touch device optimizations — eliminate hover transforms on mobile */
+@media (hover: hover) and (pointer: fine) {
+  .va-card:hover {
+    transform: translate3d(0, -1.5px, 0);
+    box-shadow: 0 4px 12px rgba(31, 61, 43, 0.05);
+  }
+  .va-nav-btn:hover {
+    transform: translate3d(2px, 0, 0);
+  }
 }
 
 .va-panel {
@@ -1305,16 +1310,25 @@ button.va-btn:active, a.va-btn:active {
 }
 
 .va-nav-btn {
-  transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
-}
-
-.va-nav-btn:hover {
-  transform: translate3d(2px, 0, 0);
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 /* Table row smooth hover */
 table.va-table tr {
   transition: background 0.1s ease;
+}
+
+/* Mobile GPU & Compositing Optimizations */
+@media (max-width: 768px) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .va-side-backdrop,
+  .va-modal-backdrop {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(15, 23, 42, 0.75) !important;
+  }
 }
 
 /* Reduced motion accessibility */
@@ -1324,6 +1338,7 @@ table.va-table tr {
   .va-scale-in,
   .va-tab-content-flow,
   .va-modal-box,
+  .va-skeleton,
   [role="dialog"] > div {
     animation: none !important;
     transform: none !important;

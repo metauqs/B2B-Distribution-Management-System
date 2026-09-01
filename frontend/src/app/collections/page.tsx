@@ -13,6 +13,7 @@ import Icon from '@mdi/react';
 import { mdiCashRegister, mdiPhone, mdiWhatsapp } from '@mdi/js';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import { useAppSelector } from '@/store';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 import { loadBrandConfigWithLogo, generateDailyPaymentHistoryHTML, generateTemplateJpgBase64, downloadImage } from '@/utils/documentTemplates';
 
@@ -66,6 +67,7 @@ interface Client {
 const BLANK_FORM = { clientId: '', saleId: '', amount: 0, date: '', method: 'CASH', reference: '', notes: '' };
 
 export default function CollectionsPage() {
+  const isMobile = useIsMobile();
   const currentUser = useAppSelector(state => state.auth.user);
   const [sales,       setSales]       = useState<Sale[]>(() => {
     return getCachedData<Sale[]>('/api/sales') || [];
@@ -712,10 +714,9 @@ export default function CollectionsPage() {
           </div>
           {loading && collections.length === 0 ? <div style={{ padding: 16 }}><SkeletonTable rows={6} cols={6} /></div> : sales.length === 0 ? (
             <div className="va-empty"><div className="big">No sales invoices yet</div></div>
-          ) : (
-            <>
-              {/* ────── DESKTOP VIEW (Redesigned Accordion & Invoice Focus) ────── */}
-              <div className="hide-mobile">
+          ) : !isMobile ? (
+            /* DESKTOP VIEW (Redesigned Accordion & Invoice Focus) */
+            <div className="hide-mobile">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {groupedList.map(g => {
                     const isExpanded = !!expandedClients[g.clientId];
@@ -990,8 +991,8 @@ export default function CollectionsPage() {
                   </span>
                 </div>
               </div>
-
-              {/* ────── MOBILE VIEW (Dedicated Touch Cards from 1420f4713ed5b3ccf5bedf1f3572745b96519aed) ────── */}
+            ) : (
+              /* MOBILE VIEW */
               <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
                 {groupedList.map(g => {
                   const isExpanded = !!expandedClients[g.clientId];
@@ -1114,8 +1115,7 @@ export default function CollectionsPage() {
                   );
                 })}
               </div>
-            </>
-          )}
+            )}
         </div>
       )}
 
@@ -1277,185 +1277,187 @@ export default function CollectionsPage() {
             </div>
           ) : (
             <>
-              {/* ────── DESKTOP TABLE ────── */}
-              <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <table className="va-table" style={{ width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th>Ref / Receipt</th>
-                      <th>Time</th>
-                      <th>Customer</th>
-                      <th>Received By</th>
-                      <th>Method</th>
-                      <th style={{ textAlign: 'right' }}>Amount</th>
-                      <th>Status / Mode</th>
-                      <th style={{ textAlign: 'center' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dailyData.transactions.map((tx: any) => {
-                      const isCancelled = tx.status === 'CANCELLED';
-                      return (
-                        <tr key={tx.id} style={{ background: isCancelled ? '#FEF2F2' : undefined }}>
-                          <td>
-                            <span className="mono" style={{ fontWeight: 700, color: isCancelled ? '#991B1B' : 'var(--ink)' }}>
+              {!isMobile ? (
+                /* ────── DESKTOP TABLE ────── */
+                <div className="hide-mobile" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table className="va-table" style={{ width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th>Ref / Receipt</th>
+                        <th>Time</th>
+                        <th>Customer</th>
+                        <th>Received By</th>
+                        <th>Method</th>
+                        <th style={{ textAlign: 'right' }}>Amount</th>
+                        <th>Status / Mode</th>
+                        <th style={{ textAlign: 'center' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dailyData.transactions.map((tx: any) => {
+                        const isCancelled = tx.status === 'CANCELLED';
+                        return (
+                          <tr key={tx.id} style={{ background: isCancelled ? '#FEF2F2' : undefined }}>
+                            <td>
+                              <span className="mono" style={{ fontWeight: 700, color: isCancelled ? '#991B1B' : 'var(--ink)' }}>
+                                {tx.reference}
+                              </span>
+                            </td>
+                            <td style={{ color: 'var(--muted)', fontSize: 12 }}>{tx.time}</td>
+                            <td>
+                              <strong style={{ color: isCancelled ? '#991B1B' : undefined }}>{tx.clientName}</strong>
+                              {tx.clientId && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>({tx.clientId})</span>}
+                            </td>
+                            <td style={{ fontWeight: 600 }}>👤 {tx.receivedBy}</td>
+                            <td>
+                              <span style={{
+                                fontSize: 11, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 4,
+                                background: isCancelled ? '#FEE2E2' : tx.method === 'CASH' ? '#DCFCE7' : tx.method === 'BANK' ? '#DBEAFE' : '#FEF9C3',
+                                color: isCancelled ? '#991B1B' : tx.method === 'CASH' ? '#166534' : tx.method === 'BANK' ? '#1E40AF' : '#854D0E',
+                              }}>
+                                {tx.method}
+                              </span>
+                            </td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 800, fontSize: 14 }}>
+                              {isCancelled ? (
+                                <s style={{ color: '#991B1B' }}>{fmtMoney(tx.amount)}</s>
+                              ) : (
+                                <span style={{ color: '#166534' }}>{fmtMoney(tx.amount)}</span>
+                              )}
+                            </td>
+                            <td>
+                              {isCancelled ? (
+                                <span style={{ background: '#FEE2E2', color: '#991B1B', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 800 }}>
+                                  🚫 CANCELLED
+                                </span>
+                              ) : (
+                                <span className="va-badge paid" style={{ fontSize: 10, padding: '2px 6px' }}>VERIFIED</span>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              {!isCancelled && (
+                                <button
+                                  type="button"
+                                  className="va-btn secondary small"
+                                  onClick={() => handleOpenCancelModal(tx)}
+                                  style={{
+                                    padding: '2px 8px',
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    color: '#991B1B',
+                                    borderColor: '#FECACA',
+                                    background: '#FFFFFF'
+                                  }}
+                                >
+                                  🚫 Cancel
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                /* ────── MOBILE VIEW (Dedicated Payment Cards) ────── */
+                <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+                  {dailyData.transactions.map((tx: any) => {
+                    const isCancelled = tx.status === 'CANCELLED';
+                    return (
+                      <div
+                        key={tx.id}
+                        style={{
+                          background: isCancelled ? '#FEF2F2' : '#FFFFFF',
+                          border: isCancelled ? '1.5px dashed #FCA5A5' : '1px solid #E2E8F0',
+                          borderRadius: '12px',
+                          padding: '14px',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+                        }}
+                      >
+                        {/* Top Row: Ref & Time */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="mono" style={{ fontWeight: 800, fontSize: '12px', color: isCancelled ? '#991B1B' : '#0F172A', background: isCancelled ? '#FEE2E2' : '#F1F5F9', padding: '3px 8px', borderRadius: '6px' }}>
                               {tx.reference}
                             </span>
-                          </td>
-                          <td style={{ color: 'var(--muted)', fontSize: 12 }}>{tx.time}</td>
-                          <td>
-                            <strong style={{ color: isCancelled ? '#991B1B' : undefined }}>{tx.clientName}</strong>
-                            {tx.clientId && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>({tx.clientId})</span>}
-                          </td>
-                          <td style={{ fontWeight: 600 }}>👤 {tx.receivedBy}</td>
-                          <td>
-                            <span style={{
-                              fontSize: 11, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 4,
-                              background: isCancelled ? '#FEE2E2' : tx.method === 'CASH' ? '#DCFCE7' : tx.method === 'BANK' ? '#DBEAFE' : '#FEF9C3',
-                              color: isCancelled ? '#991B1B' : tx.method === 'CASH' ? '#166534' : tx.method === 'BANK' ? '#1E40AF' : '#854D0E',
-                            }}>
-                              {tx.method}
-                            </span>
-                          </td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 800, fontSize: 14 }}>
+                            {isCancelled && (
+                              <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: '#FEE2E2', color: '#991B1B' }}>
+                                🚫 CANCELLED
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>
+                            ⏰ {tx.time}
+                          </span>
+                        </div>
+
+                        {/* Customer & Amount */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '6px 0 10px' }}>
+                          <div>
+                            <div style={{ fontSize: '15px', fontWeight: 800, color: isCancelled ? '#991B1B' : '#0F172A' }}>
+                              {tx.clientName}
+                            </div>
+                            {tx.clientId && (
+                              <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                                ID: {tx.clientId}
+                              </div>
+                            )}
+                          </div>
+                          <div className="mono" style={{ fontSize: '17px', fontWeight: 800 }}>
                             {isCancelled ? (
                               <s style={{ color: '#991B1B' }}>{fmtMoney(tx.amount)}</s>
                             ) : (
                               <span style={{ color: '#166534' }}>{fmtMoney(tx.amount)}</span>
                             )}
-                          </td>
-                          <td>
-                            {isCancelled ? (
-                              <span style={{ background: '#FEE2E2', color: '#991B1B', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 800 }}>
-                                🚫 CANCELLED
-                              </span>
-                            ) : (
-                              <span className="va-badge paid" style={{ fontSize: 10, padding: '2px 6px' }}>VERIFIED</span>
-                            )}
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            {!isCancelled && (
-                              <button
-                                type="button"
-                                className="va-btn secondary small"
-                                onClick={() => handleOpenCancelModal(tx)}
-                                style={{
-                                  padding: '2px 8px',
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  color: '#991B1B',
-                                  borderColor: '#FECACA',
-                                  background: '#FFFFFF'
-                                }}
-                              >
-                                🚫 Cancel
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* ────── MOBILE VIEW (Dedicated Payment Cards) ────── */}
-              <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
-                {dailyData.transactions.map((tx: any) => {
-                  const isCancelled = tx.status === 'CANCELLED';
-                  return (
-                    <div
-                      key={tx.id}
-                      style={{
-                        background: isCancelled ? '#FEF2F2' : '#FFFFFF',
-                        border: isCancelled ? '1.5px dashed #FCA5A5' : '1px solid #E2E8F0',
-                        borderRadius: '12px',
-                        padding: '14px',
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-                      }}
-                    >
-                      {/* Top Row: Ref & Time */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span className="mono" style={{ fontWeight: 800, fontSize: '12px', color: isCancelled ? '#991B1B' : '#0F172A', background: isCancelled ? '#FEE2E2' : '#F1F5F9', padding: '3px 8px', borderRadius: '6px' }}>
-                            {tx.reference}
-                          </span>
-                          {isCancelled && (
-                            <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: '#FEE2E2', color: '#991B1B' }}>
-                              🚫 CANCELLED
-                            </span>
-                          )}
-                        </div>
-                        <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>
-                          ⏰ {tx.time}
-                        </span>
-                      </div>
-
-                      {/* Customer & Amount */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '6px 0 10px' }}>
-                        <div>
-                          <div style={{ fontSize: '15px', fontWeight: 800, color: isCancelled ? '#991B1B' : '#0F172A' }}>
-                            {tx.clientName}
                           </div>
-                          {tx.clientId && (
-                            <div style={{ fontSize: '11px', color: '#64748B' }}>
-                              ID: {tx.clientId}
-                            </div>
-                          )}
                         </div>
-                        <div className="mono" style={{ fontSize: '17px', fontWeight: 800 }}>
-                          {isCancelled ? (
-                            <s style={{ color: '#991B1B' }}>{fmtMoney(tx.amount)}</s>
-                          ) : (
-                            <span style={{ color: '#166534' }}>{fmtMoney(tx.amount)}</span>
-                          )}
-                        </div>
-                      </div>
 
-                      {/* Details Pill Row */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #F1F5F9', paddingTop: 8, fontSize: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{
-                            fontSize: 10,
-                            fontWeight: 800,
-                            textTransform: 'uppercase',
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            background: isCancelled ? '#FEE2E2' : tx.method === 'CASH' ? '#DCFCE7' : tx.method === 'BANK' ? '#DBEAFE' : '#FEF9C3',
-                            color: isCancelled ? '#991B1B' : tx.method === 'CASH' ? '#166534' : tx.method === 'BANK' ? '#1E40AF' : '#854D0E',
-                          }}>
-                            {tx.method}
-                          </span>
-                          <span style={{ color: '#64748B', fontSize: 11 }}>
-                            👤 {tx.receivedBy}
-                          </span>
+                        {/* Details Pill Row */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #F1F5F9', paddingTop: 8, fontSize: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              textTransform: 'uppercase',
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              background: isCancelled ? '#FEE2E2' : tx.method === 'CASH' ? '#DCFCE7' : tx.method === 'BANK' ? '#DBEAFE' : '#FEF9C3',
+                              color: isCancelled ? '#991B1B' : tx.method === 'CASH' ? '#166534' : tx.method === 'BANK' ? '#1E40AF' : '#854D0E',
+                            }}>
+                              {tx.method}
+                            </span>
+                            <span style={{ color: '#64748B', fontSize: 11 }}>
+                              👤 {tx.receivedBy}
+                            </span>
+                          </div>
+                          {isCancelled ? (
+                            <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 8, background: '#FEE2E2', color: '#991B1B' }}>
+                              CANCELLED
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="va-btn secondary small"
+                              onClick={() => handleOpenCancelModal(tx)}
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: '#991B1B',
+                                borderColor: '#FECACA',
+                                background: '#FFFFFF'
+                              }}
+                            >
+                              🚫 Cancel
+                            </button>
+                          )}
                         </div>
-                        {isCancelled ? (
-                          <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 8, background: '#FEE2E2', color: '#991B1B' }}>
-                            CANCELLED
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="va-btn secondary small"
-                            onClick={() => handleOpenCancelModal(tx)}
-                            style={{
-                              padding: '3px 8px',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color: '#991B1B',
-                              borderColor: '#FECACA',
-                              background: '#FFFFFF'
-                            }}
-                          >
-                            🚫 Cancel
-                          </button>
-                        )}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </>
           )}
         </div>

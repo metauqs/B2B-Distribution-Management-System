@@ -8,6 +8,7 @@ import { fetchWithCache, getCachedData, invalidateCache, TTL_SHORT, TTL_MEDIUM, 
 import { SkeletonKPI, SkeletonTable } from '@/components/ui/Skeleton';
 import { MobileCard, MobileCardRow } from '@/components/ui/MobileCard';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import Icon from '@mdi/react';
 import {
   mdiCashMinus,
@@ -141,6 +142,7 @@ const BLANK_FORM = {
 };
 
 export default function ExpensesPage() {
+  const isMobile = useIsMobile();
   const [expenses, setExpenses] = useState<Expense[]>(() => {
     return getCachedData<Expense[]>('/api/expenses?range=this_month') || [];
   });
@@ -959,145 +961,147 @@ export default function ExpensesPage() {
               </div>
             ) : (
               <div style={{ padding: '16px 20px' }}>
-                {/* Desktop View Table */}
-                <div className="hide-mobile">
-                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table className="va-table" style={{ width: '100%', minWidth: 950, borderCollapse: 'separate', borderSpacing: '0 6px' }}>
-                    <thead>
-                      <tr style={{ background: '#F8FAFC' }}>
-                        <th style={{ padding: '10px 14px', borderRadius: '6px 0 0 6px' }}>Ref / Date</th>
-                        <th style={{ padding: '10px 14px' }}>Category</th>
-                        <th style={{ padding: '10px 14px' }}>Description</th>
-                        <th style={{ padding: '10px 14px' }}>Payment Method</th>
-                        <th style={{ padding: '10px 14px' }}>Account</th>
-                        <th style={{ padding: '10px 14px' }}>Linked Entity</th>
-                        <th style={{ padding: '10px 14px', textAlign: 'right' }}>Amount</th>
-                        <th style={{ padding: '10px 14px', textAlign: 'right', borderRadius: '0 6px 6px 0' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {expenses.map(e => (
-                        <tr key={e.id} style={{ background: '#FFFFFF', borderBottom: '1px solid #F1F5F9' }}>
-                          <td style={{ padding: '12px 14px' }}>
-                            <div className="mono" style={{ fontWeight: 700, color: '#1B4D2E', fontSize: '13px' }}>
-                              {e.reference || `EXP-${e.id.slice(-6).toUpperCase()}`}
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>{fmtDate(e.date)}</div>
-                          </td>
-
-                          <td style={{ padding: '12px 14px' }}>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
-                              {CAT_EMOJI[e.category] ?? '💸'} {e.category}
-                            </span>
-                          </td>
-
-                          <td style={{ padding: '12px 14px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            <div style={{ fontSize: '13px', color: '#334155', fontWeight: 600 }}>{e.description ?? '—'}</div>
-                            {e.notes && <div style={{ fontSize: '11px', color: '#64748B' }}>{e.notes}</div>}
-                          </td>
-
-                          <td style={{ padding: '12px 14px' }}>
-                            <span style={{
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              padding: '3px 8px',
-                              borderRadius: '6px',
-                              background: e.paidBy === 'BANK' ? '#E0F2FE' : e.paidBy === 'ONLINE' ? '#F3E8FF' : '#DCFCE7',
-                              color: e.paidBy === 'BANK' ? '#0369A1' : e.paidBy === 'ONLINE' ? '#6B21A8' : '#15803D',
-                              border: `1px solid ${e.paidBy === 'BANK' ? '#BAE6FD' : e.paidBy === 'ONLINE' ? '#E9D5FF' : '#86EFAC'}`
-                            }}>
-                              {e.paidBy === 'BANK' ? '🏦 BANK' : e.paidBy === 'ONLINE' ? '📱 ONLINE' : '💵 CASH'}
-                            </span>
-                          </td>
-
-                          <td style={{ padding: '12px 14px', fontSize: '12px', fontWeight: 600, color: '#0F172A' }}>
-                            {e.paidBy === 'CASH' 
-                              ? (e.cashAccount?.name ?? 'Main Cash') 
-                              : (e.bankAccount?.name ? `${e.bankAccount.name} (${e.bankAccount.bankName ?? ''})` : 'Bank Account')}
-                          </td>
-
-                          <td style={{ padding: '12px 14px' }}>
-                            {e.vehicle ? (
-                              <span style={{ fontSize: '11px', background: '#FEF3C7', color: '#B45309', padding: '3px 8px', borderRadius: '6px', fontWeight: 700, border: '1px solid #FDE68A' }}>
-                                🚚 {e.vehicle.plateNo}
-                              </span>
-                            ) : e.employee ? (
-                              <span style={{ fontSize: '11px', background: '#E0E7FF', color: '#3730A3', padding: '3px 8px', borderRadius: '6px', fontWeight: 700, border: '1px solid #C7D2FE' }}>
-                                💼 {e.employee.name}
-                              </span>
-                            ) : e.supplier ? (
-                              <span style={{ fontSize: '11px', background: '#FCE7F3', color: '#9D174D', padding: '3px 8px', borderRadius: '6px', fontWeight: 700, border: '1px solid #FBCFE8' }}>
-                                🏪 {e.supplier.name}
-                              </span>
-                            ) : <span style={{ fontSize: '11px', color: '#94A3B8' }}>—</span>}
-                          </td>
-
-                          <td className="mono" style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, color: '#991B1B', fontSize: '14px' }}>
-                            {fmtMoney(e.amount)}
-                          </td>
-
-                          <td style={{ textAlign: 'right', padding: '12px 14px' }}>
-                            <div style={{ display: 'inline-flex', gap: 6 }}>
-                              <button 
-                                className="va-btn secondary small" 
-                                style={{ padding: '4px 8px', borderRadius: '6px' }}
-                                title="View Details"
-                                onClick={() => { setSelectedExpense(e); setShowDetailModal(true); }}
-                              >
-                                <Icon path={mdiEye} size={0.65} />
-                              </button>
-                              <button 
-                                className="va-btn secondary small" 
-                                style={{ padding: '4px 8px', borderRadius: '6px', color: '#2563EB' }}
-                                title="Edit Expense"
-                                onClick={() => handleOpenEdit(e)}
-                              >
-                                <Icon path={mdiPencil} size={0.65} />
-                              </button>
-                              <button 
-                                className="va-btn secondary small" 
-                                style={{ padding: '4px 8px', borderRadius: '6px', color: '#DC2626' }}
-                                title="Delete Expense"
-                                onClick={() => { setExpenseToDelete(e); setShowDeleteModal(true); }}
-                              >
-                                <Icon path={mdiDelete} size={0.65} />
-                              </button>
-                            </div>
-                          </td>
+                {!isMobile ? (
+                  /* Desktop View Table */
+                  <div className="hide-mobile">
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <table className="va-table" style={{ width: '100%', minWidth: 950, borderCollapse: 'separate', borderSpacing: '0 6px' }}>
+                      <thead>
+                        <tr style={{ background: '#F8FAFC' }}>
+                          <th style={{ padding: '10px 14px', borderRadius: '6px 0 0 6px' }}>Ref / Date</th>
+                          <th style={{ padding: '10px 14px' }}>Category</th>
+                          <th style={{ padding: '10px 14px' }}>Description</th>
+                          <th style={{ padding: '10px 14px' }}>Payment Method</th>
+                          <th style={{ padding: '10px 14px' }}>Account</th>
+                          <th style={{ padding: '10px 14px' }}>Linked Entity</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'right' }}>Amount</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'right', borderRadius: '0 6px 6px 0' }}>Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
+                      </thead>
+                      <tbody>
+                        {expenses.map(e => (
+                          <tr key={e.id} style={{ background: '#FFFFFF', borderBottom: '1px solid #F1F5F9' }}>
+                            <td style={{ padding: '12px 14px' }}>
+                              <div className="mono" style={{ fontWeight: 700, color: '#1B4D2E', fontSize: '13px' }}>
+                                {e.reference || `EXP-${e.id.slice(-6).toUpperCase()}`}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>{fmtDate(e.date)}</div>
+                            </td>
 
-                {/* Mobile View Cards */}
-                <div className="show-mobile" style={{ display: 'none', flexDirection: 'column', gap: '14px', width: '100%' }}>
-                  {expenses.map(e => (
-                    <MobileCard
-                      key={e.id}
-                      title={`${CAT_EMOJI[e.category] ?? '💸'} ${e.category}`}
-                      headerBadge={fmtDate(e.date)}
-                      footer={
-                        <div style={{ display: 'flex', gap: 8, width: '100%', justifyContent: 'flex-end' }}>
-                          <button className="va-btn secondary small" style={{ fontSize: '12px', flex: 1 }} onClick={() => { setSelectedExpense(e); setShowDetailModal(true); }}>👁️ View</button>
-                          <button className="va-btn secondary small" style={{ fontSize: '12px', color: '#2563EB', flex: 1 }} onClick={() => handleOpenEdit(e)}>✏️ Edit</button>
-                          <button className="va-btn secondary small" style={{ fontSize: '12px', color: '#DC2626', flex: 1 }} onClick={() => { setExpenseToDelete(e); setShowDeleteModal(true); }}>🗑️ Delete</button>
-                        </div>
-                      }
-                    >
-                      <MobileCardRow label="Reference ID" value={e.reference || `EXP-${e.id.slice(-6).toUpperCase()}`} isMono />
-                      <MobileCardRow label="Expense Amount" value={fmtMoney(e.amount)} valueColor="#991B1B" isMono />
-                      <MobileCardRow 
-                        label="Paid Via Account" 
-                        value={e.paidBy === 'CASH' ? `💵 ${e.cashAccount?.name ?? 'Main Cash'}` : `🏦 ${e.bankAccount?.name ?? 'Bank'}`} 
-                      />
-                      <MobileCardRow label="Description" value={e.description ?? '—'} />
-                      {e.vehicle && <MobileCardRow label="Linked Vehicle" value={`🚚 ${e.vehicle.plateNo}`} valueColor="#B45309" />}
-                      {e.employee && <MobileCardRow label="Linked Employee" value={`💼 ${e.employee.name}`} valueColor="#3730A3" />}
-                    </MobileCard>
-                  ))}
-                </div>
+                            <td style={{ padding: '12px 14px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                                {CAT_EMOJI[e.category] ?? '💸'} {e.category}
+                              </span>
+                            </td>
+
+                            <td style={{ padding: '12px 14px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <div style={{ fontSize: '13px', color: '#334155', fontWeight: 600 }}>{e.description ?? '—'}</div>
+                              {e.notes && <div style={{ fontSize: '11px', color: '#64748B' }}>{e.notes}</div>}
+                            </td>
+
+                            <td style={{ padding: '12px 14px' }}>
+                              <span style={{
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                background: e.paidBy === 'BANK' ? '#E0F2FE' : e.paidBy === 'ONLINE' ? '#F3E8FF' : '#DCFCE7',
+                                color: e.paidBy === 'BANK' ? '#0369A1' : e.paidBy === 'ONLINE' ? '#6B21A8' : '#15803D',
+                                border: `1px solid ${e.paidBy === 'BANK' ? '#BAE6FD' : e.paidBy === 'ONLINE' ? '#E9D5FF' : '#86EFAC'}`
+                              }}>
+                                {e.paidBy === 'BANK' ? '🏦 BANK' : e.paidBy === 'ONLINE' ? '📱 ONLINE' : '💵 CASH'}
+                              </span>
+                            </td>
+
+                            <td style={{ padding: '12px 14px', fontSize: '12px', fontWeight: 600, color: '#0F172A' }}>
+                              {e.paidBy === 'CASH' 
+                                ? (e.cashAccount?.name ?? 'Main Cash') 
+                                : (e.bankAccount?.name ? `${e.bankAccount.name} (${e.bankAccount.bankName ?? ''})` : 'Bank Account')}
+                            </td>
+
+                            <td style={{ padding: '12px 14px' }}>
+                              {e.vehicle ? (
+                                <span style={{ fontSize: '11px', background: '#FEF3C7', color: '#B45309', padding: '3px 8px', borderRadius: '6px', fontWeight: 700, border: '1px solid #FDE68A' }}>
+                                  🚚 {e.vehicle.plateNo}
+                                </span>
+                              ) : e.employee ? (
+                                <span style={{ fontSize: '11px', background: '#E0E7FF', color: '#3730A3', padding: '3px 8px', borderRadius: '6px', fontWeight: 700, border: '1px solid #C7D2FE' }}>
+                                  💼 {e.employee.name}
+                                </span>
+                              ) : e.supplier ? (
+                                <span style={{ fontSize: '11px', background: '#FCE7F3', color: '#9D174D', padding: '3px 8px', borderRadius: '6px', fontWeight: 700, border: '1px solid #FBCFE8' }}>
+                                  🏪 {e.supplier.name}
+                                </span>
+                              ) : <span style={{ fontSize: '11px', color: '#94A3B8' }}>—</span>}
+                            </td>
+
+                            <td className="mono" style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, color: '#991B1B', fontSize: '14px' }}>
+                              {fmtMoney(e.amount)}
+                            </td>
+
+                            <td style={{ textAlign: 'right', padding: '12px 14px' }}>
+                              <div style={{ display: 'inline-flex', gap: 6 }}>
+                                <button 
+                                  className="va-btn secondary small" 
+                                  style={{ padding: '4px 8px', borderRadius: '6px' }}
+                                  title="View Details"
+                                  onClick={() => { setSelectedExpense(e); setShowDetailModal(true); }}
+                                >
+                                  <Icon path={mdiEye} size={0.65} />
+                                </button>
+                                <button 
+                                  className="va-btn secondary small" 
+                                  style={{ padding: '4px 8px', borderRadius: '6px', color: '#2563EB' }}
+                                  title="Edit Expense"
+                                  onClick={() => handleOpenEdit(e)}
+                                >
+                                  <Icon path={mdiPencil} size={0.65} />
+                                </button>
+                                <button 
+                                  className="va-btn secondary small" 
+                                  style={{ padding: '4px 8px', borderRadius: '6px', color: '#DC2626' }}
+                                  title="Delete Expense"
+                                  onClick={() => { setExpenseToDelete(e); setShowDeleteModal(true); }}
+                                >
+                                  <Icon path={mdiDelete} size={0.65} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </div>
+                  </div>
+                ) : (
+                  /* Mobile View Cards */
+                  <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%' }}>
+                    {expenses.map(e => (
+                      <MobileCard
+                        key={e.id}
+                        title={`${CAT_EMOJI[e.category] ?? '💸'} ${e.category}`}
+                        headerBadge={fmtDate(e.date)}
+                        footer={
+                          <div style={{ display: 'flex', gap: 8, width: '100%', justifyContent: 'flex-end' }}>
+                            <button className="va-btn secondary small" style={{ fontSize: '12px', flex: 1 }} onClick={() => { setSelectedExpense(e); setShowDetailModal(true); }}>👁️ View</button>
+                            <button className="va-btn secondary small" style={{ fontSize: '12px', color: '#2563EB', flex: 1 }} onClick={() => handleOpenEdit(e)}>✏️ Edit</button>
+                            <button className="va-btn secondary small" style={{ fontSize: '12px', color: '#DC2626', flex: 1 }} onClick={() => { setExpenseToDelete(e); setShowDeleteModal(true); }}>🗑️ Delete</button>
+                          </div>
+                        }
+                      >
+                        <MobileCardRow label="Reference ID" value={e.reference || `EXP-${e.id.slice(-6).toUpperCase()}`} isMono />
+                        <MobileCardRow label="Expense Amount" value={fmtMoney(e.amount)} valueColor="#991B1B" isMono />
+                        <MobileCardRow 
+                          label="Paid Via Account" 
+                          value={e.paidBy === 'CASH' ? `💵 ${e.cashAccount?.name ?? 'Main Cash'}` : `🏦 ${e.bankAccount?.name ?? 'Bank'}`} 
+                        />
+                        <MobileCardRow label="Description" value={e.description ?? '—'} />
+                        {e.vehicle && <MobileCardRow label="Linked Vehicle" value={`🚚 ${e.vehicle.plateNo}`} valueColor="#B45309" />}
+                        {e.employee && <MobileCardRow label="Linked Employee" value={`💼 ${e.employee.name}`} valueColor="#3730A3" />}
+                      </MobileCard>
+                    ))}
+                  </div>
+                )}
 
                 {/* Total Summary Footer */}
                 <div style={{

@@ -18,6 +18,7 @@ import dynamic from 'next/dynamic';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import { salesService } from '@/services/salesService';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const WhatsAppShareModal = dynamic(() => import('@/components/modals/WhatsAppShareModal').then(m => m.WhatsAppShareModal), { ssr: false });
 
@@ -108,6 +109,7 @@ type View = 'list' | 'new' | 'detail';
 type Step = 1 | 2 | 3;
 
 export default function SalesPage() {
+  const isMobile = useIsMobile();
   const [pState, setPState] = usePreservedState('sales', {
     view: 'list' as View,
     detailSaleId: '',
@@ -1086,99 +1088,100 @@ export default function SalesPage() {
               <div className="va-empty"><div className="big">No invoices found</div><div>Create your first invoice with + New Invoice</div></div>
             ) : (
               <>
-                {/* Desktop Table View */}
-                <div className="hidden md:block">
-                  <table className="va-table">
-                    <thead>
-                      <tr>
-                        <th>Invoice</th><th>Client</th><th>Date</th><th>Items</th>
-                        <th style={{ textAlign: 'right' }}>Total</th>
-                        <th style={{ textAlign: 'right' }}>Paid</th>
-                        <th style={{ textAlign: 'right' }}>Balance</th>
-                        <th>Mode</th><th>Payment</th><th>Delivery</th><th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sales.map(s => (
-                        <tr key={s.id} style={{ background: s.status === 'PAID' ? undefined : s.balance > 0 ? '#FFF9F5' : undefined }}>
-                          <td className="mono" style={{ fontWeight: 700, color: 'var(--forest)' }}>{s.invoiceNo}</td>
-                          <td>
-                            <div style={{ fontWeight: 600 }}>{s.client?.name} <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--muted)', background: '#e9ecef', padding: '1px 4px', borderRadius: 4, marginLeft: 4 }}>{s.client?.clientId || 'WH-0000'}</span></div>
-                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.client?.type}</div>
-                          </td>
-                          <td style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtDateTime(s.date)}</td>
-                          <td style={{ fontSize: 12, color: 'var(--muted)' }}>{s.items.length} items</td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(s.total)}</td>
-                          <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{s.paid > 0 ? fmtMoney(s.paid) : '—'}</td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: s.balance > 0 ? 'var(--clay)' : 'var(--muted)' }}>
-                            {s.balance > 0 ? fmtMoney(s.balance) : '—'}
-                          </td>
-                          <td><ModeBadge mode={s.paymentMode} /></td>
-                          <td><Badge status={s.status} /></td>
-                          <td><Badge status={s.deliveryStatus} small /></td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 4 }}>
-                              <button className="va-btn secondary small" onClick={() => openDetail(s)}>🧾 View</button>
-                              {isInvoiceEditable(s) && (
-                                <button className="va-btn secondary small" onClick={() => startEditInvoice(s)} style={{ background: '#1A3C28', color: '#fff', border: 'none' }}>✏️ Edit</button>
-                              )}
-                              <button className="va-btn secondary small" onClick={() => shareWhatsApp(s)} disabled={whatsappSharing} style={{ background: whatsappSharing ? '#94d3a2' : '#25D366', color: '#fff', border: 'none', opacity: whatsappSharing ? 0.7 : 1 }}>📲</button>
-                            </div>
-                          </td>
+                {!isMobile ? (
+                  /* Desktop Table View */
+                  <div className="hidden md:block">
+                    <table className="va-table">
+                      <thead>
+                        <tr>
+                          <th>Invoice</th><th>Client</th><th>Date</th><th>Items</th>
+                          <th style={{ textAlign: 'right' }}>Total</th>
+                          <th style={{ textAlign: 'right' }}>Paid</th>
+                          <th style={{ textAlign: 'right' }}>Balance</th>
+                          <th>Mode</th><th>Payment</th><th>Delivery</th><th></th>
                         </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr>
-                        <td colSpan={4} style={{ fontWeight: 700 }}>Totals ({sales.length} invoices)</td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(sales.reduce((s, x) => s + x.total, 0))}</td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>{fmtMoney(sales.reduce((s, x) => s + x.paid, 0))}</td>
-                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--clay)' }}>{fmtMoney(sales.reduce((s, x) => s + x.balance, 0))}</td>
-                        <td colSpan={4}></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {sales.map(s => (
+                          <tr key={s.id} style={{ background: s.status === 'PAID' ? undefined : s.balance > 0 ? '#FFF9F5' : undefined }}>
+                            <td className="mono" style={{ fontWeight: 700, color: 'var(--forest)' }}>{s.invoiceNo}</td>
+                            <td>
+                              <div style={{ fontWeight: 600 }}>{s.client?.name} <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--muted)', background: '#e9ecef', padding: '1px 4px', borderRadius: 4, marginLeft: 4 }}>{s.client?.clientId || 'WH-0000'}</span></div>
+                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.client?.type}</div>
+                            </td>
+                            <td style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtDateTime(s.date)}</td>
+                            <td style={{ fontSize: 12, color: 'var(--muted)' }}>{s.items.length} items</td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(s.total)}</td>
+                            <td className="mono" style={{ textAlign: 'right', color: 'var(--ok)' }}>{s.paid > 0 ? fmtMoney(s.paid) : '—'}</td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: s.balance > 0 ? 'var(--clay)' : 'var(--muted)' }}>
+                              {s.balance > 0 ? fmtMoney(s.balance) : '—'}
+                            </td>
+                            <td><ModeBadge mode={s.paymentMode} /></td>
+                            <td><Badge status={s.status} /></td>
+                            <td><Badge status={s.deliveryStatus} small /></td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button className="va-btn secondary small" onClick={() => openDetail(s)}>🧾 View</button>
+                                {isInvoiceEditable(s) && (
+                                  <button className="va-btn secondary small" onClick={() => startEditInvoice(s)} style={{ background: '#1A3C28', color: '#fff', border: 'none' }}>✏️ Edit</button>
+                                )}
+                                <button className="va-btn secondary small" onClick={() => shareWhatsApp(s)} disabled={whatsappSharing} style={{ background: whatsappSharing ? '#94d3a2' : '#25D366', color: '#fff', border: 'none', opacity: whatsappSharing ? 0.7 : 1 }}>📲</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colSpan={4} style={{ fontWeight: 700 }}>Totals ({sales.length} invoices)</td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(sales.reduce((s, x) => s + x.total, 0))}</td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--ok)' }}>{fmtMoney(sales.reduce((s, x) => s + x.paid, 0))}</td>
+                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--clay)' }}>{fmtMoney(sales.reduce((s, x) => s + x.balance, 0))}</td>
+                          <td colSpan={4}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  /* Mobile Card List View */
+                  <div className="flex md:hidden" style={{ flexDirection: 'column', gap: '14px', width: '100%' }}>
+                    {sales.map(s => (
+                      <MobileInvoiceCard
+                        key={s.id}
+                        sale={s}
+                        onView={() => openDetail(s)}
+                        onEdit={() => startEditInvoice(s)}
+                        isEditable={isInvoiceEditable(s)}
+                      />
+                    ))}
 
-                {/* Mobile Card List View */}
-                <div className="flex md:hidden" style={{ flexDirection: 'column', gap: '14px', width: '100%' }}>
-                  {sales.map(s => (
-                    <MobileInvoiceCard
-                      key={s.id}
-                      sale={s}
-                      onView={() => openDetail(s)}
-                      onEdit={() => startEditInvoice(s)}
-                      isEditable={isInvoiceEditable(s)}
-                    />
-                  ))}
-
-
-              {/* Total Aggregate Card */}
-              <div style={{
-                marginTop: '10px',
-                padding: '16px',
-                background: 'rgba(0,0,0,0.03)',
-                borderRadius: '12px',
-                border: '1px solid var(--line)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--muted)', fontWeight: 500 }}>
-                  <span>Total Invoiced</span>
-                  <span className="mono" style={{ fontWeight: 700, color: 'var(--ink)' }}>{fmtMoney(sales.reduce((s, x) => s + x.total, 0))}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--muted)', fontWeight: 500 }}>
-                  <span>Total Paid</span>
-                  <span className="mono" style={{ fontWeight: 700, color: 'var(--ok)' }}>{fmtMoney(sales.reduce((s, x) => s + x.paid, 0))}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 700, borderTop: '1px solid var(--line)', paddingTop: '8px', marginTop: '4px' }}>
-                  <span>Total Receivables</span>
-                  <span className="mono" style={{ color: 'var(--clay)' }}>{fmtMoney(sales.reduce((s, x) => s + x.balance, 0))}</span>
-                </div>
-              </div>
-            </div>
-          </>
+                    {/* Total Aggregate Card */}
+                    <div style={{
+                      marginTop: '10px',
+                      padding: '16px',
+                      background: 'rgba(0,0,0,0.03)',
+                      borderRadius: '12px',
+                      border: '1px solid var(--line)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--muted)', fontWeight: 500 }}>
+                        <span>Total Invoiced</span>
+                        <span className="mono" style={{ fontWeight: 700, color: 'var(--ink)' }}>{fmtMoney(sales.reduce((s, x) => s + x.total, 0))}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--muted)', fontWeight: 500 }}>
+                        <span>Total Paid</span>
+                        <span className="mono" style={{ fontWeight: 700, color: 'var(--ok)' }}>{fmtMoney(sales.reduce((s, x) => s + x.paid, 0))}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 700, borderTop: '1px solid var(--line)', paddingTop: '8px', marginTop: '4px' }}>
+                        <span>Total Receivables</span>
+                        <span className="mono" style={{ color: 'var(--clay)' }}>{fmtMoney(sales.reduce((s, x) => s + x.balance, 0))}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
         )}
       </div>
         </>
@@ -1747,246 +1750,248 @@ export default function SalesPage() {
 
           {detailLoad ? <div className="va-loading">Loading invoice…</div> : detailSale ? (
             <>
-              {/* Desktop View */}
-              <div className="hide-mobile hidden md:block">
-                {/* Invoice meta */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  {/* Client info */}
-                  <div className="va-panel" style={{ margin: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 8 }}>Client</div>
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>{detailSale.client?.name} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', background: '#e9ecef', padding: '1px 4px', borderRadius: 4, marginLeft: 6 }}>{detailSale.client?.clientId || 'WH-0000'}</span></div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
-                      {detailSale.client?.type}<br />
-                      {detailSale.client?.phone && <>{detailSale.client.phone}<br /></>}
-                      {detailSale.client?.deliveryLocation ?? detailSale.client?.address}
-                    </div>
-                  </div>
+              {!isMobile ? (
+                /* Desktop View */
+                <div className="hide-mobile hidden md:block">
                   {/* Invoice meta */}
-                  <div className="va-panel" style={{ margin: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 8 }}>Invoice Details</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13 }}>
-                      {[
-                        ['Date', fmtDateTime(detailSale.date)],
-                        ['Payment Mode', ''],
-                        ['Status', ''],
-                        ['Delivery', ''],
-                        ['Delivery Staff', detailSale.employee?.name || '—'],
-                        ['Delivery Schedule', detailSale.deliveryDate ? `${fmtDate(detailSale.deliveryDate)} (${detailSale.deliveryTime || 'Anytime'})` : '—'],
-                      ].map(([k]) => (
-                        <div key={k as string}>
-                          <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700 }}>{k}</div>
-                          <div style={{ fontWeight: 600, marginTop: 2 }}>
-                            {k === 'Date' ? fmtDateTime(detailSale.date) :
-                             k === 'Payment Mode' ? <ModeBadge mode={detailSale.paymentMode} /> :
-                             k === 'Status' ? <Badge status={detailSale.status} /> :
-                             k === 'Delivery' ? <Badge status={detailSale.deliveryStatus} /> :
-                             k === 'Delivery Staff' ? (
-                               <span>
-                                 {detailSale.employee?.name} {detailSale.employee?.phone ? `(📞 ${detailSale.employee.phone})` : ''}
-                               </span>
-                             ) :
-                             <span>{detailSale.deliveryDate ? `${fmtDate(detailSale.deliveryDate)} (${detailSale.deliveryTime || 'Anytime'})` : '—'}</span>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Items */}
-                <div className="va-panel">
-                  <div className="va-panel-head"><h3>Items ({detailSale.items.length})</h3></div>
-                  <table className="va-table">
-                    <thead><tr><th>#</th><th>Product</th><th>Qty</th><th>Unit</th><th style={{ textAlign: 'right' }}>Rate (Rs)</th><th style={{ textAlign: 'right' }}>Amount (Rs)</th></tr></thead>
-                    <tbody>
-                      {detailSale.items.map((item, i) => (
-                        <tr key={item.id}>
-                          <td style={{ color: 'var(--muted)', fontSize: 12 }}>{i + 1}</td>
-                          <td>
-                            <div style={{ fontWeight: 600 }}>{item.itemName}</div>
-                            {item.product?.urduName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.product.urduName}</div>}
-                          </td>
-                          <td className="mono">{item.qty}</td>
-                          <td style={{ color: 'var(--muted)' }}>{item.unit}</td>
-                          <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(item.rate)}</td>
-                          <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(item.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Billing summary + payment input */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16 }}>
-                  {/* Summary */}
-                  <div className="va-panel" style={{ margin: 0 }}>
-                    <div className="va-panel-head"><h3>Billing Summary</h3></div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
-                        <span>Current Order</span><span className="mono">{fmtMoney(detailSale.total)}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
-                        <span>Previous Dues {detailSale.previousBalance > 0 && detailSale.previousBalanceDate ? `(as of ${fmtDate(detailSale.previousBalanceDate)})` : ''}</span>
-                        <span className="mono">{fmtMoney(detailSale.previousBalance > 0 ? detailSale.previousBalance : 0)}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 15, paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
-                        <span>Total Due</span><span className="mono">{fmtMoney((detailSale.previousBalance > 0 ? detailSale.previousBalance : 0) + detailSale.total)}</span>
-                      </div>
-                      {detailSale.paid > 0 ? (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ok)' }}>
-                          <span>Payment Received</span><span className="mono">− {fmtMoney(detailSale.paid)}</span>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Payment Received</span><span className="mono">{fmtMoney(0)}</span>
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 16, padding: '10px 14px', borderRadius: 8, background: (detailSale.previousBalance + detailSale.total - detailSale.paid) > 0 ? '#FFF5F0' : '#F0FAF3', color: (detailSale.previousBalance + detailSale.total - detailSale.paid) > 0 ? 'var(--clay)' : 'var(--ok)' }}>
-                        <span>Remaining Balance</span><span className="mono">{fmtMoney(detailSale.previousBalance + detailSale.total - detailSale.paid)}</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    {/* Client info */}
+                    <div className="va-panel" style={{ margin: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 8 }}>Client</div>
+                      <div style={{ fontWeight: 700, fontSize: 16 }}>{detailSale.client?.name} <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', background: '#e9ecef', padding: '1px 4px', borderRadius: 4, marginLeft: 6 }}>{detailSale.client?.clientId || 'WH-0000'}</span></div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
+                        {detailSale.client?.type}<br />
+                        {detailSale.client?.phone && <>{detailSale.client.phone}<br /></>}
+                        {detailSale.client?.deliveryLocation ?? detailSale.client?.address}
                       </div>
                     </div>
-                    {detailSale.notes && (
-                      <div style={{ marginTop: 12, padding: '10px', background: '#FFFBF0', borderRadius: 6, fontSize: 12, borderLeft: '3px solid var(--mustard)' }}>
-                        <strong>Note:</strong> {detailSale.notes}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Delivery details (Record Payment removed per user request) */}
-                  <div className="va-panel" style={{ margin: 0 }}>
-                    <div className="va-panel-head"><h3>Delivery Details</h3></div>
-                    {detailSale.deliveries && detailSale.deliveries.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {detailSale.deliveries.map(d => (
-                          <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
-                            <div>
-                              <span style={{ fontWeight: 700, color: 'var(--forest)' }}>📍 {d.zone ?? 'Mandi Route'}</span>
-                              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                                Track full status or assign drivers in Delivery module
-                              </div>
+                    {/* Invoice meta */}
+                    <div className="va-panel" style={{ margin: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 8 }}>Invoice Details</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13 }}>
+                        {[
+                          ['Date', fmtDateTime(detailSale.date)],
+                          ['Payment Mode', ''],
+                          ['Status', ''],
+                          ['Delivery', ''],
+                          ['Delivery Staff', detailSale.employee?.name || '—'],
+                          ['Delivery Schedule', detailSale.deliveryDate ? `${fmtDate(detailSale.deliveryDate)} (${detailSale.deliveryTime || 'Anytime'})` : '—'],
+                        ].map(([k]) => (
+                          <div key={k as string}>
+                            <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700 }}>{k}</div>
+                            <div style={{ fontWeight: 600, marginTop: 2 }}>
+                              {k === 'Date' ? fmtDateTime(detailSale.date) :
+                               k === 'Payment Mode' ? <ModeBadge mode={detailSale.paymentMode} /> :
+                               k === 'Status' ? <Badge status={detailSale.status} /> :
+                               k === 'Delivery' ? <Badge status={detailSale.deliveryStatus} /> :
+                               k === 'Delivery Staff' ? (
+                                 <span>
+                                   {detailSale.employee?.name} {detailSale.employee?.phone ? `(📞 ${detailSale.employee.phone})` : ''}
+                                 </span>
+                               ) :
+                               <span>{detailSale.deliveryDate ? `${fmtDate(detailSale.deliveryDate)} (${detailSale.deliveryTime || 'Anytime'})` : '—'}</span>}
                             </div>
-                            <Badge status={d.status} />
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-                        ℹ️ No delivery tracking records for this invoice.
+                    </div>
+                  </div>
+
+                  {/* Items */}
+                  <div className="va-panel">
+                    <div className="va-panel-head"><h3>Items ({detailSale.items.length})</h3></div>
+                    <table className="va-table">
+                      <thead><tr><th>#</th><th>Product</th><th>Qty</th><th>Unit</th><th style={{ textAlign: 'right' }}>Rate (Rs)</th><th style={{ textAlign: 'right' }}>Amount (Rs)</th></tr></thead>
+                      <tbody>
+                        {detailSale.items.map((item, i) => (
+                          <tr key={item.id}>
+                            <td style={{ color: 'var(--muted)', fontSize: 12 }}>{i + 1}</td>
+                            <td>
+                              <div style={{ fontWeight: 600 }}>{item.itemName}</div>
+                              {item.product?.urduName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.product.urduName}</div>}
+                            </td>
+                            <td className="mono">{item.qty}</td>
+                            <td style={{ color: 'var(--muted)' }}>{item.unit}</td>
+                            <td className="mono" style={{ textAlign: 'right' }}>{fmtMoney(item.rate)}</td>
+                            <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(item.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Billing summary + payment input */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16 }}>
+                    {/* Summary */}
+                    <div className="va-panel" style={{ margin: 0 }}>
+                      <div className="va-panel-head"><h3>Billing Summary</h3></div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
+                          <span>Current Order</span><span className="mono">{fmtMoney(detailSale.total)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
+                          <span>Previous Dues {detailSale.previousBalance > 0 && detailSale.previousBalanceDate ? `(as of ${fmtDate(detailSale.previousBalanceDate)})` : ''}</span>
+                          <span className="mono">{fmtMoney(detailSale.previousBalance > 0 ? detailSale.previousBalance : 0)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 15, paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
+                          <span>Total Due</span><span className="mono">{fmtMoney((detailSale.previousBalance > 0 ? detailSale.previousBalance : 0) + detailSale.total)}</span>
+                        </div>
+                        {detailSale.paid > 0 ? (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ok)' }}>
+                            <span>Payment Received</span><span className="mono">− {fmtMoney(detailSale.paid)}</span>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>Payment Received</span><span className="mono">{fmtMoney(0)}</span>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 16, padding: '10px 14px', borderRadius: 8, background: (detailSale.previousBalance + detailSale.total - detailSale.paid) > 0 ? '#FFF5F0' : '#F0FAF3', color: (detailSale.previousBalance + detailSale.total - detailSale.paid) > 0 ? 'var(--clay)' : 'var(--ok)' }}>
+                          <span>Remaining Balance</span><span className="mono">{fmtMoney(detailSale.previousBalance + detailSale.total - detailSale.paid)}</span>
+                        </div>
                       </div>
-                    )}
+                      {detailSale.notes && (
+                        <div style={{ marginTop: 12, padding: '10px', background: '#FFFBF0', borderRadius: 6, fontSize: 12, borderLeft: '3px solid var(--mustard)' }}>
+                          <strong>Note:</strong> {detailSale.notes}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Delivery details (Record Payment removed per user request) */}
+                    <div className="va-panel" style={{ margin: 0 }}>
+                      <div className="va-panel-head"><h3>Delivery Details</h3></div>
+                      {detailSale.deliveries && detailSale.deliveries.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {detailSale.deliveries.map(d => (
+                            <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, paddingBottom: 8, borderBottom: '1px solid var(--line-soft)' }}>
+                              <div>
+                                <span style={{ fontWeight: 700, color: 'var(--forest)' }}>📍 {d.zone ?? 'Mandi Route'}</span>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                                  Track full status or assign drivers in Delivery module
+                                </div>
+                              </div>
+                              <Badge status={d.status} />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                          ℹ️ No delivery tracking records for this invoice.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Mobile View: Standardized MobileCard */}
-              <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
-                <MobileCard
-                  title={detailSale.client?.name ?? 'Anonymous Client'}
-                  headerBadge={detailSale.client?.clientId || 'WH-0000'}
-                  footer={
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                      <button
-                        style={{
-                          width: '100%',
-                          padding: '10px 14px',
-                          background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
-                          color: '#FFFFFF',
-                          fontWeight: 700,
-                          borderRadius: '10px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
-                        }}
-                        onClick={() => shareWhatsApp(detailSale)}
-                        disabled={whatsappSharing}
-                      >
-                        {whatsappSharing ? '⏳ Generating...' : '📲 Send WhatsApp'}
-                      </button>
-                      <button
-                        style={{
-                          width: '100%',
-                          padding: '10px 14px',
-                          background: '#F8FAFC',
-                          color: '#0F172A',
-                          fontWeight: 600,
-                          borderRadius: '10px',
-                          border: '1px solid #CBD5E1',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                        onClick={() => printInvoice(detailSale)}
-                      >
-                        👁️ View Invoice / Print
-                      </button>
-                      <button
-                        style={{
-                          width: '100%',
-                          padding: '10px 14px',
-                          background: '#F8FAFC',
-                          color: '#0F172A',
-                          fontWeight: 600,
-                          borderRadius: '10px',
-                          border: '1px solid #CBD5E1',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                        onClick={() => downloadInvoiceJPG(detailSale)}
-                      >
-                        🖼️ Download JPG
-                      </button>
-                    </div>
-                  }
-                >
-                  <MobileCardRow label="Invoice ID" value={detailSale.invoiceNo} isMono />
-                  <MobileCardRow label="Date" value={fmtDateTime(detailSale.date)} />
-                  <MobileCardRow label="Items Count" value={`${detailSale.items.length} items`} />
-                  <MobileCardRow label="Total Amount" value={fmtMoney(detailSale.total)} isMono />
-                  <MobileCardRow label="Paid Amount" value={fmtMoney(detailSale.paid)} valueColor="#166534" isMono />
-                  <MobileCardRow 
-                    label="Balance Due" 
-                    value={fmtMoney(detailSale.balance)} 
-                    valueColor={detailSale.balance > 0 ? '#991B1B' : '#166534'} 
-                    isMono 
-                  />
-                  <MobileCardRow label="Payment Mode">
-                    <MobileCardBadge variant="blue">
-                      {detailSale.paymentMode}
-                    </MobileCardBadge>
-                  </MobileCardRow>
-                  <MobileCardRow label="Payment Status">
-                    <MobileCardBadge variant={detailSale.balance <= 0 ? 'green' : detailSale.paid > 0 ? 'yellow' : 'red'}>
-                      {detailSale.status}
-                    </MobileCardBadge>
-                  </MobileCardRow>
-                  <MobileCardRow label="Delivery Status">
-                    <MobileCardBadge variant={detailSale.deliveryStatus === 'DELIVERED' ? 'green' : 'blue'}>
-                      {detailSale.deliveryStatus}
-                    </MobileCardBadge>
-                  </MobileCardRow>
-                  {detailSale.employee && (
-                    <MobileCardRow label="Delivery Employee" value={detailSale.employee.name} />
-                  )}
-                  {detailSale.deliveryDate && (
+              ) : (
+                /* Mobile View: Standardized MobileCard */
+                <div className="show-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
+                  <MobileCard
+                    title={detailSale.client?.name ?? 'Anonymous Client'}
+                    headerBadge={detailSale.client?.clientId || 'WH-0000'}
+                    footer={
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                        <button
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                            color: '#FFFFFF',
+                            fontWeight: 700,
+                            borderRadius: '10px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
+                          }}
+                          onClick={() => shareWhatsApp(detailSale)}
+                          disabled={whatsappSharing}
+                        >
+                          {whatsappSharing ? '⏳ Generating...' : '📲 Send WhatsApp'}
+                        </button>
+                        <button
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            background: '#F8FAFC',
+                            color: '#0F172A',
+                            fontWeight: 600,
+                            borderRadius: '10px',
+                            border: '1px solid #CBD5E1',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                          }}
+                          onClick={() => printInvoice(detailSale)}
+                        >
+                          👁️ View Invoice / Print
+                        </button>
+                        <button
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            background: '#F8FAFC',
+                            color: '#0F172A',
+                            fontWeight: 600,
+                            borderRadius: '10px',
+                            border: '1px solid #CBD5E1',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                          }}
+                          onClick={() => downloadInvoiceJPG(detailSale)}
+                        >
+                          🖼️ Download JPG
+                        </button>
+                      </div>
+                    }
+                  >
+                    <MobileCardRow label="Invoice ID" value={detailSale.invoiceNo} isMono />
+                    <MobileCardRow label="Date" value={fmtDateTime(detailSale.date)} />
+                    <MobileCardRow label="Items Count" value={`${detailSale.items.length} items`} />
+                    <MobileCardRow label="Total Amount" value={fmtMoney(detailSale.total)} isMono />
+                    <MobileCardRow label="Paid Amount" value={fmtMoney(detailSale.paid)} valueColor="#166534" isMono />
                     <MobileCardRow 
-                      label="Delivery Schedule" 
-                      value={`${fmtDate(detailSale.deliveryDate)} (${detailSale.deliveryTime || 'Anytime'})`} 
+                      label="Balance Due" 
+                      value={fmtMoney(detailSale.balance)} 
+                      valueColor={detailSale.balance > 0 ? '#991B1B' : '#166534'} 
+                      isMono 
                     />
-                  )}
-                </MobileCard>
-              </div>
+                    <MobileCardRow label="Payment Mode">
+                      <MobileCardBadge variant="blue">
+                        {detailSale.paymentMode}
+                      </MobileCardBadge>
+                    </MobileCardRow>
+                    <MobileCardRow label="Payment Status">
+                      <MobileCardBadge variant={detailSale.balance <= 0 ? 'green' : detailSale.paid > 0 ? 'yellow' : 'red'}>
+                        {detailSale.status}
+                      </MobileCardBadge>
+                    </MobileCardRow>
+                    <MobileCardRow label="Delivery Status">
+                      <MobileCardBadge variant={detailSale.deliveryStatus === 'DELIVERED' ? 'green' : 'blue'}>
+                        {detailSale.deliveryStatus}
+                      </MobileCardBadge>
+                    </MobileCardRow>
+                    {detailSale.employee && (
+                      <MobileCardRow label="Delivery Employee" value={detailSale.employee.name} />
+                    )}
+                    {detailSale.deliveryDate && (
+                      <MobileCardRow 
+                        label="Delivery Schedule" 
+                        value={`${fmtDate(detailSale.deliveryDate)} (${detailSale.deliveryTime || 'Anytime'})`} 
+                      />
+                    )}
+                  </MobileCard>
+                </div>
+              )}
             </>
           ) : (
             <div className="va-empty" style={{ padding: 40, textAlign: 'center' }}>

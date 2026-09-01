@@ -98,21 +98,21 @@ export function usePreservedState<T extends Record<string, any>>(pageKey: string
 
     window.addEventListener('popstate', handlePopState);
 
-    let scrollTimeout: NodeJS.Timeout;
+    let scrollTimeout: any = null;
     const handleScroll = () => {
-      clearTimeout(scrollTimeout);
+      if (scrollTimeout) clearTimeout(scrollTimeout);
       scrollTimeout = setTimeout(() => {
         if (typeof window !== 'undefined') {
           savePageState(pageKey, stateRef.current, window.scrollY);
         }
-      }, 100);
+      }, 300);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
-      clearTimeout(scrollTimeout);
+      if (scrollTimeout) clearTimeout(scrollTimeout);
       if (typeof window !== 'undefined') {
         savePageState(pageKey, stateRef.current, window.scrollY);
       }

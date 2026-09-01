@@ -127,11 +127,15 @@ export default function DashboardPage() {
   useEffect(() => {
     if (selectedDate !== todayStr) return; // auto-refresh only on today's view
     const interval = setInterval(() => {
-      loadForDate(selectedDate, true);
-    }, 20000);
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadForDate(selectedDate, true);
+      }
+    }, 60000);
 
     const handleRevalidate = () => {
-      loadForDate(selectedDate, true);
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadForDate(selectedDate, true);
+      }
     };
 
     window.addEventListener('app-revalidate', handleRevalidate);

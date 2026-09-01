@@ -10,6 +10,7 @@ import { MobileCard, MobileCardRow, MobileCardBox, MobileCardBadge } from '@/com
 import { ProductVisual } from '@/components/ui/ProductVisual';
 import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import Icon from '@mdi/react';
 import {
   mdiTruckDelivery,
@@ -84,6 +85,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; 
 };
 
 export default function DeliveryPage() {
+  const isMobile = useIsMobile();
   const [dState, setDState] = usePreservedState('delivery', {
     view: 'table' as 'table' | 'grid',
     filterStatus: 'ALL',
@@ -648,7 +650,7 @@ export default function DeliveryPage() {
             {/* ══════════════════════════════════════════════════════════════════════ */}
             {/* DESKTOP TABLE VIEW (Admin Dispatch Mode)                                */}
             {/* ══════════════════════════════════════════════════════════════════════ */}
-            {!isEmployeeMode && (
+            {(!isEmployeeMode && !isMobile) ? (
               <div className="hide-mobile">
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                   <table style={{ width: '100%', minWidth: 1080, borderCollapse: 'collapse', textAlign: 'left' }}>
@@ -931,13 +933,10 @@ export default function DeliveryPage() {
                   <span>Click <strong>Order Items</strong> to inspect full product list</span>
                 </div>
               </div>
-            )}
-
-            {/* ══════════════════════════════════════════════════════════════════════ */}
-            {/* RESPONSIVE MOBILE & DRIVER RUN CARD VIEW                               */}
-            {/* ══════════════════════════════════════════════════════════════════════ */}
-            <div 
-              className={isEmployeeMode ? '' : 'show-mobile'}
+            ) : (
+              /* RESPONSIVE MOBILE & DRIVER RUN CARD VIEW */
+              <div 
+                className={isEmployeeMode ? '' : 'show-mobile'}
               style={{ 
                 display: 'flex', 
                 flexDirection: 'column', 
@@ -1191,6 +1190,7 @@ export default function DeliveryPage() {
                 );
               })}
             </div>
+            )}
           </div>
         )}
       </div>

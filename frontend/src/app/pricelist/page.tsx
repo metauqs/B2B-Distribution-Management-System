@@ -384,12 +384,14 @@ export default function PriceListPage() {
     return () => clearInterval(interval);
   }, [activeBroadcastId]);
 
-  // ─── Auto-refresh: poll every 30 s while on today tab (background purchases) ─
+  // ─── Auto-refresh: poll every 60 s while on today tab when visible ─
   useEffect(() => {
     if (tab !== 'today' || isEditing) return;
     const interval = setInterval(() => {
-      loadDateList(targetDate, true); // background update
-    }, 30_000);
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadDateList(targetDate, true); // background update
+      }
+    }, 60_000);
     return () => clearInterval(interval);
   }, [tab, targetDate, loadDateList, isEditing]);
 
