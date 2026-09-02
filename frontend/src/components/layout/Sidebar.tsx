@@ -24,6 +24,8 @@ import { hasModuleAccess } from '@/utils/rbac';
 import { savePageState } from '@/utils/navigationStateStore';
 import { prefetchPageData } from '@/utils/dataPrefetch';
 
+let hasPrefetchedNavRoutes = false;
+
 interface SubItem {
   label: string;
   num: string;
@@ -97,11 +99,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [activePopupIdx, setActivePopupIdx] = useState<number | null>(null);
 
   useEffect(() => {
-    // Prefetch all key module routes for instant 0ms transitions
-    const routes = ['/', '/sales', '/inventory', '/clients', '/purchases', '/delivery', '/reports', '/employees', '/pricelist', '/collections', '/expenses', '/settings'];
-    routes.forEach(r => {
-      try { router.prefetch(r); } catch (e) {}
-    });
+    // Prefetch all key module routes once per session for instant transitions
+    if (!hasPrefetchedNavRoutes) {
+      hasPrefetchedNavRoutes = true;
+      const routes = ['/', '/sales', '/inventory', '/clients', '/purchases', '/delivery', '/reports', '/employees', '/pricelist', '/collections', '/expenses', '/settings'];
+      routes.forEach(r => {
+        try { router.prefetch(r); } catch (e) {}
+      });
+    }
   }, [router]);
 
   const handleNavClick = (href: string) => {
@@ -282,7 +287,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   href={href}
                   prefetch={true}
                   onMouseEnter={() => prefetchPageData(href)}
-                  onTouchStart={() => prefetchPageData(href)}
                   onClick={onClose}
                   className={`va-nav-btn${active ? ' active' : ''}`}
                   style={categoryButtonStyle(active)}
@@ -357,7 +361,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             href={sub.href}
                             prefetch={true}
                             onMouseEnter={() => prefetchPageData(sub.href)}
-                            onTouchStart={() => prefetchPageData(sub.href)}
                             onClick={onClose}
                             className={`va-nav-btn${isActive(sub.href) ? ' active' : ''}`}
                             style={{
@@ -529,7 +532,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                               href={sub.href}
                               prefetch={true}
                               onMouseEnter={() => prefetchPageData(sub.href)}
-                              onTouchStart={() => prefetchPageData(sub.href)}
                               onClick={onClose}
                               className={`va-nav-btn${isActive(sub.href) ? ' active' : ''}`}
                               style={{

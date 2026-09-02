@@ -1162,7 +1162,7 @@ export default function ExpensesPage() {
 
       {/* View Details Modal */}
       {showDetailModal && selectedExpense && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
           <div style={{ background: '#FFFFFF', borderRadius: '16px', maxWidth: 520, width: '100%', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
             <div style={{ background: 'linear-gradient(135deg, #1B4D2E 0%, #2E7D32 100%)', color: '#FFFFFF', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700 }}>Expense Details</h3>
@@ -1239,7 +1239,7 @@ export default function ExpensesPage() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && expenseToDelete && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
           <div style={{ background: '#FFFFFF', borderRadius: '16px', maxWidth: 440, width: '100%', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#991B1B' }}>Confirm Expense Deletion</h3>
             <p style={{ color: '#475569', fontSize: '14px', marginTop: 10 }}>
@@ -1261,7 +1261,7 @@ export default function ExpensesPage() {
 
       {/* Deposit Daily Cash Modal */}
       {showDepositModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
           <div style={{ background: '#FFFFFF', borderRadius: '16px', maxWidth: 480, width: '100%', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
             <div style={{ background: 'linear-gradient(135deg, #166534 0%, #15803D 100%)', color: '#FFFFFF', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

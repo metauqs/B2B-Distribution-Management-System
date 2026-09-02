@@ -2154,7 +2154,7 @@ export default function SalesPage() {
       )}
       {/* Audit Trail Modal */}
       {showAuditModal && (
-        <div onClick={() => setShowAuditModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: 16 }}>
+        <div onClick={() => setShowAuditModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ padding: '16px 20px', background: 'linear-gradient(135deg, #1A3C28 0%, #2D6A4F 100%)', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>

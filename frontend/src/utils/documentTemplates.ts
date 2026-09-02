@@ -2339,17 +2339,13 @@ export async function convertDataUrlToHighResJpg(dataUrl: string, quality = 0.98
   });
 }
 
-// ── Cached html2canvas module instance ──────────────────────────────────────────
+// ── Cached html2canvas module instance (loaded dynamically on-demand) ────────────────
 let html2canvasLib: any = null;
 async function getHtml2Canvas() {
   if (html2canvasLib) return html2canvasLib;
   const mod = await import('html2canvas');
   html2canvasLib = mod.default || mod;
   return html2canvasLib;
-}
-if (typeof window !== 'undefined') {
-  // Pre-warm html2canvas module immediately on browser boot
-  getHtml2Canvas().catch(() => {});
 }
 
 // In-memory memoization cache for rendered document JPGs (instant 0ms reuse)

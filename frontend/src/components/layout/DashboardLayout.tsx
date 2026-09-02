@@ -20,23 +20,25 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const { user, isAuthenticated } = useAppSelector(state => state.auth);
 
-  // Background silent session validation with server HttpOnly cookie
+  // Background silent session validation only if user state is not already hydrated
   useEffect(() => {
-    dispatch(fetchCurrentUser()).then((action) => {
-      if (fetchCurrentUser.rejected.match(action)) {
-        const payload = action.payload as string;
-        if (payload?.includes('expired') || payload?.includes('invalid')) {
-          console.warn('🔒 Session invalid or expired. Redirecting to login...');
-          router.replace('/login?expired=true');
+    if (!user || !isAuthenticated) {
+      dispatch(fetchCurrentUser()).then((action) => {
+        if (fetchCurrentUser.rejected.match(action)) {
+          const payload = action.payload as string;
+          if (payload?.includes('expired') || payload?.includes('invalid')) {
+            console.warn('🔒 Session invalid or expired. Redirecting to login...');
+            router.replace('/login?expired=true');
+          }
         }
-      }
-    });
-  }, [dispatch, router]);
+      });
+    }
+  }, [dispatch, router, user, isAuthenticated]);
 
-  // Periodic background heartbeat & tab focus revalidation (throttled to 60s)
+  // Periodic background heartbeat & tab focus revalidation (throttled to 120s to save mobile battery)
   useEffect(() => {
     let lastChecked = 0;
-    const CHECK_THROTTLE_MS = 60000;
+    const CHECK_THROTTLE_MS = 120000;
 
     const handleResume = async () => {
       const now = Date.now();
@@ -88,8 +90,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(27, 38, 30, 0.45)',
-            backdropFilter: 'blur(3px)',
+            background: 'rgba(27, 38, 30, 0.55)',
             zIndex: 35,
             transition: 'opacity 0.2s ease',
           }}

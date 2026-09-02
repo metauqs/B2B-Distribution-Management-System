@@ -197,16 +197,14 @@ export default function LoginPage() {
           </span>
         </div>
 
-        {/* Glassmorphism Login Card */}
+        {/* High-Performance Login Card */}
         <div style={{
-          background: 'rgba(255, 255, 255, 0.78)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          background: '#FFFFFF',
           borderRadius: '24px',
           width: '100%',
           overflow: 'hidden',
-          boxShadow: '0 24px 50px rgba(27, 67, 44, 0.12), 0 8px 20px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.9)',
-          border: '1px solid rgba(255, 255, 255, 0.8)',
+          boxShadow: '0 12px 36px rgba(27, 67, 44, 0.12), 0 2px 8px rgba(0, 0, 0, 0.04)',
+          border: '1px solid #E2E8F0',
         }}>
           {/* Dark Green Header */}
           <div style={{
@@ -223,14 +221,11 @@ export default function LoginPage() {
               height: '52px',
               borderRadius: '50%',
               background: 'rgba(255, 255, 255, 0.18)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: '14px',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
             }}>
               <Icon path={mdiShieldAccount} size={1.25} color="#FFFFFF" />
             </div>

@@ -59,7 +59,7 @@ export function MobileCard({
         background: '#FFFFFF',
         borderRadius: '16px',
         border: '1px solid #E2E8F0',
-        boxShadow: '0 4px 18px rgba(0,0,0,0.05)',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
         overflow: 'hidden',
         width: '100%',
         marginBottom: '14px',
@@ -85,14 +85,14 @@ export function MobileCard({
           <div
             style={{
               background: 'rgba(255, 255, 255, 0.22)',
+              border: '1px solid rgba(255, 255, 255, 0.35)',
               color: '#FFFFFF',
               fontSize: '12px',
               fontWeight: 600,
-              padding: '4px 10px',
+              padding: '3px 10px',
               borderRadius: '12px',
               whiteSpace: 'nowrap',
               flexShrink: 0,
-              backdropFilter: 'blur(4px)',
             }}
           >
             {headerBadge}

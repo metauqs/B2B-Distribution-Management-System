@@ -638,7 +638,7 @@ export default function InventoryPage() {
       {priceModalOpen && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)',
+          background: 'rgba(15, 23, 42, 0.7)',
           zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
         }}>
           <div className="va-panel" style={{ width: '100%', maxWidth: 520, margin: 0, background: '#ffffff', borderRadius: 16, boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>

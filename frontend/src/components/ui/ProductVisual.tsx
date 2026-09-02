@@ -87,15 +87,9 @@ interface ProductVisualProps {
   className?: string;
 }
 
-export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'lazy', style, className }: ProductVisualProps) {
+function ProductVisualComponent({ name, emoji, imageUrl, size = 22, loading = 'lazy', style, className }: ProductVisualProps) {
   const [masterImgError, setMasterImgError] = useState(false);
   const [staticImgError, setStaticImgError] = useState(false);
-
-  // Reset imgError whenever the imageUrl or name prop changes
-  React.useEffect(() => {
-    setMasterImgError(false);
-    setStaticImgError(false);
-  }, [imageUrl, name]);
 
   // 1. Highest Priority: Uploaded Image from Product Master (imageUrl)
   if (imageUrl && imageUrl.trim() && !masterImgError) {
@@ -200,3 +194,14 @@ export function ProductVisual({ name, emoji, imageUrl, size = 22, loading = 'laz
     </span>
   );
 }
+
+export const ProductVisual = React.memo(ProductVisualComponent, (prev, next) => {
+  return (
+    prev.name === next.name &&
+    prev.emoji === next.emoji &&
+    prev.imageUrl === next.imageUrl &&
+    prev.size === next.size &&
+    prev.loading === next.loading &&
+    prev.className === next.className
+  );
+});

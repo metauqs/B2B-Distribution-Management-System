@@ -137,7 +137,6 @@ export function WhatsAppShareModal({
         position: 'fixed',
         inset: 0,
         backgroundColor: 'rgba(0,0,0,0.75)',
-        backdropFilter: 'blur(6px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
