@@ -50,13 +50,41 @@ export async function getValidUserId(userId: string | null | undefined, tx?: any
   }
 }
 
-// ─── Generate invoice number ──────────────────────────────────────────────────
+// ─── Generate & Parse invoice numbers ────────────────────────────────────────
+
+export interface ParsedInvoiceSequence {
+  prefix: string;
+  seq: number;
+  padLen: number;
+}
+
+export function parseInvoiceSequence(invoiceNo: string): ParsedInvoiceSequence | null {
+  if (!invoiceNo) return null;
+  const clean = invoiceNo.replace(/-CANCELLED.*$/i, '').trim();
+  const match = clean.match(/^(.*?)(\d{1,5})$/);
+  if (!match) return null;
+  return {
+    prefix: match[1],
+    seq: parseInt(match[2], 10),
+    padLen: match[2].length,
+  };
+}
+
+export function formatInvoiceNo(prefix: string, seq: number, padLen: number = 4): string {
+  return `${prefix}${String(seq).padStart(padLen, '0')}`;
+}
 
 export async function generateInvoiceNo(clientId: string, branchId?: string, tx?: any): Promise<string> {
   const db = tx || prisma;
 
   if (!clientId) {
-    const totalCount = await db.sale.count();
+    const totalCount = await db.sale.count({
+      where: {
+        deletedAt: null,
+        status: { not: 'CANCELLED' },
+        invoiceNo: { not: { contains: 'CANCELLED' } }
+      }
+    });
     return `IN-0000-${String(totalCount + 1).padStart(4, '0')}`;
   }
 
@@ -69,9 +97,14 @@ export async function generateInvoiceNo(clientId: string, branchId?: string, tx?
   // Strip 'WH-' prefix for Option 2 (e.g. 'WH-1111' -> '1111')
   const clientCode = rawCode.replace(/^WH-/i, '').trim();
 
-  // Find the single latest sale for this client to calculate next sequence
+  // Find the single latest active non-cancelled sale for this client to calculate next sequence
   const latestSale = await db.sale.findFirst({
-    where: { clientId },
+    where: {
+      clientId,
+      deletedAt: null,
+      status: { not: 'CANCELLED' },
+      invoiceNo: { not: { contains: 'CANCELLED' } }
+    },
     select: { invoiceNo: true },
     orderBy: { createdAt: 'desc' },
   });
@@ -90,7 +123,14 @@ export async function generateInvoiceNo(clientId: string, branchId?: string, tx?
   }
 
   if (maxSeq === 0) {
-    maxSeq = await db.sale.count({ where: { clientId } });
+    maxSeq = await db.sale.count({
+      where: {
+        clientId,
+        deletedAt: null,
+        status: { not: 'CANCELLED' },
+        invoiceNo: { not: { contains: 'CANCELLED' } }
+      }
+    });
   }
 
   const nextSeq = maxSeq + 1;

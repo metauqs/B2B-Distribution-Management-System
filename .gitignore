@@ -75,3 +75,6 @@ pids/
 
 # AI Agents configuration (NEVER commit these)
 .agents/
+
+# Scratch test scripts
+scratch/

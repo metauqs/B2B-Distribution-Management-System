@@ -7,6 +7,7 @@ import { stockOut, syncInvoiceEditStock, stockReturn } from '../lib/inventorySer
 import { getBusinessDateRange, getBusinessDateString, getCurrentBusinessDateRange, parseInputDateToUtc } from '../lib/businessDate';
 import { postSaleLedger, postCollectionLedger } from '../lib/financialLedgerService';
 import { getCachedActiveProducts } from './pricelist';
+import { deleteOrCancelInvoice } from '../services/invoiceCancellationService';
 
 const router = Router();
 
@@ -1172,88 +1173,77 @@ router.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/sales/:id/cancel - Cancel an invoice
+// POST /api/sales/:id/cancel - Production-Safe Invoice Cancellation & Sequence Handling
 router.post('/:id/cancel', async (req: Request, res: Response) => {
-  const branchId = req.headers['x-branch-id'] as string;
-  const userId = (req.headers['x-user-id'] as string) || null;
-  const { id } = req.params;
-  const { reason } = req.body;
+  const branchId = (req.headers['x-branch-id'] as string) || (req.user as any)?.branchId;
+  const userId = (req.headers['x-user-id'] as string) || (req.user as any)?.sub || (req.user as any)?.id || null;
+  const userRole = (req.headers['x-user-role'] as string) || (req.user as any)?.role || null;
+  const idempotencyKey = (
+    (req.headers['idempotency-key'] as string) ||
+    (req.headers['x-idempotency-key'] as string) ||
+    req.body?.idempotencyKey
+  )?.trim() || null;
 
-  if (!branchId) {
-    return res.status(400).json({ success: false, error: 'Missing branch' });
-  }
+  const { id } = req.params;
+  const { reason, isDuplicateCompaction } = req.body || {};
 
   try {
-    const updatedSale = await prisma.$transaction(async tx => {
-      const sale = await tx.sale.findUnique({
-        where: { id, deletedAt: null },
-        include: { items: { include: { product: true } }, client: true }
-      });
-
-      if (!sale) throw new Error('Invoice not found');
-      if (sale.status === 'CANCELLED') throw new Error('Invoice is already cancelled');
-
-      for (const item of sale.items) {
-        if (item.productId) {
-          await stockReturn(tx, {
-            productId: item.productId,
-            branchId,
-            qty: Number(item.qty) - Number((item as any).returnedQty || 0),
-            unit: item.unit || 'KG',
-            refType: 'sale_cancelled',
-            refId: sale.id,
-            refNo: sale.invoiceNo,
-            reason: 'Invoice Cancelled' + (reason ? ` - ${reason}` : '')
-          });
-        }
-      }
-
-      const cancelledSale = await tx.sale.update({
-        where: { id },
-        data: {
-          status: 'CANCELLED',
-          balance: 0,
-        },
-        include: {
-          items: { include: { product: true } },
-          client: true,
-        }
-      });
-
-      if (sale.balance > 0) {
-        await recordCustomerLedgerEntry(tx, {
-          clientId: sale.clientId,
-          branchId,
-          type: 'CANCELLATION',
-          date: new Date(),
-          referenceId: sale.id,
-          referenceNo: sale.invoiceNo,
-          description: 'Invoice Cancelled',
-          debit: 0,
-          credit: sale.balance
-        });
-        await reconcileClientBalancesAndAllocations(sale.clientId, tx);
-      }
-
-      return cancelledSale;
-    }, { maxWait: 15000, timeout: 120000 });
-
-    await writeAuditLog({
-      userId: userId ?? undefined,
+    const result = await deleteOrCancelInvoice({
+      invoiceId: id,
+      adminUserId: userId,
+      adminRole: userRole,
       branchId,
-      action: 'CANCEL',
-      entity: 'Sale',
-      entityId: id,
-      newData: { reason, newStatus: 'CANCELLED' }
+      reason,
+      idempotencyKey,
+      isDuplicateCompaction,
     });
 
     clearSalesCache();
-    return res.json({ success: true, data: updatedSale });
+    return res.json({ success: true, data: result.sale, details: result });
   } catch (err: any) {
     console.error('[POST /api/sales/:id/cancel]', err);
-    return res.status(err.message === 'Invoice is already cancelled' ? 400 : 500).json({
+    const statusCode = err.statusCode || (err.message?.includes('not found') ? 404 : err.message?.includes('already cancelled') ? 400 : 500);
+    return res.status(statusCode).json({
       success: false,
-      error: err.message ?? 'Failed to cancel invoice'
+      error: err.message ?? 'Failed to cancel invoice',
+    });
+  }
+});
+
+// DELETE /api/sales/:id - Alias for Cancel / Delete invoice
+router.delete('/:id', async (req: Request, res: Response) => {
+  const branchId = (req.headers['x-branch-id'] as string) || (req.user as any)?.branchId;
+  const userId = (req.headers['x-user-id'] as string) || (req.user as any)?.sub || (req.user as any)?.id || null;
+  const userRole = (req.headers['x-user-role'] as string) || (req.user as any)?.role || null;
+  const idempotencyKey = (
+    (req.headers['idempotency-key'] as string) ||
+    (req.headers['x-idempotency-key'] as string) ||
+    (req.query?.idempotencyKey as string)
+  )?.trim() || null;
+
+  const { id } = req.params;
+  const reason = (req.query?.reason as string) || (req.body?.reason as string);
+  const isDuplicateCompaction = req.query?.isDuplicateCompaction === 'true' || req.body?.isDuplicateCompaction === true;
+
+  try {
+    const result = await deleteOrCancelInvoice({
+      invoiceId: id,
+      adminUserId: userId,
+      adminRole: userRole,
+      branchId,
+      reason,
+      idempotencyKey,
+      isDuplicateCompaction,
+    });
+
+    clearSalesCache();
+    return res.json({ success: true, data: result.sale, details: result });
+  } catch (err: any) {
+    console.error('[DELETE /api/sales/:id]', err);
+    const statusCode = err.statusCode || (err.message?.includes('not found') ? 404 : err.message?.includes('already cancelled') ? 400 : 500);
+    return res.status(statusCode).json({
+      success: false,
+      error: err.message ?? 'Failed to delete/cancel invoice',
     });
   }
 });

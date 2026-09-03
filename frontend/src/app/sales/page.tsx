@@ -19,8 +19,10 @@ import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import { salesService } from '@/services/salesService';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useAccess } from '@/hooks/useAccess';
 
 const WhatsAppShareModal = dynamic(() => import('@/components/modals/WhatsAppShareModal').then(m => m.WhatsAppShareModal), { ssr: false });
+const DeleteInvoiceModal = dynamic(() => import('@/components/modals/DeleteInvoiceModal').then(m => m.DeleteInvoiceModal), { ssr: false });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -140,6 +142,10 @@ export default function SalesPage() {
   const [step,     setStep]    = useState<Step>(1);
   const [toast,    setToast]   = useState('');
 
+  const { role, isAdmin } = useAccess();
+  const canCancelInvoice = isAdmin || role === 'OWNER' || role === 'MANAGER';
+  const [cancelModalSale, setCancelModalSale] = useState<Sale | null>(null);
+
   // ── List state ──────────────────────────────────────────────────────────────
   const [sales,      setSales]      = useState<Sale[]>(() => {
     const targetDate = filterDate || todayInputDate();
@@ -235,6 +241,20 @@ export default function SalesPage() {
     setInvNotes('');
     setStep(1);
     setView('list');
+  };
+
+  const handleInvoiceCancelled = (resultData: any) => {
+    const invNum = resultData?.details?.oldInvoiceNo || cancelModalSale?.invoiceNo || 'selected';
+    showToast(`✅ Invoice #${invNum} cancelled successfully.`);
+    invalidateCache('/api/sales');
+    invalidateCache('/api/clients');
+    invalidateCache('/api/inventory');
+    invalidateCache('/api/reports');
+    loadSales();
+    if (detailSaleId) {
+      setPState({ view: 'list', detailSaleId: '' });
+      setDetailSale(null);
+    }
   };
 
   const openAuditTrail = async (saleId: string) => {
@@ -1126,6 +1146,16 @@ export default function SalesPage() {
                                   <button className="va-btn secondary small" onClick={() => startEditInvoice(s)} style={{ background: '#1A3C28', color: '#fff', border: 'none' }}>✏️ Edit</button>
                                 )}
                                 <button className="va-btn secondary small" onClick={() => shareWhatsApp(s)} disabled={whatsappSharing} style={{ background: whatsappSharing ? '#94d3a2' : '#25D366', color: '#fff', border: 'none', opacity: whatsappSharing ? 0.7 : 1 }}>📲</button>
+                                {canCancelInvoice && s.status !== 'CANCELLED' && (
+                                  <button
+                                    className="va-btn secondary small"
+                                    title="Delete / Cancel Invoice"
+                                    onClick={() => setCancelModalSale(s)}
+                                    style={{ background: '#FEE2E2', color: '#B91C1C', border: '1px solid #FECACA', padding: '4px 7px' }}
+                                  >
+                                    🗑️
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1739,6 +1769,15 @@ export default function SalesPage() {
                   {isInvoiceEditable(detailSale) && (
                     <button className="va-btn primary small" onClick={() => startEditInvoice(detailSale)} style={{ background: '#1A3C28', color: '#fff', border: 'none' }}>✏️ Edit Invoice</button>
                   )}
+                  {canCancelInvoice && detailSale.status !== 'CANCELLED' && (
+                    <button
+                      className="va-btn secondary small"
+                      onClick={() => setCancelModalSale(detailSale)}
+                      style={{ background: '#FEE2E2', color: '#B91C1C', border: '1px solid #FECACA', fontWeight: 600 }}
+                    >
+                      🗑️ Delete Invoice
+                    </button>
+                  )}
                   <button className="va-btn secondary small" onClick={() => openAuditTrail(detailSale.id)}>📋 Audit Trail</button>
                   <button className="va-btn secondary small" onClick={() => printInvoice(detailSale)}>🖨️ Print</button>
                   <button className="va-btn secondary small" onClick={() => downloadInvoiceJPG(detailSale)}>🖼️ Download JPG</button>
@@ -1951,6 +1990,28 @@ export default function SalesPage() {
                         >
                           🖼️ Download JPG
                         </button>
+                        {canCancelInvoice && detailSale.status !== 'CANCELLED' && (
+                          <button
+                            style={{
+                              width: '100%',
+                              padding: '10px 14px',
+                              background: '#FEF2F2',
+                              color: '#DC2626',
+                              fontWeight: 600,
+                              borderRadius: '10px',
+                              border: '1px solid #FECACA',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px'
+                            }}
+                            onClick={() => setCancelModalSale(detailSale)}
+                          >
+                            🗑️ Delete / Cancel Invoice
+                          </button>
+                        )}
                       </div>
                     }
                   >
@@ -2204,6 +2265,15 @@ export default function SalesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Delete / Cancel Invoice Confirmation Modal */}
+      {cancelModalSale && (
+        <DeleteInvoiceModal
+          invoice={cancelModalSale}
+          onClose={() => setCancelModalSale(null)}
+          onSuccess={handleInvoiceCancelled}
+        />
       )}
     </DashboardLayout>
   );
