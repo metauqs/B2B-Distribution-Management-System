@@ -11,7 +11,7 @@ import { usePreservedState } from '@/hooks/usePreservedState';
 import { useIdempotentSubmit } from '@/hooks/useIdempotentSubmit';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import Icon from '@mdi/react';
-import { mdiBriefcase, mdiAccountBadge, mdiTrashCanOutline, mdiAlertCircleOutline } from '@mdi/js';
+import { mdiBriefcase, mdiAccountBadge, mdiAlertCircleOutline } from '@mdi/js';
 import { useAppSelector } from '@/store';
 
 interface SalaryPayment {
@@ -103,10 +103,6 @@ export default function EmployeesPage() {
   const [form, setForm] = useState({ ...BLANK_FORM });
   const [computedEmployeeId, setComputedEmployeeId] = useState('');
 
-  // Delete modal states
-  const [empToDelete, setEmpToDelete] = useState<Employee | null>(null);
-  const [showClearAllModal, setShowClearAllModal] = useState(false);
-  
   // Payment states
   const [payForm, setPayForm] = useState({ ...BLANK_PAYMENT });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toLocaleString('default', { month: 'long', year: 'numeric' }));
@@ -252,54 +248,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // Delete single employee permanently
-  const confirmDeleteEmployee = async () => {
-    if (!isAdmin) return showToast('❌ Only Admins can delete employee profiles');
-    if (!empToDelete) return;
-    setSaving(true);
-    try {
-      const res = await apiFetch(`/api/employees/${empToDelete.id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        invalidateCache('/api/employees');
-        showToast(`✅ Employee "${empToDelete.name}" permanently deleted`);
-        setEmpToDelete(null);
-        if (view === 'profile' && activeEmp?.id === empToDelete.id) {
-          setView('list');
-        }
-        await load(true);
-      } else {
-        showToast('❌ ' + (data.error ?? 'Failed to delete employee'));
-      }
-    } catch {
-      showToast('❌ Network error deleting employee');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Clear ALL employees permanently
-  const confirmClearAllEmployees = async () => {
-    if (!isAdmin) return showToast('❌ Only Admins can delete employee profiles');
-    setSaving(true);
-    try {
-      const res = await apiFetch('/api/employees/clear-all', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast('✅ All employee records permanently deleted');
-        setShowClearAllModal(false);
-        setView('list');
-        await load();
-      } else {
-        showToast('❌ ' + (data.error ?? 'Failed to delete all employees'));
-      }
-    } catch {
-      showToast('❌ Network error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   // Record salary payment
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -395,11 +343,6 @@ export default function EmployeesPage() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {view === 'list' ? (
               <>
-                {isAdmin && employees.length > 0 && (
-                  <button className="va-btn secondary small" style={{ color: '#C62828', borderColor: '#E9C6C6' }} onClick={() => setShowClearAllModal(true)}>
-                    🗑️ Delete All Employees Data
-                  </button>
-                )}
                 {isAdmin && (
                   <button className="va-btn" onClick={startAdd}>+ Add Employee</button>
                 )}
@@ -465,9 +408,15 @@ export default function EmployeesPage() {
             <div className="va-form-row" style={{ marginTop: 12 }}>
               <div className="va-field">
                 <label>Role / Designation *</label>
-                <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
-                  {ROLES.map(r => <option key={r} value={r}>{ROLE_DISPLAY[r] ?? r}</option>)}
-                </select>
+                {form.name?.trim().toLowerCase() === 'khizar hayat' || form.phone?.trim() === '03118469001' ? (
+                  <div style={{ padding: '8px 12px', background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 6, color: '#92400E', fontWeight: 700, fontSize: 13 }}>
+                    ⭐ Super Admin (Sole System Owner)
+                  </div>
+                ) : (
+                  <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
+                    {ROLES.map(r => <option key={r} value={r}>{ROLE_DISPLAY[r] ?? r}</option>)}
+                  </select>
+                )}
               </div>
               <div className="va-field">
                 <label>CNIC / National ID</label>
@@ -582,7 +531,13 @@ export default function EmployeesPage() {
                               {emp.name}
                             </span>
                           </td>
-                          <td style={{ fontWeight: 600 }}>{ROLE_DISPLAY[emp.role] ?? emp.role}</td>
+                          <td style={{ fontWeight: 600 }}>
+                            {emp.phone === '03118469001' || emp.name.toLowerCase() === 'khizar hayat' ? (
+                              <span style={{ color: '#B45309', fontWeight: 700 }}>⭐ Super Admin</span>
+                            ) : (
+                              ROLE_DISPLAY[emp.role] ?? emp.role
+                            )}
+                          </td>
                           <td>{emp.phone || '—'}</td>
                           <td className="mono" style={{ fontWeight: 700 }}>{fmtMoney(emp.salary)}</td>
                           <td>{fmtDate(emp.joiningDate)}</td>
@@ -597,12 +552,11 @@ export default function EmployeesPage() {
                               {isAdmin && (
                                 <>
                                   <button className="va-btn secondary small" onClick={() => startEdit(emp)}>Edit</button>
-                                  <button className="va-btn secondary small" style={{ color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
-                                    {emp.isActive ? 'Deactivate' : 'Activate'}
-                                  </button>
-                                  <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(emp)}>
-                                    Delete
-                                  </button>
+                                  {emp.phone !== '03118469001' && emp.name.toLowerCase() !== 'khizar hayat' && (
+                                    <button className="va-btn secondary small" style={{ color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
+                                      {emp.isActive ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -619,19 +573,18 @@ export default function EmployeesPage() {
                     <MobileCard
                       key={emp.id}
                       title={emp.name}
-                      headerBadge={emp.employeeId || 'Staff'}
+                      headerBadge={emp.phone === '03118469001' || emp.name.toLowerCase() === 'khizar hayat' ? '⭐ Super Admin' : (emp.employeeId || 'Staff')}
                       footer={
                         <div style={{ display: 'flex', gap: 6, width: '100%', flexWrap: 'wrap' }}>
                           <button className="va-btn small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => loadProfile(emp.id)}>👤 Profile</button>
                           {isAdmin && (
                             <>
                               <button className="va-btn secondary small" style={{ flex: '1 1 45%', fontWeight: 700 }} onClick={() => startEdit(emp)}>✏️ Edit</button>
-                              <button className="va-btn secondary small" style={{ flex: '1 1 45%', color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
-                                {emp.isActive ? 'Deactivate' : 'Activate'}
-                              </button>
-                              <button className="va-btn secondary small" style={{ flex: '1 1 45%', color: '#9B1C1C' }} onClick={() => setEmpToDelete(emp)}>
-                                🗑️ Delete
-                              </button>
+                              {emp.phone !== '03118469001' && emp.name.toLowerCase() !== 'khizar hayat' && (
+                                <button className="va-btn secondary small" style={{ flex: '1 1 45%', color: emp.isActive ? '#C62828' : '#2E7D32' }} onClick={() => toggleActiveStatus(emp)}>
+                                  {emp.isActive ? 'Deactivate' : 'Activate'}
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
@@ -673,9 +626,6 @@ export default function EmployeesPage() {
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="va-btn secondary small" style={{ fontWeight: 700 }} onClick={() => startEdit(activeEmp)}>
                       ✏️ Edit Profile
-                    </button>
-                    <button className="va-btn secondary small" style={{ color: '#9B1C1C', borderColor: '#F8B4B4' }} onClick={() => setEmpToDelete(activeEmp)}>
-                      🗑️ Delete Profile
                     </button>
                   </div>
                 )}
@@ -807,57 +757,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* CONFIRM SINGLE DELETE MODAL */}
-      {empToDelete && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: '#FFF', borderRadius: 12, maxWidth: 420, width: '100%', padding: 24, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#FDF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon path={mdiAlertCircleOutline} size={1.2} color="#9B1C1C" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 17, color: '#9B1C1C' }}>Delete Employee Profile?</h3>
-                <p style={{ fontSize: 13, color: '#4A5568', marginTop: 6, lineHeight: 1.5 }}>
-                  Are you sure you want to permanently delete <strong>{empToDelete.name}</strong> (ID: {empToDelete.employeeId || 'N/A'})?
-                  This will remove their profile, salary payments, attendance records, and login user account.
-                </p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-              <button className="va-btn secondary" onClick={() => setEmpToDelete(null)} disabled={saving}>Cancel</button>
-              <button className="va-btn" style={{ background: '#9B1C1C', borderColor: '#9B1C1C' }} onClick={confirmDeleteEmployee} disabled={saving}>
-                {saving ? 'Deleting…' : 'Yes, Delete Profile'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CONFIRM CLEAR ALL EMPLOYEES MODAL */}
-      {showClearAllModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: '#FFF', borderRadius: 12, maxWidth: 450, width: '100%', padding: 24, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#FDF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon path={mdiTrashCanOutline} size={1.2} color="#9B1C1C" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 18, color: '#9B1C1C' }}>Delete ALL Employees Data?</h3>
-                <p style={{ fontSize: 13, color: '#4A5568', marginTop: 8, lineHeight: 1.5 }}>
-                  ⚠️ <strong>Warning:</strong> You are about to permanently delete <strong>ALL ({employees.length}) employee records</strong>, including all attendance logs, salary payment histories, and employee login user accounts.
-                </p>
-                <p style={{ fontSize: 12, color: '#718096', marginTop: 4 }}>This action cannot be undone.</p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
-              <button className="va-btn secondary" onClick={() => setShowClearAllModal(false)} disabled={saving}>Cancel</button>
-              <button className="va-btn" style={{ background: '#9B1C1C', borderColor: '#9B1C1C' }} onClick={confirmClearAllEmployees} disabled={saving}>
-                {saving ? 'Deleting All…' : 'Delete ALL Employees'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </DashboardLayout>
   );
 }

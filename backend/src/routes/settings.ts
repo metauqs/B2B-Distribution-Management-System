@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../lib/prisma';
+import { SUPER_ADMIN_CONFIG, isSuperAdminRole } from '../config/superAdmin';
 
 const router = Router();
 
@@ -69,6 +70,20 @@ router.post('/users', async (req: Request, res: Response) => {
   }
 
   const { name, email, password, role: userRole } = req.body;
+
+  if (userRole && isSuperAdminRole(userRole)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: Only Khizar Hayat is authorized to hold the Super Admin role. Creating new Super Admin accounts is strictly prohibited.'
+    });
+  }
+
+  if (name && (name.trim().toLowerCase() === 'khizar hayat' || email?.trim().toLowerCase() === SUPER_ADMIN_CONFIG.email.toLowerCase())) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: An authoritative account for Khizar Hayat already exists. Duplicate Super Admin accounts are prohibited.'
+    });
+  }
 
   if (!name || !email || !password || !branchId) {
     return res.status(400).json({ success: false, error: 'Missing required fields' });

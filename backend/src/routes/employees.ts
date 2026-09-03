@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import prisma from '../lib/prisma';
 import { writeAuditLog } from '../lib/business';
 import { generateEmployeeIdFromPhone } from '../utils/employeeId';
+import { SUPER_ADMIN_CONFIG, isKhizarHayatEmployee, isKhizarHayatUser, isSuperAdminRole } from '../config/superAdmin';
 
 const router = Router();
 
@@ -206,6 +207,28 @@ router.post('/', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Employee name is required' });
   }
 
+  if (role && isSuperAdminRole(role)) {
+    await writeAuditLog({
+      userId: userId ?? undefined,
+      branchId,
+      action: 'SECURITY_BLOCK_SUPER_ADMIN_CREATION',
+      entity: 'Employee',
+      entityId: 'NEW',
+      newData: { attemptedRole: role, attemptedName: name, error: 'Only Khizar Hayat is authorized as Super Admin' }
+    });
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: Only Khizar Hayat is authorized to hold the Super Admin role. Creating new Super Admin accounts is strictly prohibited.'
+    });
+  }
+
+  if (name && (name.trim().toLowerCase() === 'khizar hayat' || phone?.trim() === SUPER_ADMIN_CONFIG.phone || email?.trim().toLowerCase() === SUPER_ADMIN_CONFIG.email.toLowerCase())) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: An authoritative account for Khizar Hayat already exists. Duplicate Super Admin account creation is strictly prohibited.'
+    });
+  }
+
   if (role && !ALLOWED_ROLES.includes(role)) {
     return res.status(400).json({
       success: false,
@@ -271,44 +294,23 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/employees/clear-all (Admin action to purge ALL employee data)
+// POST /api/employees/clear-all (PERMANENTLY PROHIBITED BY SECURITY POLICY)
 router.post('/clear-all', async (req: Request, res: Response) => {
-  if (!isAdminUser(req)) {
-    return res.status(403).json({ success: false, error: 'Forbidden: Only Admin can delete all employee data' });
-  }
+  const userId = (req.headers['x-user-id'] as string) || (req.user as any)?.sub || null;
 
-  try {
-    const userId = (req.headers['x-user-id'] as string) || null;
+  await writeAuditLog({
+    userId: userId ?? undefined,
+    branchId: (req.headers['x-branch-id'] as string) || 'main',
+    action: 'DELETE_ALL_ATTEMPT_BLOCKED',
+    entity: 'Employee',
+    entityId: 'ALL',
+    newData: { error: 'Bulk employee deletion is strictly prohibited by security policy.' }
+  });
 
-    // Unlink sales and deliveries
-    await prisma.sale.updateMany({ data: { employeeId: null } });
-    await prisma.delivery.updateMany({ data: { employeeId: null } });
-
-    await prisma.$transaction([
-      prisma.salaryPayment.deleteMany({}),
-      prisma.attendance.deleteMany({}),
-      prisma.employee.deleteMany({}),
-      prisma.user.deleteMany({}),
-    ]);
-
-    await writeAuditLog({
-      userId: userId ?? undefined,
-      branchId: (req.headers['x-branch-id'] as string) || 'main',
-      action: 'DELETE',
-      entity: 'Employee',
-      entityId: 'ALL',
-      newData: { action: 'CLEAR_ALL_EMPLOYEES' },
-    });
-
-    clearEmployeeCache();
-    return res.json({
-      success: true,
-      message: 'All employee profiles and login data have been permanently deleted.'
-    });
-  } catch (err: any) {
-    console.error('[POST /api/employees/clear-all]', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to delete all employees' });
-  }
+  return res.status(403).json({
+    success: false,
+    error: 'Forbidden: Bulk employee deletion is permanently prohibited. Employee records must be preserved permanently.'
+  });
 });
 
 // PUT /api/employees/:id (Admin Only)
@@ -327,6 +329,21 @@ router.put('/:id', async (req: Request, res: Response) => {
 
   if (!name?.trim()) {
     return res.status(400).json({ success: false, error: 'Employee name is required' });
+  }
+
+  if (role && isSuperAdminRole(role)) {
+    await writeAuditLog({
+      userId: userId ?? undefined,
+      branchId: (req.headers['x-branch-id'] as string) || 'main',
+      action: 'SECURITY_BLOCK_SUPER_ADMIN_PROMOTION',
+      entity: 'Employee',
+      entityId: id,
+      newData: { attemptedRole: role, error: 'Only Khizar Hayat is authorized as Super Admin' }
+    });
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: Cannot promote employee to Super Admin. Only Khizar Hayat is authorized to hold the Super Admin role.'
+    });
   }
 
   if (role && !ALLOWED_ROLES.includes(role)) {
@@ -352,6 +369,36 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
 
     const branchId = (req.headers['x-branch-id'] as string) || original.branchId;
+
+    // Protection for Khizar Hayat's Super Admin account
+    const isTargetKhizar = isKhizarHayatEmployee(original.id, original.phone, original.email);
+    if (isTargetKhizar) {
+      // Demotion protection: Role cannot be demoted
+      if (role && role !== 'ADMIN') {
+        await writeAuditLog({
+          userId: userId ?? undefined,
+          branchId,
+          action: 'SECURITY_BLOCK_SUPER_ADMIN_DEMOTION',
+          entity: 'Employee',
+          entityId: original.id,
+          newData: { attemptedRole: role, error: 'Cannot demote Khizar Hayat' }
+        });
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: Khizar Hayat\'s Super Admin role cannot be demoted.'
+        });
+      }
+
+      // Modification protection: Only Khizar Hayat himself can edit his Super Admin account
+      const actingEmail = req.user?.email || (req.headers['x-user-email'] as string);
+      const isActingKhizar = isKhizarHayatUser(userId, actingEmail) || isKhizarHayatEmployee(req.user?.employeeId);
+      if (!isActingKhizar) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: Khizar Hayat\'s Super Admin profile is protected and can only be modified by Khizar Hayat himself.'
+        });
+      }
+    }
 
     // Employee ID MUST REMAIN PERMANENT & UNCHANGED
     const updatedEmployeeId = original.employeeId;
@@ -431,6 +478,7 @@ router.patch('/:id/toggle', async (req: Request, res: Response) => {
     return res.status(403).json({ success: false, error: 'Forbidden: Only Admin can change employee status' });
   }
 
+  const userId = (req.headers['x-user-id'] as string) || (req.user as any)?.sub || null;
   const { id } = req.params;
 
   try {
@@ -447,16 +495,55 @@ router.patch('/:id/toggle', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
 
+    // Protection for Khizar Hayat's Super Admin account: cannot be deactivated
+    const isTargetKhizar = isKhizarHayatEmployee(original.id, original.phone, original.email);
+    if (isTargetKhizar) {
+      await writeAuditLog({
+        userId: userId ?? undefined,
+        branchId: original.branchId,
+        action: 'SECURITY_BLOCK_SUPER_ADMIN_DEACTIVATION',
+        entity: 'Employee',
+        entityId: original.id,
+        newData: { error: 'Attempted to deactivate Khizar Hayat' }
+      });
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: Khizar Hayat\'s Super Admin account is permanently active and cannot be deactivated or suspended.'
+      });
+    }
+
+    const newStatus = !original.isActive;
+
     const updated = await prisma.employee.update({
       where: { id: original.id },
-      data: { isActive: !original.isActive },
+      data: { isActive: newStatus },
+    });
+
+    // Synchronize linked User account so login is prevented immediately if deactivated
+    const userEmail = original.email?.trim() || `emp_${original.id}@sabziledger.com`;
+    const linkedUser = await prisma.user.findFirst({ where: { email: userEmail, deletedAt: null } });
+    if (linkedUser) {
+      await prisma.user.update({
+        where: { id: linkedUser.id },
+        data: { isActive: newStatus },
+      });
+    }
+
+    await writeAuditLog({
+      userId: userId ?? undefined,
+      branchId: original.branchId,
+      action: 'STATUS_TOGGLE',
+      entity: 'Employee',
+      entityId: original.id,
+      oldData: { isActive: original.isActive },
+      newData: { isActive: newStatus, name: original.name },
     });
 
     clearEmployeeCache();
     return res.json({
       success: true,
       data: updated,
-      message: `Employee ${updated.isActive ? 'activated' : 'deactivated'} successfully`
+      message: `Employee "${updated.name}" ${updated.isActive ? 'activated' : 'deactivated'} successfully.`
     });
   } catch (err: any) {
     console.error('[PATCH /api/employees/:id/toggle]', err);
@@ -464,59 +551,24 @@ router.patch('/:id/toggle', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/employees/:id (Permanent Delete Single Employee - Admin Only)
+// DELETE /api/employees/:id (PERMANENTLY PROHIBITED BY SECURITY POLICY)
 router.delete('/:id', async (req: Request, res: Response) => {
-  if (!isAdminUser(req)) {
-    return res.status(403).json({ success: false, error: 'Forbidden: Only Admin can delete employee profiles' });
-  }
-
-  const userId = (req.headers['x-user-id'] as string) || null;
+  const userId = (req.headers['x-user-id'] as string) || (req.user as any)?.sub || null;
   const { id } = req.params;
 
-  try {
-    const original = await prisma.employee.findFirst({
-      where: {
-        OR: [
-          { id },
-          { employeeId: id },
-        ],
-      },
-    });
+  await writeAuditLog({
+    userId: userId ?? undefined,
+    branchId: (req.headers['x-branch-id'] as string) || 'main',
+    action: 'DELETE_ATTEMPT_BLOCKED',
+    entity: 'Employee',
+    entityId: id,
+    newData: { error: 'Employee deletion is strictly prohibited by security policy.' }
+  });
 
-    if (!original) {
-      return res.status(404).json({ success: false, error: 'Employee not found' });
-    }
-
-    // Unlink sales and deliveries
-    await prisma.sale.updateMany({ where: { employeeId: original.id }, data: { employeeId: null } });
-    await prisma.delivery.updateMany({ where: { employeeId: original.id }, data: { employeeId: null } });
-
-    // Delete payments & attendance
-    await prisma.salaryPayment.deleteMany({ where: { employeeId: original.id } });
-    await prisma.attendance.deleteMany({ where: { employeeId: original.id } });
-
-    // Delete linked user account if present
-    const userEmail = original.email?.trim() || `emp_${original.id}@sabziledger.com`;
-    await prisma.user.deleteMany({ where: { email: userEmail } });
-
-    // Delete employee record
-    await prisma.employee.delete({ where: { id: original.id } });
-
-    await writeAuditLog({
-      userId: userId ?? undefined,
-      branchId: original.branchId,
-      action: 'DELETE',
-      entity: 'Employee',
-      entityId: original.id,
-      oldData: { name: original.name, role: original.role },
-    });
-
-    clearEmployeeCache();
-    return res.json({ success: true, message: `Employee "${original.name}" permanently deleted.` });
-  } catch (err: any) {
-    console.error('[DELETE /api/employees/:id]', err);
-    return res.status(500).json({ success: false, error: err.message ?? 'Failed to delete employee profile' });
-  }
+  return res.status(403).json({
+    success: false,
+    error: 'Forbidden: Employee deletion is permanently prohibited. Employee records cannot be deleted. Use employee status (Active / Inactive) to manage access.'
+  });
 });
 
 export default router;

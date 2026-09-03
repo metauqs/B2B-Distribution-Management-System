@@ -40,6 +40,7 @@ import { authMiddleware } from './middleware/auth';
 import { requestLogger } from './middleware/requestLogger';
 import { idempotencyMiddleware } from './lib/idempotency';
 import prisma from './lib/prisma';
+import { verifySuperAdminIntegrity } from './lib/superAdminIntegrity';
 
 import { config } from './config/env';
 import { apiRateLimiter, renderRateLimiter } from './middleware/rateLimiter';
@@ -199,9 +200,11 @@ app.listen(Number(port), '0.0.0.0', () => {
   console.log(`🚀 Server running on http://127.0.0.1:${port}`);
 });
 
-// Initial warm-up on process start — pre-warms Neon connection before first user request
+// Initial warm-up on process start — pre-warms Neon connection and verifies Super Admin integrity
 setImmediate(() => {
-  prisma.$queryRaw`SELECT 1`.catch((e: any) => console.warn('[WARMUP] Neon warm-up failed:', e?.message));
+  prisma.$queryRaw`SELECT 1`
+    .then(() => verifySuperAdminIntegrity())
+    .catch((e: any) => console.warn('[WARMUP] Neon warm-up / integrity check failed:', e?.message));
   markDbActivity();
 });
 
