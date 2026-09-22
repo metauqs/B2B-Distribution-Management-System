@@ -84,9 +84,19 @@ export function markDbActivity(): void {
   }
 }
 
-// Tag every incoming request as activity (must be before all route handlers)
-app.use((_req: express.Request, _res: express.Response, next: express.NextFunction) => {
-  markDbActivity();
+// Tag every incoming request as activity — but exclude lightweight monitor pings
+// (root /, /api/health*, /api/render/warmup, /uploads) so that external uptime
+// schedulers do not cascade into Neon DB keep-alive queries during off-hours.
+app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  const p = req.path;
+  const isMonitorPing =
+    p === '/' ||
+    p.startsWith('/api/health') ||
+    p.startsWith('/api/render/warmup') ||
+    p.startsWith('/uploads');
+  if (!isMonitorPing) {
+    markDbActivity();
+  }
   next();
 });
 
