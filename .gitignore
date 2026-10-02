@@ -78,3 +78,6 @@ pids/
 
 # Scratch test scripts
 scratch/
+
+# Docs folder (local only)
+docs/
